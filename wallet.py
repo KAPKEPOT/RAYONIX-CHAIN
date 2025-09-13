@@ -585,6 +585,25 @@ class AdvancedWallet:
         # Take last 20 bytes and add 0x prefix
         address_bytes = keccak_hash[-20:]
         return "0x" + address_bytes.hex()
+        
+    def get_public_key_for_address(self, address: str) -> Optional[bytes]:
+    	"""Get public key for a specific address in the wallet"""
+    	try:
+    		# Find the address info
+    		address_info = None
+    		for addr, info in self.addresses.items():
+    			if addr == address:
+    				address_info = info
+    				break
+    		if not address_info:
+    			logger.warning(f"Address {address} not found in wallet")
+    			return None
+    		# Derive the key pair from the derivation path
+    		key_pair = self._derive_child_key(self.master_key, address_info.derivation_path)
+    		return key_pair.public_key
+    	except Exception as e:
+    		logger.error(f"Failed to get public key for address {address}: {e}")
+    		return None        
     
     def get_balance(self) -> WalletBalance:
     	
@@ -699,10 +718,15 @@ class AdvancedWallet:
         
         return json.dumps(elements).encode()
     
-    def verify_signature(self, message: bytes, signature: str, public_key: bytes) -> bool:
+    def verify_signature(self, message: bytes, signature: str, public_key: Union[bytes, str]) -> bool:
         """Verify message signature"""
         try:
-            vk = VerifyingKey.from_string(public_key, curve=SECP256k1)
+            if isinstance(public_key, str):
+            	public_key_bytes = bytes.fromhex(public_key)
+            else:
+            	public_key_bytes = public_key
+            	
+            vk = VerifyingKey.from_string(public_key_bytes, curve=SECP256k1)
             return vk.verify(bytes.fromhex(signature), message)
         except InvalidSignature:
             return False

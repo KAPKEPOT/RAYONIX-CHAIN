@@ -589,10 +589,28 @@ Available Commands:
         
         wallet = create_new_wallet()
         self.wallet = wallet
-        print(f"New wallet created:")
-        print(f"  Address: {wallet.address}")
-        print(f"  Public Key: {wallet.public_key[:30]}...")
-        print("  Private Key: [HIDDEN] - Save this securely!")
+        
+        # Get the mnemonic and xpub using the new methods
+        mnemonic = wallet.get_mnemonic()
+        xpub = wallet.get_master_xpub()
+        
+        # Get the first address from the addresses dictionary
+        if wallet.addresses:
+        	first_address = list(wallet.addresses.keys())[0]
+        	print(f"New wallet created:")
+        	print(f"  Wallet ID: {wallet.wallet_id}")
+        	
+        	if mnemonic:
+        		print(f"  Mnemonic: {mnemonic}")
+        		print("  IMPORTANT: Save this mnemonic phrase securely!")
+        		
+        	if xpub:
+        		print(f"  Master xpub: {xpub[:30]}...")
+        	print(f"  Address: {first_address}")
+        	print("  Private Key: [HIDDEN] - Save this securely!")
+        else:
+        	print("Wallet created but no addresses generated")
+        
     
     def _load_wallet(self, args: List[str]):
         """Load wallet from file"""
@@ -604,28 +622,57 @@ Available Commands:
         wallet = load_existing_wallet(filename)
         if wallet:
             self.wallet = wallet
-            print(f"Wallet loaded: {wallet.address}")
+            primary_address = list(wallet.addresses.keys())[0] if wallet.addresses else "No addresses"
+            print(f"Wallet loaded: {primary_address}")
         else:
-            print("Failed to load wallet")
+        	print("Failed to load wallet")
     
     def _get_balance(self, args: List[str]):
         """Get balance for address or loaded wallet"""
-        address = None
-        if args:
-            address = args[0]
-        elif self.wallet:
-            address = self.wallet.address
-        else:
-            print("No address specified and no wallet loaded")
-            return
+        try:
+        	if args:
+        		# Specific address requested
+        		address = args[0]
+        		balance = self.blockchain.get_balance(address)
+        		print(f"Balance for {address}: {balance} RXY")
+        	elif self.wallet and self.wallet.addresses:
+        		# Show balances for all addresses in wallet
+        		print("Wallet Balances:")
+        		total_balance = 0
+                        		
+        		for i, (address, address_info) in enumerate(self.wallet.addresses.items()):
+        		    balance = self.blockchain.get_balance(address)
+        		    total_balance += balance
+        		    change_indicator = "(change)" if address_info.is_change else "(receiving)"
+        		    print(f"     Balance: {balance} RXY")
+        		    print(f"     Balance: {balance} RXY")
+        		    print(f"     Derivation: {address_info.derivation_path}")
+        		    
+        		print(f"Total Wallet Balance: {total_balance} RXY")
+        		
+        	else:
+        	    print("No address specified and no wallet loaded")
+        	    
+        except Exception as e:
+            print(f"Error getting balance: {e}")
+            traceback.print_exc()
         
-        balance = self.blockchain.get_balance(address)
-        print(f"Balance for {address}: {balance} RXY")
-    
+    def _show_wallet_addresses(self, args: List[str]):
+    	"""Show addresses in the loaded wallet"""
+    	if not self.wallet or not self.wallet.addresses:
+    		print("No wallet loaded or no addresses in wallet")
+    		return
+    	limit = int(args[0]) if args else 10
+    	addresses = list(self.wallet.addresses.keys())[:limit]
+    	print(f"Wallet Addresses ({len(addresses)} shown):")
+    	for i, address in enumerate(addresses):
+    	      address_info = self.wallet.addresses[address]
+    	      print(f"  {i}: {address} (Index: {address_info.index}, Change: {address_info.is_change})")
+           
     def _send_transaction(self, args: List[str]):
         """Send transaction"""
-        if not self.wallet:
-            print("No wallet loaded")
+        if not self.wallet or not self.wallet.addresses:
+            print("No wallet loaded or no addresses in wallet")
             return
         
         if len(args) < 2:
@@ -635,28 +682,29 @@ Available Commands:
         to_address = args[0]
         amount = int(args[1])
         fee = int(args[2]) if len(args) > 2 else 1
+        # Get the first address from wallet as sender
+        from_address = list(self.wallet.addresses.keys())[0]
         
-        # Create transaction
-        transaction = Transaction(
-            sender=self.wallet.address,
-            recipient=to_address,
-            amount=amount,
-            fee=fee
-        )
-        
-        # Sign transaction
-        transaction.signature = self.wallet.sign_transaction(
-            json.dumps(transaction.to_dict())
-        )
-        
-        # Add to blockchain
-        if self.blockchain.add_transaction(transaction):
-            print(f"Transaction sent: {transaction.hash[:16]}...")
-            # Broadcast to network
-            asyncio.create_task(self._broadcast_transaction(transaction))
-        else:
-            print("Failed to send transaction")
-    
+        # Create and send transaction
+        try:
+        	transaction = self.blockchain.create_transaction(
+        	    from_address=from_address,
+        	    to_address=to_address,
+        	    amount=amount,
+        	    fee=fee
+        	)
+        	# Sign the transaction with wallet
+        	signed_tx = self.wallet.sign_transaction(transaction)
+        	# Add to blockchain and broadcast
+        	if self.blockchain.add_transaction(signed_tx):
+        		print(f"Transaction sent successfully!")
+        		print(f"TXID: {signed_tx['hash'][:16]}...")
+        	else:
+        		print("Failed to send transaction")
+        		
+        except Exception as e:
+        	print(f"Error sending transaction: {e}")
+ 
     async def _mine_block(self):
         """Mine a block"""
         if not self.config['mining_enabled']:
