@@ -186,7 +186,7 @@ class RayonixCoin:
         address_type='RAYONIX',  # This should be AddressType.RAYONIX
         encryption=True
     )
-        self.wallet = AdvancedWallet(wallet_config)
+        self.wallet = RayonixWallet(wallet_config)
         # Generate initial addresses if it's a new wallet
         if not self.wallet.addresses:
         	# Generate some addresses
