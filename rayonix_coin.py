@@ -19,7 +19,7 @@ from utxo import UTXOSet, Transaction, UTXO
 from consensus import ProofOfStake, Validator
 from smart_contract import ContractManager, SmartContract
 from database import AdvancedDatabase
-from wallet import AdvancedWallet, WalletConfig
+from wallet import RayonixWallet, WalletConfig
 from p2p_network import AdvancedP2PNetwork, NodeConfig
 import logging
 
