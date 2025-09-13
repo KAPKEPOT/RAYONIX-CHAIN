@@ -1421,7 +1421,7 @@ class RayonixWallet:
     	return addresses[:limit] if limit > 0 else addresses         	          
 
 # Utility functions
-def create_new_wallet(wallet_type: WalletType = WalletType.HD, **kwargs) -> AdvancedWallet:
+def create_new_wallet(wallet_type: WalletType = WalletType.HD, **kwargs) -> RayonixWallet:
     """Create a new wallet"""
     config = WalletConfig(wallet_type=wallet_type, **kwargs)
     wallet = AdvancedWallet(config)
