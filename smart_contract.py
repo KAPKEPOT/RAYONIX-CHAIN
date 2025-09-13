@@ -695,20 +695,29 @@ class ContractManager:
 
     def get_all_contracts(self) -> List[Dict]:
     	"""Get all deployed contracts with basic information"""
-    	with self.lock:
-    		contracts = []
-    		for contract_address, contract in self.contracts.items():
-    			contracts.append({
-    			    'address': contract.contract_address,
-    			    'creator': contract.creator,
-                    'type': contract.contract_type.name,
-                    'balance': contract.balance,
-                    'state': contract.state.name,
-                    'created_at': contract.created_at,
-                    'execution_count': contract.execution_count  			
-    			})
-    			return contracts    
-    			
+    	try:
+    		with self.lock:
+    			contracts = []
+    			# Check if contracts attribute exists and is not None
+    			if hasattr(self, 'contracts') and self.contracts is not None:
+    				for contract_address, contract in self.contracts.items():
+    					# Make sure contract is not None
+    					if contract is not None:
+    						contracts.append({
+    						    'address': contract.contract_address,
+    						    'creator': contract.creator,
+    						    'type': contract.contract_type.name,
+    						    'balance': contract.balance,
+    						    'state': contract.state.name,
+    						    'created_at': contract.created_at,
+    						    'execution_count': contract.execution_count
+    						})
+    			return contracts
+    	except Exception as e:
+    	    print(f"Error in get_all_contracts: {e}")
+    	    return []  # Always return a list, even on error       				
+            				
+    		
     			
     def __del__(self):
         """Cleanup on destruction"""
