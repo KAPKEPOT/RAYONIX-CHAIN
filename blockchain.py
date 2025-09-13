@@ -20,8 +20,6 @@ from index_manager import IndexManager, IndexConfig
 #self.config_manager = get_config()
 #port = self.config_manager.get('network.listen_port')
 
-SHARED_ENCRYPTION_KEY = "rayonix_shared_db_key_2024"
-
 class Block:
     def __init__(self, index: int, previous_hash: str, transactions: List[Transaction], 
                  validator: str, timestamp: float = None, nonce: int = 0, 
@@ -86,16 +84,8 @@ class Block:
 
 class Blockchain:
     def __init__(self, db_path: str = './blockchain_db'):
-        db_config = DatabaseConfig(
-        encryption_key=SHARED_ENCRYPTION_KEY,
-        db_type=DatabaseType.PLYVEL,
-        compression=CompressionType.SNAPPY,
-        encryption=EncryptionType.FERNET,
-        create_if_missing=True,
-        error_if_exists=False
-    )
-        self.database = AdvancedDatabase(db_path, config=db_config)
-        #self.db = AdvancedDatabase(db_path)
+          
+        self.db = AdvancedDatabase(db_path)
         self.index_manager = IndexManager(self.db) 
         self.utxo_set = UTXOSet()
         consensus_db_path = str(db_path) + "_consensus"
