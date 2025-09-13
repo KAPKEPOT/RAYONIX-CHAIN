@@ -56,7 +56,7 @@ class RayonixCoin:
             'block_time_target': 30,
             'max_supply': 21000000,
             'premine_amount': 1000000,
-            'foundation_address': 'RXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX',
+            'foundation_address': 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX',
             'developer_fee_percent': 0.05,
             'network_id': self._get_network_id(network_type)
         }
@@ -109,7 +109,7 @@ class RayonixCoin:
             }],
             locktime=0
         )
-        genesis_transactions.append(premine_tx)
+        genesis_transactions.append(premine_tx.to_dict())  # Convert to dict here
         
         # Create genesis block
         self.genesis_block = {
@@ -361,7 +361,7 @@ class RayonixCoin:
         self.foundation_funds += foundation_fee
         self.staking_rewards_distributed += validator_reward
         
-        return reward_tx.to_dict()
+        return reward_tx
     
     def _get_block_reward(self) -> int:
         """Calculate current block reward with halving"""
@@ -479,15 +479,28 @@ class RayonixCoin:
         """Calculate merkle root of transactions"""
         if not transactions:
             return '0' * 64
+            
+        # Convert Transaction objects to dicts if needed
+        tx_dicts = []
+        for tx in transactions:
+        	if hasattr(tx, 'to_dict'):
+        		tx_dicts.append(tx.to_dict())
+        	else:
+        		tx_dicts.append(tx)  
         
-        tx_hashes = [self._calculate_transaction_hash(tx) for tx in transactions]
+        tx_hashes = [self._calculate_transaction_hash(tx) for tx in tx_dicts]
         merkle_tree = MerkleTree(tx_hashes)
         return merkle_tree.get_root_hash()
     
     def _calculate_transaction_hash(self, transaction: Dict) -> str:
         """Calculate transaction hash"""
-        tx_data = json.dumps(transaction, sort_keys=True).encode()
-        return hashlib.sha256(tx_data).hexdigest()
+        if hasattr(transaction, 'to_dict'):
+        	tx_data = transaction.to_dict()
+        else:
+        	tx_data = transaction
+        	
+        sorted_data = json.dumps(tx_data, sort_keys=True).encode()
+        return hashlib.sha256(sorted_data).hexdigest()
     
     def _calculate_transaction_size(self, transaction: Dict) -> int:
         """Calculate transaction size in bytes"""
@@ -495,8 +508,14 @@ class RayonixCoin:
     
     def _update_utxo_set(self, block: Dict):
         """Update UTXO set with block transactions"""
-        for tx in block['transactions']:
-            transaction = Transaction.from_dict(tx)
+        for tx_data in block['transactions']:
+            # Convert dict to Transaction object if needed
+            if isinstance(tx_data, dict):
+            	transaction = Transaction.from_dict(tx_data)
+            	
+            else:
+            	transaction = tx_data
+            
             self.utxo_set.process_transaction(transaction)
     
     def _remove_transactions_from_mempool(self, transactions: List[Dict]):
@@ -990,7 +1009,7 @@ class RayonixCoin:
         """Cleanup resources"""
         if hasattr(self, 'database'):
             self.database.close()
-        if hasattr(self, 'network'):
+        if hasattr(self, 'network') and self.network is not None:
             self.network.stop()
 
     def __del__(self):
