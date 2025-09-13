@@ -182,11 +182,16 @@ class RayonixCoin:
     def _initialize_wallet(self):
         """Initialize wallet system"""
         wallet_config = WalletConfig(
-            network=self.network_type,
-            address_type='RAYONIX',
-            encryption=True
-        )
+        network=self.network_type,
+        address_type='RAYONIX',  # This should be AddressType.RAYONIX
+        encryption=True
+    )
         self.wallet = AdvancedWallet(wallet_config)
+        # Generate initial addresses if it's a new wallet
+        if not self.wallet.addresses:
+        	# Generate some addresses
+        	for i in range(5):
+        		self.wallet.derive_address(i, False)
     
     def _initialize_network(self):
         """Initialize P2P network"""
@@ -252,20 +257,25 @@ class RayonixCoin:
     def _should_mine_block(self) -> bool:
         """Check if we should mine a new block"""
         # Check if we're a validator with sufficient stake
-        if self.wallet and self.consensus.is_validator(self.wallet.get_address()):
-            current_time = time.time()
-            # Check if it's our turn to validate
-            return self.consensus.should_validate(self.wallet.get_address(), current_time)
-        return False
-    
+        if self.wallet and self.wallet.addresses:
+            validator_address = list(self.wallet.addresses.keys())[0]
+            if self.consensus.is_validator(validator_address):
+            	current_time = time.time()
+            	# Check if it's our turn to validate
+            	return self.consensus.should_validate(validator_address, current_time)
+            return False
+            
     def _create_new_block(self) -> Optional[Dict]:
         """Create a new block"""
         try:
             # Select transactions from mempool
             transactions = self._select_transactions_for_block()
+            # Get current validator address
+            if not self.wallet or not self.wallet.addresses:
+            	return None
             
             # Get current validator
-            validator_address = self.wallet.get_address()
+            validator_address = list(self.wallet.addresses.keys())[0]
             
             # Create block header
             previous_block = self.blockchain[-1]
@@ -431,10 +441,17 @@ class RayonixCoin:
         try:
             # Get validator public key
             validator_address = block['validator']
-            public_key = self.consensus.get_validator_public_key(validator_address)
+            if self.wallet:
+            	public_key = self.wallet.get_public_key_for_address(validator_address)
+            	if not public_key:
+            		return False
+            	
+            else:
+            	# Fallback: get from consensus (if implemented)
+            	public_key = self.consensus.get_validator_public_key(validator_address)
+            	if not public_key:
+            		return False
             
-            if not public_key:
-                return False
             
             # Verify signature
             block_data = self._get_block_signing_data(block)
@@ -802,7 +819,15 @@ class RayonixCoin:
             # Add change output if needed
             change_amount = selected_amount - amount - fee
             if change_amount > 0:
-                change_address = self.wallet.get_new_address()  # Get new change address
+                # Generate a new change address from the wallet
+                if self.wallet:
+             
+                	change_address_info = self.wallet.derive_address(len(self.wallet.addresses), True)
+                	change_address = change_address_info.address
+            else:
+                # Fallback: use from_address for change
+                change_address = from_address
+                
                 outputs.append({
                     'address': change_address,
                     'amount': change_amount,
@@ -816,13 +841,16 @@ class RayonixCoin:
                 locktime=0
             )
             
-            # Sign transaction
-            signed_tx = self.wallet.sign_transaction(transaction.to_dict())
+            # Sign transaction - use the wallet's sign_transaction method
+            transaction_dict = transaction.to_dict()
+            if self.wallet:
+            	signature = self.wallet.sign_transaction(transaction_dict)
+            	transaction_dict['signature'] = signature
             
             # Add to mempool
-            self._add_to_mempool(signed_tx)
+            self._add_to_mempool(transaction_dict)
             
-            return signed_tx
+            return transaction_dict
             
         except Exception as e:
             logger.error(f"Transaction creation failed: {e}")
@@ -921,34 +949,40 @@ class RayonixCoin:
     
     def register_validator(self, stake_amount: int) -> bool:
         """Register as validator"""
-        if not self.wallet:
-            raise ValueError("Wallet not available")
+        if not self.wallet or not self.wallet.addresses:
+            raise ValueError("Wallet not available or no addresses")
+        validator_address = list(self.wallet.addresses.keys())[0]
         
         # Check minimum stake
         if stake_amount < self.config['stake_minimum']:
             raise ValueError(f"Minimum stake is {self.config['stake_minimum']} RXY")
         
         # Check balance
-        balance = self.get_balance(self.wallet.get_address())
+        balance = self.get_balance(validator_address)
         if balance < stake_amount:
             raise ValueError("Insufficient balance")
         
         # Create staking transaction
         staking_tx = self.create_transaction(
-            self.wallet.get_address(),
-            self.config['foundation_address'],  # Staking contract address
-            stake_amount,
-            fee=self.config['min_transaction_fee'],
-            memo="Validator registration"
-        )
+        validator_address,
+        self.config['foundation_address'],  # Staking contract address
+        stake_amount,
+        fee=self.config['min_transaction_fee'],
+        memo="Validator registration"
+    )
         
         if staking_tx:
-            # Register with consensus
+            # Get public key from wallet
+            public_key = self.wallet.get_public_key_for_address(validator_address)
+            if not public_key:
+            	raise ValueError("Could not retrieve public key")
+            	
+            # Register with consensus	
             return self.consensus.register_validator(
-                self.wallet.get_address(),
-                self.wallet.get_public_key(),
-                stake_amount
-            )
+            validator_address,
+            public_key.hex(),  # Convert bytes to hex string
+            stake_amount
+        )
         
         return False
 
@@ -1010,8 +1044,8 @@ if __name__ == "__main__":
         print(f"  Difficulty: {info['difficulty']}")
         
         # Create a transaction (example)
-        if rayonix.wallet:
-            address = rayonix.wallet.get_address()
+        if rayonix.wallet and rayonix.wallet.addresses:
+            address = list(rayonix.wallet.addresses.keys())[0]
             balance = rayonix.get_balance(address)
             print(f"Wallet Balance: {balance} RXY")
             
