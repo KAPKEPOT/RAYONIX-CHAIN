@@ -526,6 +526,8 @@ class RayonixNode:
                 
             elif command == 'sync-status':
                 self._show_sync_status()
+            elif command == 'wallet-info':
+                self._show_wallet_info()
                 
             else:
                 print(f"Unknown command: {command}. Type 'help' for available commands.")
@@ -545,7 +547,8 @@ Available Commands:
   exit                 - Stop the node and exit
   status               - Show node status
   create-wallet        - Create a new wallet
-  load-wallet <file>   - Load wallet from file
+  load-wallet <words>   - Load wallet from mnemonic phrase
+  wallet-info          - Show loaded wallet information
   get-balance [addr]   - Get wallet or address balance
   send <to> <amount>   - Send coins to address
   mine                 - Mine a block (if mining enabled)
@@ -583,49 +586,110 @@ Available Commands:
     
     def _create_wallet(self):
         """Create a new wallet"""
-        if self.wallet:
-            print("Wallet already loaded. Use 'load-wallet' to switch.")
-            return
-        
-        wallet = create_new_wallet()
-        self.wallet = wallet
-        
-        # Get the mnemonic and xpub using the new methods
-        mnemonic = wallet.get_mnemonic()
-        xpub = wallet.get_master_xpub()
-        
-        # Get the first address from the addresses dictionary
-        if wallet.addresses:
-        	first_address = list(wallet.addresses.keys())[0]
-        	print(f"New wallet created:")
-        	print(f"  Wallet ID: {wallet.wallet_id}")
-        	
-        	if mnemonic:
-        		print(f"  Mnemonic: {mnemonic}")
-        		print("  IMPORTANT: Save this mnemonic phrase securely!")
-        		
-        	if xpub:
-        		print(f"  Master xpub: {xpub[:30]}...")
-        	print(f"  Address: {first_address}")
-        	print("  Private Key: [HIDDEN] - Save this securely!")
-        else:
-        	print("Wallet created but no addresses generated")
-        
-    
+        try:
+            # Create new wallet which generates a mnemonic
+            mnemonic_phrase, xpub = create_new_wallet()
+            
+            # Create wallet instance from the mnemonic
+            wallet = RayonixWallet(self.database, self.config['network'])
+            if wallet.create_from_mnemonic(mnemonic_phrase):
+            	self.wallet = wallet
+            	print("✓ New wallet created successfully!")
+            	print(f"  Mnemonic: {mnemonic_phrase}")
+            	print("  🔐 IMPORTANT: Save this mnemonic phrase securely!")
+            	print("  🔐 You will need it to restore your wallet!")
+            	
+            	# Show the first address
+            	if hasattr(wallet, 'addresses') and wallet.addresses:
+            		first_address = list(wallet.addresses.keys())[0]
+            		print(f"  Address: {first_address}")
+            		
+            	else:
+            		# Generate first address
+            		address_info = wallet.derive_address(0, False)
+            		print(f"  Address: {address_info.address}")
+            else:
+            	print("✗ Failed to create wallet from mnemonic")
+        except Exception as e:
+        	print(f"✗ Error creating wallet: {e}")
+ 
     def _load_wallet(self, args: List[str]):
         """Load wallet from file"""
-        if len(args) < 1:
-            print("Usage: load-wallet <filename>")
+        if not args:
+            print("Usage: load-wallet <mnemonic_phrase>")
             return
-        
-        filename = args[0]
-        wallet = load_existing_wallet(filename)
-        if wallet:
-            self.wallet = wallet
-            primary_address = list(wallet.addresses.keys())[0] if wallet.addresses else "No addresses"
-            print(f"Wallet loaded: {primary_address}")
-        else:
-        	print("Failed to load wallet")
+            
+        # Join all arguments as the mnemonic phrase
+        mnemonic_phrase = ' '.join(args)
+        try:
+                	
+        	# Create new wallet instance
+        	wallet = RayonixWallet(self.database, self.config['network'])
+        	
+        	# Load wallet from mnemonic
+        	if wallet.create_from_mnemonic(mnemonic_phrase):
+        		self.wallet = wallet
+        		print("✓ Wallet loaded successfully from mnemonic!")
+        		
+        		# Show wallet info
+        		if hasattr(wallet, 'addresses') and wallet.addresses:
+        			addresses = list(wallet.addresses.keys())
+        			print(f"  Addresses loaded: {len(addresses)}")
+        			print(f"  Primary address: {addresses[0]}")
+        			
+        			# Show balance for primary address
+        			try:
+        				balance = self.blockchain.get_balance(addresses[0])
+        				print(f"  Balance: {balance} RXY")
+        			except:
+        				print(f"  Balance: Unable to check (blockchain not ready)")
+        		# Also show the master public key if availabl
+        		if hasattr(wallet, 'get_master_xpub'):
+        			xpub = wallet.get_master_xpub()
+        			if xpub:
+        				print(f"  Master xpub: {xpub[:30]}...")
+        		else:
+        			print("✗ Failed to load wallet. Invalid mnemonic phrase.")
+                    			
+        except Exception as e:
+        	print(f"✗ Error loading wallet: {e}")
+        	print("Make sure the mnemonic phrase is correct (usually 12, 18, or 24 words)")
+        	
+        	
+    def _show_wallet_info(self):
+      """Show information about the currently loaded wallet"""
+      if not self.wallet:
+      	print("No wallet loaded. Use 'create-wallet' or 'load-wallet'")
+      	return
+      print("Wallet Information:")
+      print(f"  Loaded: Yes")
+      
+      if hasattr(self.wallet, 'addresses') and self.wallet.addresses:
+              addresses = list(self.wallet.addresses.keys())
+              print(f"  Addresses: {len(addresses)}")
+              print(f"  Primary: {addresses[0]}")
+              
+              
+              # Show balances
+              total_balance = 0
+              print("  Balances:")
+              for i, address in enumerate(addresses[:5]):
+                            	
+              	try:
+              		balance = self.blockchain.get_balance(address)
+              		total_balance += balance
+              		change_indicator = "(change)" if self.wallet.addresses[address].is_change else ""
+              		print(f"    {address}: {balance} RXY {change_indicator}")
+              		
+              	except:
+              		print(f"    {address}: Unable to check balance")
+              print(f"  Total Balance: {total_balance} RXY")
+              if hasattr(self.wallet, 'get_master_xpub'):
+                  xpub = self.wallet.get_master_xpub()
+                  if xpub:
+                        print(f"  Master xpub: {xpub[:30]}...")                      
+                        
+       
     
     def _get_balance(self, args: List[str]):
         """Get balance for address or loaded wallet"""
