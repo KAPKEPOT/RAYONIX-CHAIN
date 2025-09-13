@@ -1424,7 +1424,7 @@ class RayonixWallet:
 def create_new_wallet(wallet_type: WalletType = WalletType.HD, **kwargs) -> RayonixWallet:
     """Create a new wallet"""
     config = WalletConfig(wallet_type=wallet_type, **kwargs)
-    wallet = AdvancedWallet(config)
+    wallet = RayonixWallet(config)
     
     if wallet_type == WalletType.HD:
         mnemonic_phrase, xpub = wallet.create_hd_wallet()

@@ -27,8 +27,6 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SHARED_ENCRYPTION_KEY = "rayonix_shared_db_key_2024"
-
 class RayonixCoin:
     
     def __init__(self, network_type: str = "mainnet", data_dir: str = "./rayonix_data"):
@@ -44,11 +42,8 @@ class RayonixCoin:
         self.network = None
         
         # Initialize database with plyvel
-        #self.database = AdvancedDatabase(f"{data_dir}/blockchain_db")
-        db_config = DatabaseConfig(encryption_key=SHARED_ENCRYPTION_KEY)
-        self.database = AdvancedDatabase('./rayonix_data/blockchain_db', config=db_config)
+        self.database = AdvancedDatabase(f"{data_dir}/blockchain_db")
 
-        
         # Configuration
         self.config = {
             'block_reward': 50,
