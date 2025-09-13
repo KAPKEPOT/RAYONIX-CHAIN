@@ -5,6 +5,8 @@ from typing import List, Dict, Set, Tuple, Optional
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
+# Add this import at the top
+from cryptography.exceptions import InvalidSignature
 
 class UTXO:
     def __init__(self, tx_hash: str, output_index: int, address: str, amount: int):
@@ -52,92 +54,6 @@ class UTXO:
                 return current_time >= self.locktime
         
         return True
-
-class UTXOSet:
-    def __init__(self):
-        self.utxos: Dict[str, UTXO] = {}
-        self.address_utxos: Dict[str, Set[str]] = {}
-        self.spent_utxos: Dict[str, UTXO] = {}
-        
-    def add_utxo(self, utxo: UTXO):
-        utxo_id = utxo.id
-        self.utxos[utxo_id] = utxo
-        
-        if utxo.address not in self.address_utxos:
-            self.address_utxos[utxo.address] = set()
-        self.address_utxos[utxo.address].add(utxo_id)
-    
-    def spend_utxo(self, utxo_id: str):
-        if utxo_id in self.utxos:
-            utxo = self.utxos[utxo_id]
-            utxo.spent = True
-            
-            # Move to spent UTXOs
-            self.spent_utxos[utxo_id] = utxo
-            del self.utxos[utxo_id]
-            
-            # Remove from address index
-            if utxo.address in self.address_utxos:
-                self.address_utxos[utxo.address].discard(utxo_id)
-                if not self.address_utxos[utxo.address]:
-                    del self.address_utxos[utxo.address]
-    
-    def get_utxos_for_address(self, address: str, current_block_height: int = 0, 
-                             current_time: int = 0) -> List[UTXO]:
-        utxo_ids = self.address_utxos.get(address, set())
-        return [
-            self.utxos[uid] for uid in utxo_ids 
-            if self.utxos[uid].is_spendable(current_block_height, current_time)
-        ]
-    
-    def get_balance(self, address: str, current_block_height: int = 0, 
-                   current_time: int = 0) -> int:
-        utxos = self.get_utxos_for_address(address, current_block_height, current_time)
-        return sum(utxo.amount for utxo in utxos)
-    
-    def find_spendable_utxos(self, address: str, amount: int, 
-                            current_block_height: int = 0, current_time: int = 0) -> Tuple[List[UTXO], int]:
-        utxos = self.get_utxos_for_address(address, current_block_height, current_time)
-        utxos.sort(key=lambda x: x.amount, reverse=True)
-        
-        total = 0
-        selected = []
-        
-        for utxo in utxos:
-            if total >= amount:
-                break
-            selected.append(utxo)
-            total += utxo.amount
-        
-        return selected, total
-    
-    def get_utxo(self, utxo_id: str) -> Optional[UTXO]:
-        return self.utxos.get(utxo_id) or self.spent_utxos.get(utxo_id)
-    
-    def to_dict(self) -> Dict:
-        return {
-            'utxos': {uid: utxo.to_dict() for uid, utxo in self.utxos.items()},
-            'spent_utxos': {uid: utxo.to_dict() for uid, utxo in self.spent_utxos.items()},
-            'address_utxos': {addr: list(utxo_set) for addr, utxo_set in self.address_utxos.items()}
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict) -> 'UTXOSet':
-        utxo_set = cls()
-        
-        # Load UTXOs
-        for uid, utxo_data in data.get('utxos', {}).items():
-            utxo_set.utxos[uid] = UTXO.from_dict(utxo_data)
-        
-        # Load spent UTXOs
-        for uid, utxo_data in data.get('spent_utxos', {}).items():
-            utxo_set.spent_utxos[uid] = UTXO.from_dict(utxo_data)
-        
-        # Load address index
-        for addr, utxo_ids in data.get('address_utxos', {}).items():
-            utxo_set.address_utxos[addr] = set(utxo_ids)
-        
-        return utxo_set
 
 class Transaction:
     def __init__(self, inputs: List[Dict], outputs: List[Dict], locktime: int = 0, version: int = 1):
@@ -257,7 +173,7 @@ class Transaction:
         tx.hash = data['hash']
         return tx
     
-    def calculate_fee(self, utxo_set: UTXOSet) -> int:
+    def calculate_fee(self, utxo_set: 'UTXOSet') -> int:
         total_input = 0
         total_output = sum(output['amount'] for output in self.outputs)
         
@@ -268,3 +184,117 @@ class Transaction:
                 total_input += utxo.amount
         
         return total_input - total_output
+
+class UTXOSet:
+    def __init__(self):
+        self.utxos: Dict[str, UTXO] = {}
+        self.address_utxos: Dict[str, Set[str]] = {}
+        self.spent_utxos: Dict[str, UTXO] = {}
+        
+    def add_utxo(self, utxo: UTXO):
+        utxo_id = utxo.id
+        self.utxos[utxo_id] = utxo
+        
+        if utxo.address not in self.address_utxos:
+            self.address_utxos[utxo.address] = set()
+        self.address_utxos[utxo.address].add(utxo_id)
+    
+    def spend_utxo(self, utxo_id: str):
+        if utxo_id in self.utxos:
+            utxo = self.utxos[utxo_id]
+            utxo.spent = True
+            
+            # Move to spent UTXOs
+            self.spent_utxos[utxo_id] = utxo
+            del self.utxos[utxo_id]
+            
+            # Remove from address index
+            if utxo.address in self.address_utxos:
+                self.address_utxos[utxo.address].discard(utxo_id)
+                if not self.address_utxos[utxo.address]:
+                    del self.address_utxos[utxo.address]
+    
+    def get_utxos_for_address(self, address: str, current_block_height: int = 0, 
+                             current_time: int = 0) -> List[UTXO]:
+        utxo_ids = self.address_utxos.get(address, set())
+        return [
+            self.utxos[uid] for uid in utxo_ids 
+            if self.utxos[uid].is_spendable(current_block_height, current_time)
+        ]
+    
+    def get_balance(self, address: str, current_block_height: int = 0, 
+                   current_time: int = 0) -> int:
+        utxos = self.get_utxos_for_address(address, current_block_height, current_time)
+        return sum(utxo.amount for utxo in utxos)
+    
+    def find_spendable_utxos(self, address: str, amount: int, 
+                            current_block_height: int = 0, current_time: int = 0) -> Tuple[List[UTXO], int]:
+        utxos = self.get_utxos_for_address(address, current_block_height, current_time)
+        utxos.sort(key=lambda x: x.amount, reverse=True)
+        
+        total = 0
+        selected = []
+        
+        for utxo in utxos:
+            if total >= amount:
+                break
+            selected.append(utxo)
+            total += utxo.amount
+        
+        return selected, total
+    
+    def get_utxo(self, utxo_id: str) -> Optional[UTXO]:
+        return self.utxos.get(utxo_id) or self.spent_utxos.get(utxo_id)
+    
+    def process_transaction(self, transaction: Transaction, block_height: int = 0):
+        """
+        Process a transaction by spending inputs and creating new UTXOs from outputs.
+        
+        Args:
+            transaction: The transaction to process
+            block_height: Current block height for locktime validation
+        """
+        # Spend the inputs
+        for tx_input in transaction.inputs:
+            utxo_id = f"{tx_input['tx_hash']}:{tx_input['output_index']}"
+            self.spend_utxo(utxo_id)
+        
+        # Create new UTXOs from outputs
+        for i, output in enumerate(transaction.outputs):
+            utxo = UTXO(
+                tx_hash=transaction.hash,
+                output_index=i,
+                address=output['address'],
+                amount=output['amount']
+            )
+            
+            # Set locktime if specified in output
+            if 'locktime' in output:
+                utxo.locktime = output['locktime']
+                
+            self.add_utxo(utxo)
+    
+    def to_dict(self) -> Dict:
+        return {
+            'utxos': {uid: utxo.to_dict() for uid, utxo in self.utxos.items()},
+            'spent_utxos': {uid: utxo.to_dict() for uid, utxo in self.spent_utxos.items()},
+            'address_utxos': {addr: list(utxo_set) for addr, utxo_set in self.address_utxos.items()}
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'UTXOSet':
+        utxo_set = cls()
+        
+        # Load UTXOs
+        for uid, utxo_data in data.get('utxos', {}).items():
+            utxo_set.utxos[uid] = UTXO.from_dict(utxo_data)
+        
+        # Load spent UTXOs
+        for uid, utxo_data in data.get('spent_utxos', {}).items():
+            utxo_set.spent_utxos[uid] = UTXO.from_dict(utxo_data)
+        
+        # Load address index
+        for addr, utxo_ids in data.get('address_utxos', {}).items():
+            utxo_set.address_utxos[addr] = set(utxo_ids)
+        
+        return utxo_set
