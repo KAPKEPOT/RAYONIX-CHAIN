@@ -20,6 +20,8 @@ from index_manager import IndexManager, IndexConfig
 #self.config_manager = get_config()
 #port = self.config_manager.get('network.listen_port')
 
+SHARED_ENCRYPTION_KEY = "rayonix_shared_db_key_2024"
+
 class Block:
     def __init__(self, index: int, previous_hash: str, transactions: List[Transaction], 
                  validator: str, timestamp: float = None, nonce: int = 0, 
@@ -84,6 +86,7 @@ class Block:
 
 class Blockchain:
     def __init__(self, db_path: str = './blockchain_db'):
+        db_config = DatabaseConfig(encryption_key=SHARED_ENCRYPTION_KEY)
         self.db = AdvancedDatabase(db_path)
         self.index_manager = IndexManager(self.db) 
         self.utxo_set = UTXOSet()
@@ -107,8 +110,6 @@ class Blockchain:
         self.index_manager.create_index('blocks_by_validator', lambda b: b.validator)
         self.index_manager.create_index('transactions_by_address', lambda tx: tx['from'])
         self.index_manager.create_index('transactions_by_address', lambda tx: tx['to'])
-
-
 
     def _load_chain(self):
         genesis_data = self.db.get('genesis_block')
