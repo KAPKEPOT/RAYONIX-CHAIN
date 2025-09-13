@@ -150,7 +150,7 @@ class WalletState:
     total_sent: int
     security_score: int
 
-class AdvancedWallet:
+class RayonixWallet:
     """Advanced cryptographic wallet with enterprise-grade features"""
     
     def __init__(self, config: Optional[WalletConfig] = None, wallet_id: Optional[str] = None):
