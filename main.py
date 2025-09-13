@@ -932,10 +932,32 @@ Available Commands:
     
     def _show_contracts(self):
         """Show deployed contracts"""
-        contracts = self.contract_manager.get_all_contracts()
-        print(f"Deployed Contracts ({len(contracts)}):")
-        for address, contract in contracts.items():
-            print(f"  {address}: {contract.contract_type.name}")
+        try:
+        	contracts = self.contract_manager.get_all_contracts()
+        	
+        	# Ensure contracts is always a list
+        	if contracts is None:
+        		contracts = []
+        		
+        	print(f"Deployed Contracts ({len(contracts)}):")
+        	
+        	if not contracts:
+        		print("  No contracts deployed")
+        		return
+        	
+        	# contracts is a list, not a dictionary, so iterate directly
+        	for contract in contracts:
+        		print(f"  Address: {contract['address']}")
+        		print(f"    Creator: {contract['creator']}")
+        		print(f"    Type: {contract['type']}")
+        		print(f"    Balance: {contract['balance']}")
+        		print(f"    State: {contract['state']}")
+        		print(f"    Created: {time.ctime(contract['created_at'])}")
+        		print(f"    Executions: {contract['execution_count']}")
+        		print()
+        except Exception as e:
+        	print(f"Error displaying contracts: {e}")
+        	traceback.print_exc()
     
     def _show_validator_info(self):
         """Show validator information"""
