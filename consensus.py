@@ -307,7 +307,42 @@ class ProofOfStake:
         # Generate a dummy public key for compatibility
         dummy_public_key = "dummy_public_key_" + address
         return self.register_validator(address, dummy_public_key, stake, 0.1)
-    
+        
+    def is_validator(self, address: str) -> bool:
+    	"""Check if an address is a registered validator"""
+    	with self.validator_lock:
+    		return (address in self.validators and 
+               self.validators[address].status == ValidatorStatus.ACTIVE)     
+                  
+    def should_validate(self, validator_address: str, current_time: float) -> bool:
+    	"""Check if it's this validator's turn to create a block"""
+    	if not self.is_validator(validator_address):
+    		return False
+    	# Simple round-robin validation for now
+    	# In a real implementation, this would use stake-weighted probability
+    	with self.validator_lock:
+    		if not self.active_validators:
+    			return False
+    			
+    		validator_index = -1
+    		for i, validator in enumerate(self.active_validators):
+    			if validator.address == validator_address:
+    				validator_index = i
+    				break
+    				
+    		if validator_index == -1:
+    			return False
+    			
+    		# Simple time-based round robin
+    		current_slot = int(current_time) // 30
+    		return current_slot % len(self.active_validators) == validator_index
+    		
+    def get_validator_public_key(self, validator_address: str) -> Optional[str]:
+        """Get public key for a validator"""
+        with self.validator_lock:
+            validator = self.validators.get(validator_address)
+            return validator.public_key if validator else None
+    		    		
     def update_total_stake(self):
         """Update total stake calculation"""
         with self.validator_lock:
