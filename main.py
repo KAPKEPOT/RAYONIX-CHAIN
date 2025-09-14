@@ -210,6 +210,32 @@ class RayonixNode:
                 payload=transaction
             )
             await self.network.broadcast_message(message)
+
+    async def _staking_loop(self):
+    	"""Background task for staking operations"""
+    	while self.running and not self.shutdown_event.is_set():
+    		try:
+    			if self.wallet and self.rayonix_coin:
+    				# Check if we have enough balance to stake
+    				balance_info = self.wallet.get_balance()
+    				if balance_info.total >= 1000:
+    					# Get the first address from wallet
+    					from_address = list(self.wallet.addresses.keys())[0]
+    					# Try to stake a portion of available balance
+    					stake_amount = min(balance_info.available // 2, 10000)
+    					if stake_amount >= 1000:
+    						try:
+    							result = self.rayonix_coin.register_validator(stake_amount)
+    							if result:
+    								logger.info(f"Staked {stake_amount} RXY for validation")
+    						except Exception as stake_error:
+    							logger.error(f"Error in staking: {stake_error}")
+    			await asyncio.sleep(60)  # Check every minute
+    		except Exception as e:
+    		    logger.error(f"Staking loop error: {e}")
+    		    await asyncio.sleep(30)		
+    				
+             
     
     async def start(self):
         """Start the node"""
