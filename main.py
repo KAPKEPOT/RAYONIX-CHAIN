@@ -11,7 +11,7 @@ import logging
 import signal
 import threading
 from dataclasses import asdict
-import readline  # For better input handling
+import readline
 
 # Configure logging
 logging.basicConfig(
@@ -24,32 +24,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger("RayonixNode")
 
-# Import all components
-from blockchain import Blockchain, Block, Transaction
-from wallet import RayonixWallet,WalletConfig, WalletType, AddressType, create_new_wallet, validate_address
+# Import rayonix_coin instead of blockchain
+from rayonix_coin import RayonixCoin, create_rayonix_network, validate_rayonix_address
+from wallet import RayonixWallet, WalletConfig, WalletType, AddressType, create_new_wallet
 from p2p_network import AdvancedP2PNetwork, NodeConfig, NetworkType, ProtocolType, MessageType
-from consensus import ProofOfStake, Validator
 from smart_contract import ContractManager, SmartContract
 from database import AdvancedDatabase, DatabaseConfig
-from utxo import UTXOSet, UTXO
 from merkle import MerkleTree
-from consensus import ProofOfStake
 from config import get_config
-from index_manager import IndexManager, IndexConfig
 
 class RayonixNode:
-    """Complete RAYONIX blockchain node with all components integrated"""
+    """Complete RAYONIX blockchain node using rayonix_coin.py as backend"""
     
     def __init__(self, config_path: Optional[str] = None):
         self.config = self._load_config(config_path)
         self.running = False
         self.shutdown_event = threading.Event()
         
-        # Initialize components
-        self.blockchain = None
+        # Initialize components - now using RayonixCoin as main backend
+        self.rayonix_coin = None
         self.wallet = None
         self.network = None
-        self.consensus = None
         self.contract_manager = None
         self.database = None        
         
@@ -101,35 +96,19 @@ class RayonixNode:
             data_dir = Path(self.config['data_dir'])
             data_dir.mkdir(exist_ok=True)
             
-            # Initialize database
-            db_config = DatabaseConfig(
-                db_type=self.config['db_type'],
-                compression=self.config['compression'],
-                encryption=self.config['encryption']
+            # Initialize RayonixCoin (replaces Blockchain)
+            self.rayonix_coin = RayonixCoin(
+                network_type=self.config['network'],
+                data_dir=str(data_dir)
             )
-            self.database = AdvancedDatabase(str(data_dir / 'blockchain_db'), db_config)
-            
-            # Initialize blockchain
-            self.blockchain = Blockchain(str(data_dir / 'blockchain_db'))
             
             # Initialize wallet
             wallet_file = data_dir / 'wallet.json'
             if wallet_file.exists():
-                self.wallet = load_existing_wallet()
+                # Load existing wallet logic would go here
+                pass
             else:
                 logger.info("No wallet found. Create one with 'create-wallet' command.")
-            
-            # Initialize consensus
-            self.consensus = ProofOfStake(
-                min_stake=1000,
-                jail_duration=3600,
-                slash_percentage=0.01,
-                epoch_blocks=100,
-                max_validators=100
-            )
-            
-            # Initialize contract manager
-            self.contract_manager = ContractManager(str(data_dir / 'contracts_db'))
             
             # Initialize network if enabled
             if self.config.get('network_enabled', True):
@@ -158,17 +137,13 @@ class RayonixNode:
             
             # Register message handlers
             self.network.register_message_handler(
-            MessageType.BLOCK, 
-            self._handle_block_message
-        )
+                MessageType.BLOCK, 
+                self._handle_block_message
+            )
             self.network.register_message_handler(
-            MessageType.TRANSACTION,
-            self._handle_transaction_message
-        )
-            self.network.register_message_handler(
-            MessageType.CONSENSUS,
-            self._handle_consensus_message
-        )
+                MessageType.TRANSACTION,
+                self._handle_transaction_message
+            )
             
             logger.info("Network initialized")
             
@@ -180,15 +155,14 @@ class RayonixNode:
         """Handle incoming block messages"""
         try:
             block_data = message.payload
-            block = Block.from_dict(block_data)
             
-            # Validate and add to blockchain
-            if self.blockchain.validate_block(block):
-                self.blockchain.add_block(block)
-                logger.info(f"New block received: #{block.index}")
+            # RayonixCoin uses dict blocks, not Block objects
+            if self.rayonix_coin._validate_block(block_data):
+                self.rayonix_coin._add_block(block_data)
+                logger.info(f"New block received: #{block_data['height']}")
                 
                 # Broadcast to other peers
-                await self._broadcast_block(block)
+                await self._broadcast_block(block_data)
                 
         except Exception as e:
             logger.error(f"Error handling block: {e}")
@@ -197,45 +171,35 @@ class RayonixNode:
         """Handle incoming transaction messages"""
         try:
             tx_data = message.payload
-            transaction = Transaction.from_dict(tx_data)
             
             # Add to mempool
-            if self.blockchain.add_transaction(transaction):
-                logger.info(f"New transaction received: {transaction.hash[:16]}...")
+            if self.rayonix_coin._validate_transaction(tx_data):
+                self.rayonix_coin._add_to_mempool(tx_data)
+                logger.info(f"New transaction received: {tx_data['hash'][:16]}...")
                 
                 # Broadcast to other peers
-                await self._broadcast_transaction(transaction)
+                await self._broadcast_transaction(tx_data)
                 
         except Exception as e:
             logger.error(f"Error handling transaction: {e}")
     
-    async def _handle_consensus_message(self, connection_id: str, message: Any):
-        """Handle consensus messages"""
-        try:
-            # Process consensus messages (votes, proposals, etc.)
-            consensus_data = message.payload
-            # Implementation would handle various consensus messages
-            
-        except Exception as e:
-            logger.error(f"Error handling consensus message: {e}")
-    
-    async def _broadcast_block(self, block: Block):
+    async def _broadcast_block(self, block: Dict):
         """Broadcast block to network"""
         if self.network:
             message = self.network.NetworkMessage(
                 message_id=str(time.time()),
                 message_type=self.network.MessageType.BLOCK,
-                payload=block.to_dict()
+                payload=block
             )
             await self.network.broadcast_message(message)
     
-    async def _broadcast_transaction(self, transaction: Transaction):
+    async def _broadcast_transaction(self, transaction: Dict):
         """Broadcast transaction to network"""
         if self.network:
             message = self.network.NetworkMessage(
                 message_id=str(time.time()),
                 message_type=self.network.MessageType.TRANSACTION,
-                payload=transaction.to_dict()
+                payload=transaction
             )
             await self.network.broadcast_message(message)
     
@@ -283,8 +247,9 @@ class RayonixNode:
         if self.network:
             await self.network.stop()
         
-        # Save state
-        self._save_state()
+        # Save state through rayonix_coin
+        if self.rayonix_coin:
+            self.rayonix_coin.close()
         
         logger.info("RAYONIX Node stopped gracefully")
     
@@ -306,7 +271,7 @@ class RayonixNode:
     
     async def _download_blocks(self):
         """Download missing blocks from peers"""
-        current_height = len(self.blockchain.chain)
+        current_height = len(self.rayonix_coin.blockchain)
         
         # Get highest block from peers
         highest_block = await self._get_highest_block()
@@ -329,8 +294,8 @@ class RayonixNode:
     
     async def _get_highest_block(self) -> int:
         """Get highest block height from peers"""
-        # Implementation would query multiple peers and return consensus height
-        return len(self.blockchain.chain)  # Placeholder
+        # Implementation would query multiple peers
+        return len(self.rayonix_coin.blockchain)  # Placeholder
     
     async def _download_block_batch(self, start: int, end: int):
         """Download batch of blocks"""
@@ -344,119 +309,30 @@ class RayonixNode:
                 if self.network:
                     self.sync_state['peers_connected'] = len(self.network.connections)
                 
-                # Check network health
-                network_health = await self._check_network_health()
-                if network_health < 0.5:
-                    logger.warning("Network health degraded")
-                
                 await asyncio.sleep(30)
                 
             except Exception as e:
                 logger.error(f"Peer monitoring error: {e}")
                 await asyncio.sleep(60)
     
-    async def _check_network_health(self) -> float:
-        """Check overall network health"""
-        # Implementation would check peer connectivity, latency, etc.
-        return 1.0  # Placeholder
-    
     async def _process_mempool(self):
         """Process transactions in mempool"""
         while self.running:
             try:
-                # Check if we should create a block
-                if (self.config['mining_enabled'] or 
-                    (self.config['staking_enabled'] and self.wallet and 
-                     await self._is_validator())):
-                    
-                    # Create and broadcast new block
-                    block = await self._create_new_block()
-                    if block:
-                        self.blockchain.add_block(block)
-                        await self._broadcast_block(block)
-                
+                # RayonixCoin handles its own block creation internally
+                # We just need to ensure network is connected
                 await asyncio.sleep(5)
                 
             except Exception as e:
                 logger.error(f"Mempool processing error: {e}")
                 await asyncio.sleep(10)
     
-    async def _is_validator(self) -> bool:
-        """Check if current node is a validator"""
-        if not self.wallet:
-            return False
-        
-        # Check if wallet has enough stake and is registered
-        balance = self.blockchain.get_balance(self.wallet.address)
-        return balance >= self.consensus.min_stake
-    
-    async def _create_new_block(self) -> Optional[Block]:
-        """Create new block with transactions from mempool"""
-        try:
-            # Get validator address
-            validator_address = self.wallet.address if self.wallet else "unknown"
-            
-            # Select transactions for block
-            transactions = self.blockchain.mempool[:1000]  # Limit block size
-            
-            # Create block
-            new_block = Block(
-                index=len(self.blockchain.chain),
-                previous_hash=self.blockchain.get_latest_block().hash,
-                transactions=transactions,
-                validator=validator_address
-            )
-            
-            # For PoW, would mine here. For PoS, validator signs.
-            if self.config['mining_enabled']:
-                # Mine block (Proof-of-Work)
-                self.blockchain.mine_block(new_block, validator_address)
-            else:
-                # Sign block (Proof-of-Stake)
-                new_block.validator_signature = await self._sign_block(new_block)
-            
-            return new_block
-            
-        except Exception as e:
-            logger.error(f"Error creating block: {e}")
-            return None
-    
-    async def _sign_block(self, block: Block) -> str:
-        """Sign block with validator's private key"""
-        # Implementation would use wallet's private key to sign block
-        return "signed_signature"  # Placeholder
-    
-    async def _staking_loop(self):
-        """Proof-of-Stake validation loop"""
-        while self.running:
-            try:
-                if await self._is_validator():
-                    # Participate in consensus
-                    await self._participate_consensus()
-                
-                await asyncio.sleep(15)
-                
-            except Exception as e:
-                logger.error(f"Staking error: {e}")
-                await asyncio.sleep(30)
-    
-    async def _participate_consensus(self):
-        """Participate in consensus protocol"""
-        # Implementation would handle block proposal and voting
-        pass
-    
     def _save_state(self):
         """Save node state to disk"""
         try:
-            # Save wallet if exists
-            if self.wallet:
-                self.wallet.save_to_file()
-            
-            # Save blockchain state
-            self.blockchain._save_state()
-            
-            # Save contracts state
-            self.contract_manager.save_contracts()
+            # RayonixCoin handles its own state saving
+            if hasattr(self.rayonix_coin, 'close'):
+                self.rayonix_coin.close()
             
             logger.info("Node state saved successfully")
             
@@ -487,9 +363,6 @@ class RayonixNode:
                 
             elif command == 'send':
                 self._send_transaction(args)
-                
-            elif command == 'mine':
-                await self._mine_block()
                 
             elif command == 'stake':
                 await self._stake_tokens(args)
@@ -526,6 +399,7 @@ class RayonixNode:
                 
             elif command == 'sync-status':
                 self._show_sync_status()
+                
             elif command == 'wallet-info':
                 self._show_wallet_info()
                 
@@ -547,11 +421,10 @@ Available Commands:
   exit                 - Stop the node and exit
   status               - Show node status
   create-wallet        - Create a new wallet
-  load-wallet <words>   - Load wallet from mnemonic phrase
+  load-wallet <words>  - Load wallet from mnemonic phrase
   wallet-info          - Show loaded wallet information
   get-balance [addr]   - Get wallet or address balance
   send <to> <amount>   - Send coins to address
-  mine                 - Mine a block (if mining enabled)
   stake <amount>       - Stake tokens for validation
   deploy-contract      - Deploy a smart contract
   call-contract        - Call a contract function
@@ -572,10 +445,9 @@ Available Commands:
         status = {
             'Running': self.running,
             'Network': self.config['network'],
-            'Block Height': len(self.blockchain.chain),
+            'Block Height': len(self.rayonix_coin.blockchain),
             'Connected Peers': self.sync_state['peers_connected'],
             'Syncing': self.sync_state['syncing'],
-            'Mining Enabled': self.config['mining_enabled'],
             'Staking Enabled': self.config['staking_enabled'],
             'Wallet Loaded': self.wallet is not None
         }
@@ -593,25 +465,24 @@ Available Commands:
             # Create wallet instance from the mnemonic
             wallet = RayonixWallet(self.database, self.config['network'])
             if wallet.create_from_mnemonic(mnemonic_phrase):
-            	self.wallet = wallet
-            	print("✓ New wallet created successfully!")
-            	print(f"  Mnemonic: {mnemonic_phrase}")
-            	print("  🔐 IMPORTANT: Save this mnemonic phrase securely!")
-            	print("  🔐 You will need it to restore your wallet!")
-            	
-            	# Show the first address
-            	if hasattr(wallet, 'addresses') and wallet.addresses:
-            		first_address = list(wallet.addresses.keys())[0]
-            		print(f"  Address: {first_address}")
-            		
-            	else:
-            		# Generate first address
-            		address_info = wallet.derive_address(0, False)
-            		print(f"  Address: {address_info.address}")
+                self.wallet = wallet
+                print("✓ New wallet created successfully!")
+                print(f"  Mnemonic: {mnemonic_phrase}")
+                print("  🔐 IMPORTANT: Save this mnemonic phrase securely!")
+                print("  🔐 You will need it to restore your wallet!")
+                
+                # Show the first address
+                if hasattr(wallet, 'addresses') and wallet.addresses:
+                    first_address = list(wallet.addresses.keys())[0]
+                    print(f"  Address: {first_address}")
+                else:
+                    # Generate first address
+                    address_info = wallet.derive_address(0, False)
+                    print(f"  Address: {address_info.address}")
             else:
-            	print("✗ Failed to create wallet from mnemonic")
+                print("✗ Failed to create wallet from mnemonic")
         except Exception as e:
-        	print(f"✗ Error creating wallet: {e}")
+            print(f"✗ Error creating wallet: {e}")
  
     def _load_wallet(self, args: List[str]):
         """Load wallet from file"""
@@ -619,120 +490,89 @@ Available Commands:
             print("Usage: load-wallet <mnemonic_phrase>")
             return
             
-        # Join all arguments as the mnemonic phrase
         mnemonic_phrase = ' '.join(args)
         try:
-                	
-        	# Create new wallet instance
-        	wallet = RayonixWallet(self.database, self.config['network'])
-        	
-        	# Load wallet from mnemonic
-        	if wallet.create_from_mnemonic(mnemonic_phrase):
-        		self.wallet = wallet
-        		print("✓ Wallet loaded successfully from mnemonic!")
-        		
-        		# Show wallet info
-        		if hasattr(wallet, 'addresses') and wallet.addresses:
-        			addresses = list(wallet.addresses.keys())
-        			print(f"  Addresses loaded: {len(addresses)}")
-        			print(f"  Primary address: {addresses[0]}")
-        			
-        			# Show balance for primary address
-        			try:
-        				balance = self.blockchain.get_balance(addresses[0])
-        				print(f"  Balance: {balance} RXY")
-        			except:
-        				print(f"  Balance: Unable to check (blockchain not ready)")
-        		# Also show the master public key if availabl
-        		if hasattr(wallet, 'get_master_xpub'):
-        			xpub = wallet.get_master_xpub()
-        			if xpub:
-        				print(f"  Master xpub: {xpub[:30]}...")
-        		else:
-        			print("✗ Failed to load wallet. Invalid mnemonic phrase.")
-                    			
+            wallet = RayonixWallet(self.database, self.config['network'])
+            
+            if wallet.create_from_mnemonic(mnemonic_phrase):
+                self.wallet = wallet
+                print("✓ Wallet loaded successfully from mnemonic!")
+                
+                if hasattr(wallet, 'addresses') and wallet.addresses:
+                    addresses = list(wallet.addresses.keys())
+                    print(f"  Addresses loaded: {len(addresses)}")
+                    print(f"  Primary address: {addresses[0]}")
+                    
+                    try:
+                        balance = self.rayonix_coin.get_balance(addresses[0])
+                        print(f"  Balance: {balance} RXY")
+                    except:
+                        print("  Balance: Unable to check (blockchain not ready)")
+            else:
+                print("✗ Failed to load wallet. Invalid mnemonic phrase.")
         except Exception as e:
-        	print(f"✗ Error loading wallet: {e}")
-        	print("Make sure the mnemonic phrase is correct (usually 12, 18, or 24 words)")
-        	
-        	
+            print(f"✗ Error loading wallet: {e}")
+            print("Make sure the mnemonic phrase is correct (usually 12, 18, or 24 words)")
+            
     def _show_wallet_info(self):
-      """Show information about the currently loaded wallet"""
-      if not self.wallet:
-      	print("No wallet loaded. Use 'create-wallet' or 'load-wallet'")
-      	return
-      print("Wallet Information:")
-      print(f"  Loaded: Yes")
-      
-      if hasattr(self.wallet, 'addresses') and self.wallet.addresses:
-              addresses = list(self.wallet.addresses.keys())
-              print(f"  Addresses: {len(addresses)}")
-              print(f"  Primary: {addresses[0]}")
-              
-              
-              # Show balances
-              total_balance = 0
-              print("  Balances:")
-              for i, address in enumerate(addresses[:5]):
-                            	
-              	try:
-              		balance = self.blockchain.get_balance(address)
-              		total_balance += balance
-              		change_indicator = "(change)" if self.wallet.addresses[address].is_change else ""
-              		print(f"    {address}: {balance} RXY {change_indicator}")
-              		
-              	except:
-              		print(f"    {address}: Unable to check balance")
-              print(f"  Total Balance: {total_balance} RXY")
-              if hasattr(self.wallet, 'get_master_xpub'):
-                  xpub = self.wallet.get_master_xpub()
-                  if xpub:
-                        print(f"  Master xpub: {xpub[:30]}...")                      
-                        
-       
+        """Show information about the currently loaded wallet"""
+        if not self.wallet:
+            print("No wallet loaded. Use 'create-wallet' or 'load-wallet'")
+            return
+        
+        print("Wallet Information:")
+        print(f"  Loaded: Yes")
+        
+        if hasattr(self.wallet, 'addresses') and self.wallet.addresses:
+            addresses = list(self.wallet.addresses.keys())
+            print(f"  Addresses: {len(addresses)}")
+            print(f"  Primary: {addresses[0]}")
+            
+            # Show balances
+            total_balance = 0
+            print("  Balances:")
+            for i, address in enumerate(addresses[:5]):
+                try:
+                    balance = self.rayonix_coin.get_balance(address)
+                    total_balance += balance
+                    change_indicator = "(change)" if self.wallet.addresses[address].is_change else ""
+                    print(f"    {address}: {balance} RXY {change_indicator}")
+                except:
+                    print(f"    {address}: Unable to check balance")
+            
+            print(f"  Total Balance: {total_balance} RXY")
+            
+            if hasattr(self.wallet, 'get_master_xpub'):
+                xpub = self.wallet.get_master_xpub()
+                if xpub:
+                    print(f"  Master xpub: {xpub[:30]}...")
     
     def _get_balance(self, args: List[str]):
         """Get balance for address or loaded wallet"""
         try:
-        	if args:
-        		# Specific address requested
-        		address = args[0]
-        		balance = self.blockchain.get_balance(address)
-        		print(f"Balance for {address}: {balance} RXY")
-        	elif self.wallet and self.wallet.addresses:
-        		# Show balances for all addresses in wallet
-        		print("Wallet Balances:")
-        		total_balance = 0
-                        		
-        		for i, (address, address_info) in enumerate(self.wallet.addresses.items()):
-        		    balance = self.blockchain.get_balance(address)
-        		    total_balance += balance
-        		    change_indicator = "(change)" if address_info.is_change else "(receiving)"
-        		    print(f"     Balance: {balance} RXY")
-        		    print(f"     Balance: {balance} RXY")
-        		    print(f"     Derivation: {address_info.derivation_path}")
-        		    
-        		print(f"Total Wallet Balance: {total_balance} RXY")
-        		
-        	else:
-        	    print("No address specified and no wallet loaded")
-        	    
+            if args:
+                # Specific address requested
+                address = args[0]
+                balance = self.rayonix_coin.get_balance(address)
+                print(f"Balance for {address}: {balance} RXY")
+            elif self.wallet and self.wallet.addresses:
+                # Show balances for all addresses in wallet
+                print("Wallet Balances:")
+                total_balance = 0
+                
+                for i, (address, address_info) in enumerate(self.wallet.addresses.items()):
+                    balance = self.rayonix_coin.get_balance(address)
+                    total_balance += balance
+                    change_indicator = "(change)" if address_info.is_change else "(receiving)"
+                    print(f"  {address}: {balance} RXY {change_indicator}")
+                
+                print(f"Total Wallet Balance: {total_balance} RXY")
+            else:
+                print("No address specified and no wallet loaded")
+                
         except Exception as e:
             print(f"Error getting balance: {e}")
-            traceback.print_exc()
-        
-    def _show_wallet_addresses(self, args: List[str]):
-    	"""Show addresses in the loaded wallet"""
-    	if not self.wallet or not self.wallet.addresses:
-    		print("No wallet loaded or no addresses in wallet")
-    		return
-    	limit = int(args[0]) if args else 10
-    	addresses = list(self.wallet.addresses.keys())[:limit]
-    	print(f"Wallet Addresses ({len(addresses)} shown):")
-    	for i, address in enumerate(addresses):
-    	      address_info = self.wallet.addresses[address]
-    	      print(f"  {i}: {address} (Index: {address_info.index}, Change: {address_info.is_change})")
-           
+    
     def _send_transaction(self, args: List[str]):
         """Send transaction"""
         if not self.wallet or not self.wallet.addresses:
@@ -746,42 +586,24 @@ Available Commands:
         to_address = args[0]
         amount = int(args[1])
         fee = int(args[2]) if len(args) > 2 else 1
+        
         # Get the first address from wallet as sender
         from_address = list(self.wallet.addresses.keys())[0]
         
-        # Create and send transaction
+        # Create and send transaction using rayonix_coin
         try:
-        	transaction = self.blockchain.create_transaction(
-        	    from_address=from_address,
-        	    to_address=to_address,
-        	    amount=amount,
-        	    fee=fee
-        	)
-        	# Sign the transaction with wallet
-        	signed_tx = self.wallet.sign_transaction(transaction)
-        	# Add to blockchain and broadcast
-        	if self.blockchain.add_transaction(signed_tx):
-        		print(f"Transaction sent successfully!")
-        		print(f"TXID: {signed_tx['hash'][:16]}...")
-        	else:
-        		print("Failed to send transaction")
-        		
+            transaction = self.rayonix_coin.create_transaction(
+                from_address=from_address,
+                to_address=to_address,
+                amount=amount,
+                fee=fee
+            )
+            
+            print(f"Transaction sent successfully!")
+            print(f"TXID: {transaction['hash'][:16]}...")
+            
         except Exception as e:
-        	print(f"Error sending transaction: {e}")
- 
-    async def _mine_block(self):
-        """Mine a block"""
-        if not self.config['mining_enabled']:
-            print("Mining is not enabled")
-            return
-        
-        block = await self._create_new_block()
-        if block:
-            self.blockchain.add_block(block)
-            print(f"Block mined: #{block.index}")
-            await self._broadcast_block(block)
-        else:
-            print("Failed to mine block")
+            print(f"Error sending transaction: {e}")
     
     async def _stake_tokens(self, args: List[str]):
         """Stake tokens for validation"""
@@ -789,16 +611,16 @@ Available Commands:
             print("No wallet loaded")
             return
         
-        amount = int(args[0]) if args else self.blockchain.get_balance(self.wallet.address)
+        amount = int(args[0]) if args else self.rayonix_coin.get_balance(self.wallet.address)
         
-        if self.consensus.register_validator(
-            self.wallet.address,
-            self.wallet.public_key,
-            amount
-        ):
-            print(f"Staked {amount} RXY for validation")
-        else:
-            print("Failed to stake tokens")
+        try:
+            result = self.rayonix_coin.register_validator(amount)
+            if result:
+                print(f"Staked {amount} RXY for validation")
+            else:
+                print("Failed to stake tokens")
+        except Exception as e:
+            print(f"Error staking tokens: {e}")
     
     async def _deploy_contract(self, args: List[str]):
         """Deploy smart contract"""
@@ -807,38 +629,20 @@ Available Commands:
             return
         
         if len(args) < 1:
-            print("Usage: deploy-contract <contract_type> [params...]")
+            print("Usage: deploy-contract <contract_code> [initial_balance]")
             return
         
-        contract_type = args[0].upper()
-        params = args[1:]
+        contract_code = args[0]
+        initial_balance = int(args[1]) if len(args) > 1 else 0
         
-        if contract_type == "ERC20":
-            if len(params) < 3:
-                print("Usage: deploy-contract ERC20 <name> <symbol> <supply>")
-                return
-            
-            name, symbol, supply = params
-            bytecode = StandardContracts.create_erc20_template(name, symbol, int(supply))
-            
-        elif contract_type == "ERC721":
-            if len(params) < 2:
-                print("Usage: deploy-contract ERC721 <name> <symbol>")
-                return
-            
-            name, symbol = params
-            bytecode = StandardContracts.create_erc721_template(name, symbol)
-            
-        else:
-            print("Unknown contract type. Use ERC20 or ERC721.")
-            return
-        
-        contract_address = self.blockchain.deploy_contract(
-            self.wallet.address,
-            bytecode
-        )
-        
-        print(f"Contract deployed at: {contract_address}")
+        try:
+            contract_address = self.rayonix_coin.deploy_contract(
+                contract_code, 
+                initial_balance
+            )
+            print(f"Contract deployed at: {contract_address}")
+        except Exception as e:
+            print(f"Error deploying contract: {e}")
     
     async def _call_contract(self, args: List[str]):
         """Call contract function"""
@@ -853,14 +657,15 @@ Available Commands:
         contract_address, function_name = args[0], args[1]
         function_args = args[2:]
         
-        result = self.blockchain.execute_contract(
-            contract_address,
-            function_name,
-            function_args,
-            self.wallet.address
-        )
-        
-        print(f"Contract call result: {result}")
+        try:
+            result = self.rayonix_coin.call_contract(
+                contract_address,
+                function_name,
+                function_args
+            )
+            print(f"Contract call result: {result}")
+        except Exception as e:
+            print(f"Error calling contract: {e}")
     
     def _show_peers(self):
         """Show connected peers"""
@@ -885,24 +690,11 @@ Available Commands:
     
     def _show_blockchain_info(self):
         """Show blockchain information"""
-        info = {
-            'Block Height': len(self.blockchain.chain),
-            'Difficulty': self.blockchain.difficulty,
-            'Total Transactions': sum(len(block.transactions) for block in self.blockchain.chain),
-            'Mempool Size': len(self.blockchain.mempool),
-            'Total Supply': self._calculate_total_supply()
-        }
+        info = self.rayonix_coin.get_blockchain_info()
         
         print("Blockchain Information:")
         for key, value in info.items():
             print(f"  {key}: {value}")
-    
-    def _calculate_total_supply(self) -> int:
-        """Calculate total coin supply"""
-        # Sum of all block rewards
-        block_rewards = len(self.blockchain.chain) * self.blockchain.mining_reward
-        # Subtract burned fees (simplified)
-        return block_rewards
     
     def _show_transaction(self, args: List[str]):
         """Show transaction details"""
@@ -911,8 +703,17 @@ Available Commands:
             return
         
         tx_hash = args[0]
-        # Implementation would lookup transaction
-        print(f"Transaction details for {tx_hash}")
+        transaction = self.rayonix_coin.get_transaction(tx_hash)
+        
+        if transaction:
+            print(f"Transaction {tx_hash}:")
+            print(f"  From: {transaction.get('from', 'Unknown')}")
+            print(f"  To: {transaction.get('to', 'Unknown')}")
+            print(f"  Amount: {transaction.get('amount', 0)} RXY")
+            print(f"  Fee: {transaction.get('fee', 0)} RXY")
+            print(f"  Block: {transaction.get('block_height', 'Pending')}")
+        else:
+            print(f"Transaction {tx_hash} not found")
     
     def _show_block(self, args: List[str]):
         """Show block details"""
@@ -921,43 +722,42 @@ Available Commands:
             return
         
         identifier = args[0]
-        # Implementation would lookup block
-        print(f"Block details for {identifier}")
+        block = None
+        
+        # Try to get by height first
+        try:
+            height = int(identifier)
+            block = self.rayonix_coin.get_block(height)
+        except ValueError:
+            # Try to get by hash
+            block = self.rayonix_coin.get_block(identifier)
+        
+        if block:
+            print(f"Block #{block.get('height', 'Unknown')}:")
+            print(f"  Hash: {block.get('hash', 'Unknown')}")
+            print(f"  Previous: {block.get('previous_hash', 'Unknown')}")
+            print(f"  Validator: {block.get('validator', 'Unknown')}")
+            print(f"  Transactions: {len(block.get('transactions', []))}")
+            print(f"  Timestamp: {time.ctime(block.get('timestamp', 0))}")
+        else:
+            print(f"Block {identifier} not found")
     
     def _show_mempool(self):
         """Show mempool transactions"""
-        print(f"Mempool Transactions ({len(self.blockchain.mempool)}):")
-        for tx in self.blockchain.mempool[:10]:  # Show first 10
-            print(f"  {tx.hash[:16]}...: {tx.sender} -> {tx.recipient} {tx.amount} RXY")
+        mempool = self.rayonix_coin.mempool
+        print(f"Mempool Transactions ({len(mempool)}):")
+        
+        for tx in mempool[:10]:  # Show first 10
+            tx_hash = tx.get('hash', 'Unknown')[:16] + '...'
+            from_addr = tx.get('from', 'Unknown')[:10] + '...'
+            to_addr = tx.get('to', 'Unknown')[:10] + '...'
+            amount = tx.get('amount', 0)
+            print(f"  {tx_hash}: {from_addr} -> {to_addr} {amount} RXY")
     
     def _show_contracts(self):
         """Show deployed contracts"""
-        try:
-        	contracts = self.contract_manager.get_all_contracts()
-        	
-        	# Ensure contracts is always a list
-        	if contracts is None:
-        		contracts = []
-        		
-        	print(f"Deployed Contracts ({len(contracts)}):")
-        	
-        	if not contracts:
-        		print("  No contracts deployed")
-        		return
-        	
-        	# contracts is a list, not a dictionary, so iterate directly
-        	for contract in contracts:
-        		print(f"  Address: {contract['address']}")
-        		print(f"    Creator: {contract['creator']}")
-        		print(f"    Type: {contract['type']}")
-        		print(f"    Balance: {contract['balance']}")
-        		print(f"    State: {contract['state']}")
-        		print(f"    Created: {time.ctime(contract['created_at'])}")
-        		print(f"    Executions: {contract['execution_count']}")
-        		print()
-        except Exception as e:
-        	print(f"Error displaying contracts: {e}")
-        	traceback.print_exc()
+        # This would need to be implemented in rayonix_coin
+        print("Contract listing not yet implemented in rayonix_coin")
     
     def _show_validator_info(self):
         """Show validator information"""
@@ -965,13 +765,8 @@ Available Commands:
             print("No wallet loaded")
             return
         
-        validator_info = self.consensus.get_validator_info(self.wallet.address)
-        if validator_info:
-            print("Validator Information:")
-            for key, value in validator_info.items():
-                print(f"  {key}: {value}")
-        else:
-            print("Not registered as validator")
+        # This would need validator info methods in rayonix_coin
+        print("Validator info not yet implemented in rayonix_coin")
     
     def _show_sync_status(self):
         """Show synchronization status"""
@@ -990,7 +785,6 @@ def signal_handler(signum, frame):
 
 async def main():
     """Main entry point"""
-    # Parse command line arguments
     parser = argparse.ArgumentParser(description="RAYONIX Blockchain Node")
     parser.add_argument('--config', '-c', help='Configuration file path')
     parser.add_argument('--data-dir', '-d', help='Data directory path')
@@ -1077,6 +871,5 @@ async def main():
     return 0
 
 if __name__ == "__main__":
-    # Run the node
     exit_code = asyncio.run(main())
-    sys.exit(exit_code)
+    sys.exit(exit_code)                
