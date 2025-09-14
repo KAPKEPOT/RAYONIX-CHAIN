@@ -372,6 +372,26 @@ class AdvancedP2PNetwork:
     		writer.close()
     		await writer.wait_closed()
     		
+    async def _handle_websocket_connection(self, websocket: websockets.WebSocketServerProtocol, path: str):
+        """Handle incoming WebSocket connection"""
+        peer_addr = websocket.remote_address
+        connection_id = f"ws_{peer_addr[0]}_{peer_addr[1]}"
+        try:
+        	# Perform handshake
+        	await self._perform_websocket_handshake(websocket, connection_id)
+        	
+        	# Add to connections
+        	self.connections[connection_id] = {
+            	'websocket': websocket,
+            	'protocol': ProtocolType.WEBSOCKET,
+            	'metrics': ConnectionMetrics(),
+            	'address': peer_addr
+        	}
+        	# Start message processing
+        	await self._process_websocket_messages(connection_id)
+        except Exception as e:
+            logger.error(f"WebSocket connection error: {e}")
+            await websocket.close() 		    				
     async def _process_incoming_data(self, data: bytes, addr: tuple, protocol: ProtocolType, connection_id: str):
         try:
          	 if self.config.enable_encryption:
@@ -1114,34 +1134,66 @@ class AdvancedP2PNetwork:
                 logger.error(f"Metrics collector error: {e}")
                 await asyncio.sleep(30)
     
-    def _collect_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> Dict[str, Any]:
         """Collect network metrics"""
         metrics = {
+            'node_id': self.node_id,
             'active_connections': len(self.connections),
             'known_peers': len(self.peers),
-            'bytes_sent': self.metrics.bytes_sent,
-            'bytes_received': self.metrics.bytes_received,
-            'messages_sent': self.metrics.messages_sent,
-            'messages_received': self.metrics.messages_received,
+            'total_bytes_sent': self.metrics.bytes_sent,
+            'total_bytes_received': self.metrics.bytes_received,
+            'total_messages_sent': self.metrics.messages_sent,
+            'total_messages_received': self.metrics.messages_received,
+            'connection_timeout': self.config.connection_timeout,
+            'message_timeout': self.config.message_timeout,
+            'ping_interval': self.config.ping_interval,
+            'max_connections': self.config.max_connections,
+            'network_type': self.config.network_type.name,
+            'listen_address': f"{self.config.listen_ip}:{self.config.listen_port}",
+            'encryption_enabled': self.config.enable_encryption,
+            'compression_enabled': self.config.enable_compression,
+            'nat_traversal_enabled': self.config.enable_nat_traversal,
+            'dht_enabled': self.config.enable_dht,
+            'gossip_enabled': self.config.enable_gossip,
+            'syncing_enabled': self.config.enable_syncing,
             'connection_quality': {},
             'latency_stats': {}
         }
         
-        # Connection-specific metrics
+        # Add connection-specific metrics
+        connection_details = {}
         for conn_id, conn in self.connections.items():
-            metrics['connection_quality'][conn_id] = conn['metrics'].success_rate
-            if conn['metrics'].latency_history:
-                metrics['latency_stats'][conn_id] = {
-                    'avg': sum(conn['metrics'].latency_history) / len(conn['metrics'].latency_history),
-                    'max': max(conn['metrics'].latency_history),
-                    'min': min(conn['metrics'].latency_history)
-                }
-        
-        return metrics
+            conn_metrics = conn['metrics']
+            connection_details[conn_id] = {
+                'protocol': conn['protocol'].name,
+                'bytes_sent': conn_metrics.bytes_sent,
+                'bytes_received': conn_metrics.bytes_received,
+                'messages_sent': conn_metrics.messages_sent,
+                'messages_received': conn_metrics.messages_received,
+                'connection_time': conn_metrics.connection_time,
+                'last_activity': time.time() - conn_metrics.last_activity,
+                'error_count': conn_metrics.error_count,
+                'success_rate': conn_metrics.success_rate
+            }
+            metrics['connections'] = connection_details
+            return metrics
+            
     
-    def _report_metrics(self, metrics: Dict[str, Any]):
+    def get_network_info(self) -> Dict[str, Any]:
         """Report metrics to logging or monitoring system"""
-        logger.info(f"Network Metrics: {metrics}")
+        return self.get_metrics()
+        
+    def get_connected_peers(self) -> List[str]:
+    	"""Get list of connected peer addresses"""
+    	connected_peers = []
+    	for conn_id, conn in self.connections.items():
+    		if 'address' in conn:
+    			connected_peers.append(f"{conn['address'][0]}:{conn['address'][1]}")
+    		elif 'websocket' in conn:
+    			addr = conn['websocket'].remote_address
+    			connected_peers.append(f"{addr[0]}:{addr[1]}")
+    	return connected_peers
+    			        
     
     def _adaptive_tuning(self, metrics: Dict[str, Any]):
         """Adaptively tune network parameters based on metrics"""

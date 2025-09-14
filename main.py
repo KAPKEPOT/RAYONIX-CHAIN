@@ -716,10 +716,10 @@ Available Commands:
         if not self.network:
             print("Network not enabled")
             return
-        
-        print("Connected Peers:")
-        for peer_id, peer in self.network.peers.items():
-            print(f"  {peer.address}:{peer.port} - {peer.state.name}")
+        peers = self.network.get_connected_peers()
+        print(f"Connected Peers ({len(peers)}):")
+        for peer in peers:
+            print(f"  {peer}")
     
     def _show_network_info(self):
         """Show network information"""
@@ -727,10 +727,29 @@ Available Commands:
             print("Network not enabled")
             return
         
-        metrics = self.network.get_metrics()
+        info = self.network.get_metrics()
         print("Network Information:")
-        for key, value in metrics.items():
-            print(f"  {key}: {value}")
+        print(f"  Node ID: {info.get('node_id', 'N/A')}")
+        print(f"  Network Type: {info.get('network_type', 'N/A')}")
+        print(f"  Listen Address: {info.get('listen_address', 'N/A')}")
+        print(f"  Active Connections: {info.get('active_connections', 0)}")
+        print(f"  Known Peers: {info.get('known_peers', 0)}")
+        print(f"  Total Bytes Sent: {info.get('total_bytes_sent', 0)}")
+        print(f"  Total Bytes Received: {info.get('total_bytes_received', 0)}")
+        print(f"  Encryption: {'Enabled' if info.get('encryption_enabled') else 'Disabled'}")
+        print(f"  Compression: {'Enabled' if info.get('compression_enabled') else 'Disabled'}")
+        
+        # Show connection details
+        connections = info.get('connections', {})
+        if connections:
+            print(f"  Connection Details:")
+            for conn_id, conn_info in connections.items():
+            	print(f"    {conn_id}:")
+            	print(f"      Protocol: {conn_info.get('protocol', 'N/A')}")
+            	print(f"      Bytes Sent: {conn_info.get('bytes_sent', 0)}")
+            	print(f"      Bytes Received: {conn_info.get('bytes_received', 0)}")
+            	print(f"      Last Activity: {conn_info.get('last_activity', 0):.1f}s ago")
+            
     
     def _show_blockchain_info(self):
         """Show blockchain information"""
