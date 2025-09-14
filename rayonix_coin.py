@@ -228,14 +228,14 @@ class RayonixCoin:
         """Get bootstrap nodes for network"""
         if self.network_type == "mainnet":
             return [
-                "node1.rayonix.org:30303",
-                "node2.rayonix.org:30303",
-                "node3.rayonix.org:30303"
+                "node1.rayonix.site:30303",
+                "node2.rayonix.site:30303",
+                "node3.rayonix.site:30303"
             ]
         elif self.network_type == "testnet":
             return [
-                "testnet-node1.rayonix.org:30304",
-                "testnet-node2.rayonix.org:30304"
+                "testnet-node1.rayonix.site:30304",
+                "testnet-node2.rayonix.site:30304"
             ]
         else:
             return []
