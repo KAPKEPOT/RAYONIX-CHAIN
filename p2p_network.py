@@ -197,7 +197,9 @@ class AdvancedP2PNetwork:
             ProtocolType.HTTP: self._handle_http_connection,
             ProtocolType.HTTPS: self._handle_https_connection
         }
+
     
+            
     async def start(self):
         """Start the network node"""
         self.running = True
@@ -245,6 +247,10 @@ class AdvancedP2PNetwork:
         
         logger.info("Network stopped gracefully")
     
+    def is_connected(self) -> bool:
+    	"""Check if network has active connections"""
+    	return len(self.connections) > 0
+    	
     async def _start_tcp_server(self):
         """Start TCP server"""
         try:
@@ -473,6 +479,7 @@ class AdvancedP2PNetwork:
                                	                        		  	       	if len(parts) > 1:
                                	                        		  	       		return parts[1]
                                	                        		  	       	return ""       
+                               	                        		  	       	
     async def _handle_websocket_connection(self, websocket: websockets.WebSocketServerProtocol):
         """Handle incoming WebSocket connection"""
         peer_addr = websocket.remote_address

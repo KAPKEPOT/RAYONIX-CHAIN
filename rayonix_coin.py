@@ -1,4 +1,5 @@
 # rayonix_coin.py
+import os
 import hashlib
 import json
 import time
@@ -206,11 +207,7 @@ class RayonixCoin:
         if self.wallet.master_key:
             for i in range(5):
                 self.wallet.derive_address(i, False) 	    
-        	    
-        	    
-        	    				
-        			
-        			
+      			
     
     def _initialize_network(self):
         """Initialize P2P network"""
@@ -735,7 +732,7 @@ class RayonixCoin:
     def _handle_block_message(self, message: Dict):
         """Handle incoming block message"""
         try:
-            block = message['data']
+            block = message.payload
             if self._validate_block(block):
                 self._add_block(block)
         except Exception as e:
@@ -744,7 +741,7 @@ class RayonixCoin:
     def _handle_transaction_message(self, message: Dict):
         """Handle incoming transaction message"""
         try:
-            transaction = message['data']
+            transaction = message.payload
             if self._validate_transaction(transaction):
                 self._add_to_mempool(transaction)
         except Exception as e:
