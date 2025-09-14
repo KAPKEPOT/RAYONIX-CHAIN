@@ -311,37 +311,77 @@ class ProofOfStake:
     def is_validator(self, address: str) -> bool:
     	"""Check if an address is a registered validator"""
     	with self.validator_lock:
-    		return (address in self.validators and 
-               self.validators[address].status == ValidatorStatus.ACTIVE)     
-                  
+    		if address not in self.validators:
+    		    return False 
+    		    
+    		validator = self.validators[address]
+    		
+    		# Check if validator is active and meets minimum requirements
+    		return (validator.status == ValidatorStatus.ACTIVE and
+                validator.effective_stake >= self.min_stake and
+                validator.uptime >= 80.0 and  # Minimum 80% uptime
+                (validator.jail_until is None or validator.jail_until <= time.time()))  		                        
     def should_validate(self, validator_address: str, current_time: float) -> bool:
     	"""Check if it's this validator's turn to create a block"""
-    	if not self.is_validator(validator_address):
-    		return False
-    	# Simple round-robin validation for now
-    	# In a real implementation, this would use stake-weighted probability
     	with self.validator_lock:
+    		# Basic validation checks
+    		if not self.is_validator(validator_address):
+    			return False
+    			
     		if not self.active_validators:
     			return False
     			
-    		validator_index = -1
-    		for i, validator in enumerate(self.active_validators):
-    			if validator.address == validator_address:
-    				validator_index = i
-    				break
-    				
-    		if validator_index == -1:
+    		# Get current validator
+    		validator = self.validators[validator_address]
+    		
+    		# Calculate stake-weighted probability with anti-concentration
+    		total_effective_stake = sum(v.effective_stake for v in self.active_validators)
+    		if total_effective_stake == 0:
     			return False
     			
-    		# Simple time-based round robin
-    		current_slot = int(current_time) // 30
-    		return current_slot % len(self.active_validators) == validator_index
+    		validator_stake_share = validator.effective_stake / total_effective_stake
     		
+    		# Apply anti-concentration: no validator can have more than 33% probability
+    		max_share = 0.33
+    		adjusted_share = min(validator_stake_share, max_share)
+    		
+    		# Deterministic selection based on time, view, and round
+    		selection_seed = hashlib.sha256(
+    		f"{self.current_epoch}_{self.current_view}_{self.current_round}_{current_time}".encode()
+    		).digest()
+    		selection_value = int.from_bytes(selection_seed[:8], 'big') / (2**64 - 1)
+    		
+    		# Check if this validator should validate based on stake share
+    		should_validate = selection_value < adjusted_share
+    		
+    		# Additional checks for view consistency
+                            		
+    		if should_validate:
+    		    # Ensure we don't have consecutive blocks from same validator
+    		    if len(self.executed_blocks) > 0:
+    		    	last_block_time = self.last_block_time
+    		    	time_since_last_block = current_time - last_block_time
+    		    	
+    		    	# Prevent rapid succession from same validator
+                                            		    	
+    		    	if (validator_address == getattr(self, '_last_validator', None) and 
+                    time_since_last_block < 5.0):
+                         return False
+             
+           #  return should_validate                                                        		
     def get_validator_public_key(self, validator_address: str) -> Optional[str]:
         """Get public key for a validator"""
         with self.validator_lock:
-            validator = self.validators.get(validator_address)
-            return validator.public_key if validator else None
+            if not self.is_validator(validator_address):
+            	return None
+            	
+            validator = self.validators[validator_address]
+            
+            # Additional security checks
+            if (validator.status != ValidatorStatus.ACTIVE or
+            validator.jail_until and validator.jail_until > time.time()):
+            	return None
+            return validator.public_key
     		    		
     def update_total_stake(self):
         """Update total stake calculation"""
@@ -399,12 +439,36 @@ class ProofOfStake:
         Returns:
             True if registration successful, False otherwise
         """
+        if not all([address, public_key]) or stake_amount <= 0:
+        	return False
+        	
+        if not (0 <= commission_rate <= 0.2):
+        	return False
+        	
+        try:
+        	if len(public_key) not in [130, 66]:
+        		return False
+        		
+        	if not all(c in '0123456789abcdefABCDEF' for c in public_key):
+        		return False
+        except:
+        	return False
+        	
         with self.validator_lock:
+            # Check for duplicate registration
             if address in self.validators:
-                return False
-            
+            	existing_validator = self.validators[address]
+            	
+            	if existing_validator.status != ValidatorStatus.SLASHED:
+            		return False
+            		
+            # Check minimum stake requirement
             if stake_amount < self.min_stake:
                 return False
+                
+            # Check maximum validator limit
+            if len(self.validators) >= self.max_validators * 2:
+            	return False
             
             if commission_rate < 0 or commission_rate > 0.2:  # Max 20% commission
                 return False
@@ -414,14 +478,25 @@ class ProofOfStake:
                 public_key=public_key,
                 staked_amount=stake_amount,
                 commission_rate=commission_rate,
-                status=ValidatorStatus.PENDING,
-                created_block_height=self.current_epoch * self.epoch_blocks
+                status=ValidatorStatus.PENDING,uptime=100.0,
+                last_active=time.time(),
+                created_block_height=self.current_epoch * self.epoch_blocks,
+                voting_power=self._calculate_voting_power(stake_amount, 0, 100.0)
             )
             
             self.validators[address] = validator
             self.pending_validators.append(validator)
-            self.total_stake += stake_amount  # UPDATE total_stake
+            
+            # Update total stake
+            self.total_stake += stake_amount  
+            
+            # Schedule validator set update
+            self._update_validator_set()
+            
+            # Persist state
             self._save_state()
+            
+            logger.info(f"Validator registered: {address} with stake {stake_amount}")
             
             return True
     
@@ -842,23 +917,209 @@ class ProofOfStake:
             
             validator = self.validators[address]
             return validator.to_dict()
+
+    def get_validator_performance(self, validator_address: str) -> Optional[Dict]:
+    	
+    	with self.validator_lock:
+    		if validator_address not in self.validators:
+    			return None
+    			
+    		validator = self.validators[validator_address]
+    		return {
+    		    'address': validator.address,
+    		    'status': validator.status.name,
+    		    'staked_amount': validator.staked_amount,
+    		    'total_delegated': validator.total_delegated,
+    		    'effective_stake': validator.effective_stake,
+    		    'uptime': validator.uptime,
+    		    'slashing_count': validator.slashing_count,
+    		    'voting_power': validator.voting_power,
+    		    'commission_rate': validator.commission_rate,
+    		    'delegator_count': len(validator.delegators),
+    		    'jail_status': {
+    		        'jailed': validator.jail_until is not None,
+    		        'until': validator.jail_until,
+    		        'remaining': max(0, validator.jail_until - time.time()) if validator.jail_until else 0
+    		    } if validator.jail_until else None
+    		    
+    		}                        
     
-    def get_consensus_state(self) -> Dict:
+    def get_consensus_health(self) -> Dict:
         """Get current consensus state"""
         with self.lock:
-            return {
-                'state': self.state.name,
-                'current_epoch': self.current_epoch,
-                'current_view': self.current_view,
-                'current_round': self.current_round,
-                'active_validators': len(self.active_validators),
-                'total_validators': len(self.validators),
-                'total_stake': sum(v.total_stake for v in self.validators.values()),
-                'pending_proposals': len(self.block_proposals),
-                'locked_blocks': len(self.locked_blocks),
-                'executed_blocks': len(self.executed_blocks)
-            }
+                        	
+        	with self.validator_lock:      		
+        		active_count = len([v for v in self.validators.values() if v.status == ValidatorStatus.ACTIVE])
+        		jailed_count = len([v for v in self.validators.values() if v.status == ValidatorStatus.JAILED])
+        		slashed_count = len([v for v in self.validators.values() if v.status == ValidatorStatus.SLASHED])
+        		total_voting_power = sum(v.voting_power for v in self.validators.values())
+        		active_voting_power = sum(v.voting_power for v in self.validators.values() if v.status == ValidatorStatus.ACTIVE)
+        		return {
+        		    'state': self.state.name,
+        		    'epoch': self.current_epoch,
+        		    'view': self.current_view,
+        		    'round': self.current_round,
+        		    'validators_total': len(self.validators),
+        		    'validators_active': active_count,
+        		    'validators_jailed': jailed_count,
+        		    'validators_slashed': slashed_count,
+        		    'total_stake': self.total_stake,
+        		    'total_voting_power': total_voting_power,
+        		    'active_voting_power': active_voting_power,
+        		    'bft_threshold': (2 * active_voting_power) / 3 if active_voting_power > 0 else 0,
+        		    'proposals_pending': len(self.block_proposals),
+        		    'votes_pending': sum(len(votes) for votes in self.votes.values()),
+        		    'blocks_executed': len(self.executed_blocks),
+        		    'blocks_locked': len(self.locked_blocks),
+        		    'health_score': self._calculate_health_score(active_count, active_voting_power)
+        		}
+        		        		
+    def validate_validator_signature(self, validator_address: str, message: bytes, 
+                               signature: str) -> bool:
+        with self.validator_lock:
+        	if not self.is_validator(validator_address):
+        		return False
+        		
+        	validator = self.validators[validator_address]  
+        	
+        	# Additional security checks
+        	if (validator.jail_until and validator.jail_until > time.time() or
+            validator.status != ValidatorStatus.ACTIVE):
+                 return False
+        
+        try:
+            # Convert message to string if it's bytes
+            if isinstance(message, bytes):
+                message_str = message.decode('utf-8')
+            else:
+                message_str = str(message)
+            
+            return self.verify_signature(message_str, signature, validator.public_key)
+        except (UnicodeDecodeError, ValueError, InvalidSignature):
+            return False
+            
+    def check_byzantine_behavior(self, validator_address: str, evidence: Dict) -> bool:
+        with self.validator_lock:
+            if not self.is_validator(validator_address):
+               return False  
+               
+           # Comprehensive evidence validation
+            if not self._validate_byzantine_evidence(evidence, validator_address):
+               return False
+               
+            validator = self.validators[validator_address]
+            
+            # Check for double-signing
+            if evidence.get('type') == 'double_sign':
+            	return self._check_double_signing(evidence, validator)
+            	
+            # Check for equivocation
+            elif evidence.get('type') == 'equivocation':
+            	return self._check_equivocation(evidence, validator)
+            	
+            # Check for censorship
+            elif evidence.get('type') == 'censorship':
+            	return self._check_censorship(evidence, validator)
+            return False 
+
+    def _validate_byzantine_evidence(self, evidence: Dict, validator_address: str) -> bool:
+    	"""Comprehensive evidence validation"""
+    	required_fields = {
+    	    'double_sign': ['block_hash_1', 'block_hash_2', 'signature_1', 'signature_2', 'timestamp'],
+    	    'equivocation': ['conflicting_messages', 'signatures', 'timestamps'],
+    	    'censorship': ['censored_transactions', 'time_period', 'proof']
+    	}
+    	evidence_type = evidence.get('type')
+    	if evidence_type not in required_fields:
+    		return False
+    		
+    	for field in required_fields[evidence_type]:
+    		if field not in evidence:
+    			return False
     
+    def _check_double_signing(self, evidence: Dict, validator: Validator) -> bool:
+           	               	            	      	          
+        """Check for double signing evidence"""
+        try:
+        	block_hash_1 = evidence['block_hash_1']
+        	block_hash_2 = evidence['block_hash_2']
+        	signature_1 = evidence['signature_1']
+        	signature_2 = evidence['signature_2']
+        	
+        	# Verify both signatures are valid for their respective blocks
+        	valid_sig_1 = self.verify_signature(block_hash_1, signature_1, validator.public_key)
+        	valid_sig_2 = self.verify_signature(block_hash_2, signature_2, validator.public_key)
+        	
+        	# If both signatures are valid but for different blocks, it's double signing
+        	return valid_sig_1 and valid_sig_2 and block_hash_1 != block_hash_2
+        	
+        except (KeyError, ValueError):
+        	return False
+
+    def _check_equivocation(self, evidence: Dict, validator: Validator) -> bool:
+        """Check for equivocation evidence"""
+        try:
+            conflicting_messages = evidence['conflicting_messages']
+            signatures = evidence['signatures']
+            timestamps = evidence['timestamps']
+            
+            if len(conflicting_messages) != 2 or len(signatures) != 2:
+                return False
+                
+            # Verify both signatures are valid
+            valid_sig_1 = self.verify_signature(
+                conflicting_messages[0], signatures[0], validator.public_key
+            )
+            valid_sig_2 = self.verify_signature(
+                conflicting_messages[1], signatures[1], validator.public_key
+             
+            )
+            # Check if messages are conflicting (same context but different content)
+            messages_are_conflicting = self._are_messages_conflicting(
+                conflicting_messages[0], conflicting_messages[1]
+            )
+            
+            return valid_sig_1 and valid_sig_2 and messages_are_conflicting
+            
+        except (KeyError, ValueError, IndexError):		           	                   	                     return False
+          
+    def _check_censorship(self, evidence: Dict, validator: Validator) -> bool:
+    	"""Check for censorship evidence"""
+    	try:
+    		censored_transactions = evidence['censored_transactions']
+    		time_period = evidence['time_period']
+    		proof = evidence['proof']
+    		# This would require complex validation logic
+    		# For now, return True if basic structure is valid
+    		return (isinstance(censored_transactions, list) and isinstance(time_period, (int, float)) and isinstance(proof, dict))
+    	except (KeyError, ValueError):
+    	       return False
+        
+            
+    def _are_messages_conflicting(self, message1: str, message2: str) -> bool: 	
+        try:
+        	# Try to parse as JSON for structured messages
+        	msg1_data = json.loads(message1)
+        	msg2_data = json.loads(message2)
+        	# Check if they have the same context (e.g., same block height, view number)
+        	# but different content
+        	if ('block_height' in msg1_data and 'block_height' in msg2_data and msg1_data['block_height'] == msg2_data['block_height']):
+        		return message1 != message2
+        except json.JSONDecodeError:
+        	# For non-JSON messages, use simple comparison
+        	return message1 != message2                                  	        	           	                   	        
+    def _calculate_health_score(self, active_count: int, active_voting_power: int) -> float:
+         """Calculate consensus health score (0-100)"""
+         if active_count == 0:
+         	return 0.0
+         
+         # Factors for health calculation
+         validator_health = min(active_count / self.max_validators, 1.0) * 40
+         voting_power_health = min(active_voting_power / (self.min_stake * active_count * 10), 1.0) * 30
+         activity_health = min(len(self.executed_blocks) / 100, 1.0) * 30
+         
+         return validator_health + voting_power_health + activity_health
+         
     def process_view_change(self):
         """Process view change when consensus stalls"""
         with self.lock:
@@ -953,23 +1214,25 @@ def create_validator_keypair() -> Tuple[str, str]:
     ).hex()
     return private_key_hex, public_key
 
-def calculate_voting_power(stake: int, age: int, uptime: float) -> int:
+def _calculate_voting_power(self, stake: int, age: int, uptime: float) -> int:
     """Calculate voting power considering stake, age, and uptime"""
     # Weight factors
-    stake_weight = 0.7
-    age_weight = 0.2
-    uptime_weight = 0.1
+    stake_weight = 0.6
+    age_weight = 0.25
+    uptime_weight = 0.15
     
-    # Normalize factors
-    normalized_stake = min(stake / 1000000, 1.0)  # Cap at 1M tokens
+    # Normalize factors with caps
+    normalized_stake = min(stake / (self.min_stake * 10), 1.0)  # Cap at 1M tokens
     normalized_age = min(age / 10000, 1.0)  # Cap at 10K blocks
     normalized_uptime = uptime / 100.0
     
+    
+    # Calculate weighted power
     voting_power = int((
         normalized_stake * stake_weight +
         normalized_age * age_weight +
         normalized_uptime * uptime_weight
-    ) * 1000)  # Scale to integer
+    ) * 10000)  # Scale to integer
     
     return max(100, voting_power)  # Minimum voting power
 
