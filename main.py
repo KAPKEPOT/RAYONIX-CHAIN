@@ -102,11 +102,19 @@ class RayonixNode:
                 data_dir=str(data_dir)
             )
             
-            # Initialize wallet
-            wallet_file = data_dir / 'wallet.json'
+            # Initialize wallet (try to load from file if exists)
+            wallet_file = data_dir / 'wallet.dat'
             if wallet_file.exists():
-                # Load existing wallet logic would go here
-                pass
+                try:
+                	self.wallet = RayonixWallet()
+                	if self.wallet.restore(str(wallet_file)):
+                		logger.info("Wallet loaded from file")
+                	else:
+                		logger.warning("Failed to load wallet from file")
+                		
+                except Exception as e:
+                	logger.error(f"Error loading wallet: {e}")
+                
             else:
                 logger.info("No wallet found. Create one with 'create-wallet' command.")
             
@@ -243,6 +251,12 @@ class RayonixNode:
         self.running = False
         self.shutdown_event.set()
         
+        # Save wallet if loaded
+        if self.wallet:
+        	wallet_file = Path(self.config['data_dir']) / 'wallet.dat'
+        	self.wallet.backup(str(wallet_file))
+        	logger.info("Wallet saved")
+  
         # Stop network
         if self.network:
             await self.network.stop()
@@ -460,29 +474,33 @@ Available Commands:
         """Create a new wallet"""
         try:
             # Create new wallet which generates a mnemonic
-            mnemonic_phrase, xpub = create_new_wallet()
+            wallet = create_new_wallet()
             
-            # Create wallet instance from the mnemonic
-            wallet = RayonixWallet(self.database, self.config['network'])
-            if wallet.create_from_mnemonic(mnemonic_phrase):
-                self.wallet = wallet
-                print("✓ New wallet created successfully!")
-                print(f"  Mnemonic: {mnemonic_phrase}")
-                print("  🔐 IMPORTANT: Save this mnemonic phrase securely!")
-                print("  🔐 You will need it to restore your wallet!")
-                
-                # Show the first address
-                if hasattr(wallet, 'addresses') and wallet.addresses:
-                    first_address = list(wallet.addresses.keys())[0]
-                    print(f"  Address: {first_address}")
-                else:
-                    # Generate first address
-                    address_info = wallet.derive_address(0, False)
-                    print(f"  Address: {address_info.address}")
+            # Get the mnemonic from the wallet
+            mnemonic_phrase = wallet.get_mnemonic()
+            
+            if mnemonic_phrase:
+            	self.wallet = wallet
+            	print("✓ New wallet created successfully!")
+            	print(f"  Mnemonic: {mnemonic_phrase}")
+            	print("  🔐 IMPORTANT: Save this mnemonic phrase securely!")
+            	print("  🔐 You will need it to restore your wallet!")
+            	
+            	# Show the first address
+            	addresses = wallet.get_addresses()
+            	if addresses:
+            		print(f"  Address: {addresses[0]}")
+            		
+            	else:
+            		# Generate first address
+            		address_info = wallet.derive_address(0, False)
+            		print(f"  Address: {address_info.address}")
             else:
-                print("✗ Failed to create wallet from mnemonic")
+                print("✗ Failed to create wallet - no mnemonic generated")		
+            		
         except Exception as e:
             print(f"✗ Error creating wallet: {e}")
+            traceback.print_exc()            
  
     def _load_wallet(self, args: List[str]):
         """Load wallet from file"""
@@ -492,24 +510,28 @@ Available Commands:
             
         mnemonic_phrase = ' '.join(args)
         try:
-            wallet = RayonixWallet(self.database, self.config['network'])
+            # Create wallet with default config
+            wallet = RayonixWallet()
             
             if wallet.create_from_mnemonic(mnemonic_phrase):
                 self.wallet = wallet
                 print("✓ Wallet loaded successfully from mnemonic!")
                 
-                if hasattr(wallet, 'addresses') and wallet.addresses:
-                    addresses = list(wallet.addresses.keys())
+                addresses = wallet.get_addresses()
+                if addresses:
                     print(f"  Addresses loaded: {len(addresses)}")
                     print(f"  Primary address: {addresses[0]}")
                     
                     try:
-                        balance = self.rayonix_coin.get_balance(addresses[0])
-                        print(f"  Balance: {balance} RXY")
+                        balance_info = wallet.get_balance()
+                        print(f"  Balance: {balance_info.total} RXY")
                     except:
-                        print("  Balance: Unable to check (blockchain not ready)")
+                    
+                        print("  Balance: Unable to check (wallet not synced)")
+                else:
+                	print("  No addresses found in wallet")
             else:
-                print("✗ Failed to load wallet. Invalid mnemonic phrase.")
+                print("  No addresses found in wallet")
         except Exception as e:
             print(f"✗ Error loading wallet: {e}")
             print("Make sure the mnemonic phrase is correct (usually 12, 18, or 24 words)")
@@ -555,24 +577,20 @@ Available Commands:
                 address = args[0]
                 balance = self.rayonix_coin.get_balance(address)
                 print(f"Balance for {address}: {balance} RXY")
-            elif self.wallet and self.wallet.addresses:
-                # Show balances for all addresses in wallet
-                print("Wallet Balances:")
-                total_balance = 0
+            elif self.wallet:
+                # Use wallet's get_balance method
+                balance_info = self.wallet.get_balance()
+                print(f"Wallet Balance: {balance_info.total} RXY")
+                print(f"  Confirmed: {balance_info.confirmed} RXY")
+                print(f"  Unconfirmed: {balance_info.unconfirmed} RXY")
+                print(f"  Available: {balance_info.available} RXY")
                 
-                for i, (address, address_info) in enumerate(self.wallet.addresses.items()):
-                    balance = self.rayonix_coin.get_balance(address)
-                    total_balance += balance
-                    change_indicator = "(change)" if address_info.is_change else "(receiving)"
-                    print(f"  {address}: {balance} RXY {change_indicator}")
-                
-                print(f"Total Wallet Balance: {total_balance} RXY")
             else:
                 print("No address specified and no wallet loaded")
-                
         except Exception as e:
-            print(f"Error getting balance: {e}")
-    
+                print(f"Error getting balance: {e}")
+                
+                
     def _send_transaction(self, args: List[str]):
         """Send transaction"""
         if not self.wallet or not self.wallet.addresses:
@@ -777,7 +795,7 @@ Available Commands:
             progress = (self.sync_state['current_block'] / self.sync_state['target_block']) * 100
             print(f"  Complete: {progress:.1f}%")
         print(f"  Connected Peers: {self.sync_state['peers_connected']}")
-
+  
 def signal_handler(signum, frame):
     """Handle shutdown signals"""
     print("\nShutting down gracefully...")
