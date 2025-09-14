@@ -1107,9 +1107,9 @@ class AdvancedP2PNetwork:
         """Fallback peer discovery methods"""
         # Hardcoded fallback peers
         fallback_peers = [
-            ("mainnet.rayonix.org", 30303),
-            ("backup.rayonix.org", 30303),
-            ("seed.rayonix.org", 30303)
+            ("mainnet.rayonix.site", 30303),
+            ("backup.rayonix.site", 30303),
+            ("seed.rayonix.site", 30303)
         ]
         
         for address, port in fallback_peers:
@@ -1136,48 +1136,72 @@ class AdvancedP2PNetwork:
     
     def get_metrics(self) -> Dict[str, Any]:
         """Collect network metrics"""
-        metrics = {
-            'node_id': self.node_id,
-            'active_connections': len(self.connections),
-            'known_peers': len(self.peers),
-            'total_bytes_sent': self.metrics.bytes_sent,
-            'total_bytes_received': self.metrics.bytes_received,
-            'total_messages_sent': self.metrics.messages_sent,
-            'total_messages_received': self.metrics.messages_received,
-            'connection_timeout': self.config.connection_timeout,
-            'message_timeout': self.config.message_timeout,
-            'ping_interval': self.config.ping_interval,
-            'max_connections': self.config.max_connections,
-            'network_type': self.config.network_type.name,
-            'listen_address': f"{self.config.listen_ip}:{self.config.listen_port}",
-            'encryption_enabled': self.config.enable_encryption,
-            'compression_enabled': self.config.enable_compression,
-            'nat_traversal_enabled': self.config.enable_nat_traversal,
-            'dht_enabled': self.config.enable_dht,
-            'gossip_enabled': self.config.enable_gossip,
-            'syncing_enabled': self.config.enable_syncing,
-            'connection_quality': {},
-            'latency_stats': {}
-        }
-        
-        # Add connection-specific metrics
-        connection_details = {}
-        for conn_id, conn in self.connections.items():
-            conn_metrics = conn['metrics']
-            connection_details[conn_id] = {
-                'protocol': conn['protocol'].name,
-                'bytes_sent': conn_metrics.bytes_sent,
-                'bytes_received': conn_metrics.bytes_received,
-                'messages_sent': conn_metrics.messages_sent,
-                'messages_received': conn_metrics.messages_received,
-                'connection_time': conn_metrics.connection_time,
-                'last_activity': time.time() - conn_metrics.last_activity,
-                'error_count': conn_metrics.error_count,
-                'success_rate': conn_metrics.success_rate
-            }
-            metrics['connections'] = connection_details
-            return metrics
+        try:
+           metrics = {
+               'node_id': self.node_id,
+               'active_connections': len(self.connections),
+               'known_peers': len(self.peers),
+               'total_bytes_sent': self.metrics.bytes_sent,
+               'total_bytes_received': self.metrics.bytes_received,
+               'total_messages_sent': self.metrics.messages_sent,
+               'total_messages_received': self.metrics.messages_received,
+               'connection_timeout': self.config.connection_timeout,
+               'message_timeout': self.config.message_timeout,
+               'ping_interval': self.config.ping_interval,
+               'max_connections': self.config.max_connections,
+               'network_type': self.config.network_type.name,
+               'listen_address': f"{self.config.listen_ip}:{self.config.listen_port}",
+               'encryption_enabled': self.config.enable_encryption,
+               'compression_enabled': self.config.enable_compression,
+               'nat_traversal_enabled': self.config.enable_nat_traversal,
+               'dht_enabled': self.config.enable_dht,
+               'gossip_enabled': self.config.enable_gossip,
+               'syncing_enabled': self.config.enable_syncing,
+               'connection_quality': {},
+               'latency_stats': {}
+           
+           }
+           # Add connection-specific metrics safely
+           connection_details = {}
+           for conn_id, conn in self.connections.items():
+           	try:
+           		conn_metrics = conn.get('metrics', ConnectionMetrics())
+           		connection_details[conn_id] = {
+           		    'protocol': conn.get('protocol', 'unknown').name if hasattr(conn.get('protocol'), 'name') else str(conn.get('protocol')),
+           		    'bytes_sent': getattr(conn_metrics, 'bytes_sent', 0),
+           		    'bytes_received': getattr(conn_metrics, 'bytes_received', 0),
+           		    'messages_sent': getattr(conn_metrics, 'messages_sent', 0),
+           		    'messages_received': getattr(conn_metrics, 'messages_received', 0),
+           		    'connection_time': getattr(conn_metrics, 'connection_time', 0),
+           		    'last_activity': time.time() - getattr(conn_metrics, 'last_activity', time.time()),
+           		    'error_count': getattr(conn_metrics, 'error_count', 0),
+           		    'success_rate': getattr(conn_metrics, 'success_rate', 0)
+           		}
+           	except Exception as e:
+           		logger.error(f"Error processing connection metrics for {conn_id}: {e}")
+           		continue
+           metrics['connections'] = connection_details
+           return metrics
+        except Exception as e:
+            logger.error(f"Error in get_metrics: {e}")
             
+            # Return a safe default metrics dictionary
+            return {
+                'node_id': self.node_id if hasattr(self, 'node_id') else 'unknown',
+                'active_connections': 0,
+                'known_peers': 0,
+                'total_bytes_sent': 0,
+                'total_bytes_received': 0,
+                'total_messages_sent': 0,
+                'total_messages_received': 0,
+                'network_type': 'unknown',
+                'listen_address': 'unknown',
+                'error': f'Metrics unavailable: {str(e)}'
+            }           
+                   
+           
+           
+             
     
     def get_network_info(self) -> Dict[str, Any]:
         """Report metrics to logging or monitoring system"""

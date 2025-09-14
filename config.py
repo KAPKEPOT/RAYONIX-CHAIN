@@ -78,9 +78,9 @@ class NetworkConfig:
     enable_dht: bool = True
     enable_gossip: bool = True
     bootstrap_nodes: List[str] = field(default_factory=lambda: [
-        "node1.rayonix.org:30303",
-        "node2.rayonix.org:30303",
-        "node3.rayonix.org:30303"
+        "node1.rayonix.site:30303",
+        "node2.rayonix.site:30303",
+        "node3.rayonix.site:30303"
     ])
     allowed_peers: List[str] = field(default_factory=list)
     blocked_peers: List[str] = field(default_factory=list)
