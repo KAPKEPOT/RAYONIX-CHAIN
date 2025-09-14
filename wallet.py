@@ -1445,7 +1445,7 @@ def create_new_wallet(wallet_type: WalletType = WalletType.HD, **kwargs) -> Rayo
 def load_existing_wallet(wallet_file: str, passphrase: Optional[str] = None) -> Optional[RayonixWallet]:
     """Load existing wallet from file"""
     try:
-        wallet = AdvancedWallet()
+        wallet = RayonixWallet()
         if wallet.restore(wallet_file, passphrase):
             return wallet
         return None

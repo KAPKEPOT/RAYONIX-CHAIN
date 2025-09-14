@@ -183,15 +183,34 @@ class RayonixCoin:
         """Initialize wallet system"""
         wallet_config = WalletConfig(
         network=self.network_type,
-        address_type='RAYONIX',  # This should be AddressType.RAYONIX
+        address_type=AddressType.RAYONIX,  # Use the enum directly
         encryption=True
     )
         self.wallet = RayonixWallet(wallet_config)
-        # Generate initial addresses if it's a new wallet
-        if not self.wallet.addresses:
-        	# Generate some addresses
-        	for i in range(5):
-        		self.wallet.derive_address(i, False)
+        
+        # Check if wallet needs to be initialized (no master key)
+        if not self.wallet.master_key:
+        	# Create a new HD wallet
+        	try:
+        		mnemonic_phrase, xpub = self.wallet.create_hd_wallet()
+        		logger.info(f"New HD wallet created with mnemonic: {mnemonic_phrase[:10]}...")
+        	except Exception as e:
+        	    logger.error(f"Failed to create HD wallet: {e}")
+        	    
+        	    # Fallback: create from random private key
+        	    private_key = os.urandom(32).hex()
+        	    self.wallet.create_from_private_key(private_key, WalletType.NON_HD)
+        	    logger.info("Non-HD wallet created from random private key")
+        	    
+        # Generate initial addresses
+        if self.wallet.master_key:
+            for i in range(5):
+                self.wallet.derive_address(i, False) 	    
+        	    
+        	    
+        	    				
+        			
+        			
     
     def _initialize_network(self):
         """Initialize P2P network"""
