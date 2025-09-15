@@ -61,6 +61,7 @@ class ConfigMetadata:
 
 @dataclass
 class NetworkConfig:
+    enabled: bool = True
     network_type: str = "mainnet"  # mainnet, testnet, devnet, regtest
     network_id: int = 1
     listen_ip: str = "0.0.0.0"
@@ -327,6 +328,20 @@ class BackupConfig:
     cloud_config: Dict = field(default_factory=dict)
 
 @dataclass
+class MiningConfig:
+    enabled: bool = False
+    mining_type: str = "cpu"  # cpu, gpu, asic
+    min_threads: int = 1
+    max_threads: int = 4
+    mining_intensity: int = 75  # percentage
+    mining_power_mode: str = "balanced"  # low, balanced, high
+    mining_fee: int = 1
+    mining_address: Optional[str] = None
+    mining_pool: Optional[str] = None
+    mining_pool_user: Optional[str] = None
+    mining_pool_password: Optional[str] = None
+
+@dataclass
 class RayonixConfig:
     # Core configurations
     network: NetworkConfig = field(default_factory=NetworkConfig)
@@ -348,6 +363,7 @@ class RayonixConfig:
     # Advanced features
     cluster: ClusterConfig = field(default_factory=ClusterConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)
+    mining: MiningConfig = field(default_factory=MiningConfig)
     
     # Metadata
     metadata: ConfigMetadata = field(default_factory=ConfigMetadata)
@@ -374,7 +390,7 @@ class ConfigManager:
         if config_path:
             self.load_config(config_path)
         
-        if auto_reload:
+        if auto_reload and config_path:
             self._start_config_watcher()
     
     def _load_schema(self) -> Dict:
