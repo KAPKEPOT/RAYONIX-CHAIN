@@ -640,7 +640,7 @@ class RayonixWallet:
     		logger.error(f"Failed to get public key for address {address}: {e}")
     		return None        
     
-    def get_balance(self) -> WalletBalance:
+    def get_balance(self, force_refresh: bool = False) -> WalletBalance:
     	
     	if not self.rayonix_coin:
     		return self._get_offline_balance()
