@@ -982,7 +982,7 @@ Available Commands:
         if not hasattr(self.rayonix, 'get_validator_info'):
             print("Validator info not yet implemented in rayonix_coin")
             return
-        info = self.rayonix.get_validator_info()
+        info = self.rayonix_coin.get_validator_info()
         
         if 'error' in info:
         	print(f"Error: {info['error']}")
