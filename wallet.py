@@ -657,7 +657,7 @@ class RayonixWallet:
     				
     		except Exception as e:
     		    logger.error(f"Balance calculation failed: {e}")
-    		    return self._handle_balance_error(e)		
+    		    return self._handle_balance_calculation_error(e)		
     				
     def _get_offline_balance(self) -> WalletBalance:
         try:
@@ -1012,6 +1012,28 @@ class RayonixWallet:
     	    confirmed_balance = total_balance
     	    
     	return confirmed_balance, unconfirmed_balance, locked_balance
+    	
+    def _handle_balance_calculation_error(self, error: Exception) -> WalletBalance:
+        """Handle balance calculation errors gracefully"""
+        error_type = type(error).__name__
+        # Try to use cached balance if available
+        cached_balance = self._get_cached_balance()
+        if cached_balance:
+            logger.warning(f"Using cached balance due to {error_type}: {error}")
+            return cached_balance
+            
+        # Return error-indicative balance
+        return WalletBalance(
+            total=-1,
+            confirmed=-1,
+            unconfirmed=-1,
+            locked=-1,
+            available=-1,
+            by_address={},
+            tokens={},
+            error=str(error),
+            error_type=error_type
+        )	    			    	    	    	   	    			    	    	    	
     	   	    			    	    	
     def _is_utxo_confirmed(self, utxo: UTXO) -> bool:
     	"""Check if UTXO has sufficient confirmations"""

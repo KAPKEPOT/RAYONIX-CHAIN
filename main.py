@@ -5,6 +5,7 @@ import json
 import sys
 import time
 import traceback
+from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 import logging
@@ -658,43 +659,56 @@ Available Commands:
             print(f"  Addresses: {len(addresses)}")
             print(f"  Primary: {addresses[0]}")
             
-            # Get balance with offline mode support
-            balance_info = self.wallet.get_balance()
-            
-            # Show balances
-            total_balance = balance_info.total
-            print(f"  Total Balance: {total_balance} RXY")
-            
-            if balance_info.offline_mode:
-            	print(f"  Mode: Offline")
-            	if balance_info.last_online_update:
-            		print(f"  Last Update: {datetime.fromtimestamp(balance_info.last_online_update).strftime('%Y-%m-%d %H:%M:%S')}")
-            	if balance_info.confidence_level:
-            		print(f"  Confidence: {balance_info.confidence_level}")
-            		if balance_info.confidence_level == "low":
-            			print("  ⚠️  Warning: Balance may be inaccurate - connect to network")
-            	else:
-            		print(f"  Mode: Online")
-            		print(f"  Confirmed: {balance_info.confirmed} RXY")
-            		print(f"  Unconfirmed: {balance_info.unconfirmed} RXY")
-            		print(f"  Available: {balance_info.available} RXY")
-            		print(f"  Locked: {balance_info.locked} RXY")
-            	# Show individual address balances
-            	if balance_info.by_address:
-            		print("  Address Balances:")
-            		for address, addr_balance in list(balance_info.by_address.items())[:5]:
-            			if isinstance(addr_balance, dict):
-            				balance_val = addr_balance.get('total', 0)
-            				offline_flag = " (offline)" if addr_balance.get('offline_estimated') else ""
-            				print(f"    {address}: {balance_val} RXY{offline_flag}")
+            # Get balance with error handling
+            try:
+            	balance_info = self.wallet.get_balance()
+            	
+            	# Show balances
+            	total_balance = balance_info.total
+            	print(f"  Total Balance: {total_balance} RXY")
+            	
+            	if hasattr(balance_info, 'offline_mode') and balance_info.offline_mode:
+            		print(f"  Mode: Offline")
+            		if hasattr(balance_info, 'last_online_update') and balance_info.last_online_update:
+            			print(f"  Last Update: {datetime.fromtimestamp(balance_info.last_online_update).strftime('%Y-%m-%d %H:%M:%S')}")
+            			if hasattr(balance_info, 'confidence_level') and balance_info.confidence_level:
+            				print(f"  Confidence: {balance_info.confidence_level}")
+            				if balance_info.confidence_level == "low":
+            					print("  ⚠️  Warning: Balance may be inaccurate - connect to network")
             			else:
-            				print(f"    {address}: {addr_balance} RXY")
-            	if hasattr(self.wallet, 'get_master_xpub'):
-            		xpub = self.wallet.get_master_xpub()
-            		if xpub:
-            			print(f"  Master xpub: {xpub[:30]}...")
+            				print(f"  Mode: Online")
+            				print(f"  Confirmed: {balance_info.confirmed} RXY")
+            				print(f"  Unconfirmed: {balance_info.unconfirmed} RXY")
+            				print(f"  Available: {balance_info.available} RXY")
+            				print(f"  Locked: {balance_info.locked} RXY")
+            			
+            			# Show individual address balances
+            			if hasattr(balance_info, 'by_address') and balance_info.by_address:
+            				print("  Address Balances:")
+            				for address, addr_balance in list(balance_info.by_address.items())[:5]:
+            					if isinstance(addr_balance, dict):
+            						balance_val = addr_balance.get('total', 0)
+            						offline_flag = " (offline)" if addr_balance.get('offline_estimated') else ""
+            						print(f"    {address}: {balance_val} RXY{offline_flag}")
+            					else:
+            					    print(f"    {address}: {addr_balance} RXY")
+            		if hasattr(self.wallet, 'get_master_xpub'):
+            				xpub = self.wallet.get_master_xpub()
+            				if xpub:
+            					print(f"  Master xpub: {xpub[:30]}...")
+            except Exception as e:
+                print(f"  Error getting balance: {e}")
+                print("  Balance information unavailable")				       
+            				
+                        
+                        
+                        
             
-    
+            		
+            
+        
+            
+        
     def _get_balance(self, args: List[str]):
         """Get balance for address or loaded wallet"""
         try:
