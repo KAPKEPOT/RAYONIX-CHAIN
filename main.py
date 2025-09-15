@@ -699,15 +699,7 @@ Available Commands:
             except Exception as e:
                 print(f"  Error getting balance: {e}")
                 print("  Balance information unavailable")				       
-            				
-                        
-                        
-                        
-            
-            		
-            
-        
-            
+          
         
     def _get_balance(self, args: List[str]):
         """Get balance for address or loaded wallet"""
@@ -987,12 +979,36 @@ Available Commands:
     
     def _show_validator_info(self):
         """Show validator information"""
-        if not self.wallet:
-            print("No wallet loaded")
+        if not hasattr(self.rayonix, 'get_validator_info'):
+            print("Validator info not yet implemented in rayonix_coin")
             return
+        info = self.rayonix.get_validator_info()
         
-        # This would need validator info methods in rayonix_coin
-        print("Validator info not yet implemented in rayonix_coin")
+        if 'error' in info:
+        	print(f"Error: {info['error']}")
+        	return
+        
+        print("\n=== VALIDATOR INFORMATION ===")
+        print(f"Validator Address: {info['validator_address']}")
+        print(f"Status: {'Active' if info['is_active'] else 'Inactive'}")
+        print(f"Registered: {'Yes' if info['is_registered'] else 'No'}")
+        print(f"Stake Amount: {info['stake_amount']} RXY")
+        print(f"Network Stake: {info['total_network_stake']} RXY")
+        print(f"Stake Percentage: {info['stake_percentage']:.2f}%")
+        print(f"\nPerformance:")
+        print(f"  Blocks Validated: {info['performance_metrics']['blocks_validated']}")
+        print(f"  Success Rate: {info['performance_metrics']['validation_success_rate']:.1f}%")
+        print(f"  Uptime: {info['performance_metrics']['uptime_percentage']:.1f}%")
+        
+        print(f"\nEconomics:")
+        print(f"  Total Rewards: {info['economics']['total_rewards_earned']} RXY")
+        
+        print(f"  APR: {info['economics']['apr']:.2f}%")
+        print(f"  ROI: {info['economics']['roi']:.2f}%")
+        
+        print(f"\nNetwork Health: {info['network_status']['network_health'].upper()}")
+        print(f"Active Validators: {info['network_status']['active_validators']}")
+        print(f"\nSlashing Risk: {info['slashing_risk']['risk_level'].upper()}")
     
     def _show_sync_status(self):
         """Show synchronization status"""

@@ -624,7 +624,361 @@ class RayonixCoin:
         # This would verify the cryptographic signature
         # For now, we'll simulate validation
         return True
+        
+    def get_validator_info(self, validator_address: Optional[str] = None) -> Dict:
+    	start_time = time.time()
+    	metrics = {
+    	    'method_calls': {},
+    	    'timings': {},
+    	    'errors': []
+    	}
+    	try:
+    		# Input validation and sanitization
+    		if validator_address:
+    			if not self._validate_address_format(validator_address):
+    				return self._create_error_response(
+    				    'invalid_address_format',
+    				    f"Invalid validator address format: {validator_address}",
+    				    metrics
+    				)
+    			validator_address = validator_address.strip().lower()
+    		# Address resolution with fallbacks
+    		resolved_address = self._resolve_validator_address(validator_address)
+    		if not resolved_address:
+    			return self._create_error_response(
+    			    'address_resolution_failed',
+    			    'No validator address could be resolved',
+    			    metrics
+    			)
+    		validator_address = resolved_address
+    		
+    		# Check if validator exists in consensus
+    		if not self.consensus.validator_exists(validator_address):
+    			return self._create_error_response(
+    			    'validator_not_found',
+    			    f'Validator {validator_address} not found in consensus',
+    			    metrics,
+    			    {'validator_address': validator_address}
+    			)
+    		# Parallel data collection for performance
+    		with ThreadPoolExecutor(max_workers=4) as executor:
+    			# Submit all data collection tasks
+    			basic_info_future = executor.submit(
+    			self._get_basic_validator_info, validator_address
+    			)
+    			staking_info_future = executor.submit(
+    			self._get_staking_info, validator_address
+    			)
+    			performance_future = executor.submit(
+    			self._calculate_validator_performance, validator_address
+    			)
+    			economics_future = executor.submit(
+    			self._get_validator_economics, validator_address
+    			)
+    			# Wait for completion with timeout
+    			basic_info = self._get_with_timeout(basic_info_future, 5, 'basic_info')
+    			staking_info = self._get_with_timeout(staking_info_future, 5, 'staking_info')
+    			performance = self._get_with_timeout(performance_future, 10, 'performance')
+    			economics = self._get_with_timeout(economics_future, 8, 'economics')
+    		# Get additional info sequentially
+    		schedule = self._get_validation_schedule(validator_address)
+    		network_status = self._get_network_validator_status()
+    		slashing_risk = self._assess_slashing_risk(validator_address)
+    		# Compile comprehensive response
+    		response = {
+    		    'validator_address': validator_address,
+    		    'basic_info': basic_info,
+    		    'staking_info': staking_info,
+    		    'performance_metrics': performance,
+    		    'economics': economics,
+    		    'validation_schedule': schedule,
+    		    'network_status': network_status,
+    		    'slashing_risk': slashing_risk,
+    		    'system_info': {
+    		        'wallet_connected': self.wallet is not None,
+    		        'network_connected': self.network is not None and self.network.is_connected(),
+    		        'current_height': len(self.blockchain) - 1,
+    		        'timestamp': int(time.time()),
+    		        'response_time_ms': int((time.time() - start_time) * 1000)
+    		    },
+    		    'metadata': {
+    		        'version': '2.0',
+    		        'format': 'standardized',
+    		        'cache_status': 'live',
+    		        'data_freshness': self._get_data_freshness()
+    		    }
+    		}
+    		# Add signatures for data integrity
+    		response['signature'] = self._sign_validator_info(response)
+    		
+    		# Update metrics
+    		metrics['timings']['total'] = time.time() - start_time
+    		response['_metrics'] = metrics
+    		
+    		# Cache the response
+    		self._cache_validator_info(validator_address, response)
+    		
+    		return response
+    		
+    	except Exception as e:
+    	    logger.error(f"Critical error in get_validator_info: {e}", exc_info=True)
+    	    metrics['errors'].append({
+    	        'type': 'critical',
+    	        'message': str(e),
+    	        'timestamp': time.time()
+    	    })
+    	    return self._create_error_response(
+    	        'internal_error',
+    	        f'Internal server error: {str(e)}',
+    	        metrics,
+    	        {'validator_address': validator_address}
+    	    )		
+    			
+    def _resolve_validator_address(self, validator_address: Optional[str]) -> Optional[str]:
+    	"""Resolve validator address with multiple fallback strategies."""
+            	
+    	try:
+    		# If address provided, validate and return
+    		if validator_address:
+    			if self._validate_address_format(validator_address):
+    				return validator_address.lower()
+    			return None
+    			
+    		# Fallback 1: Use wallet's primary address
+    		if self.wallet and self.wallet.addresses:
+    			primary_address = list(self.wallet.addresses.keys())[0]
+    			if self._validate_address_format(primary_address):
+    				return primary_address.lower()
+    				
+    		# Fallback 2: Check if we're a validator in consensus
+    		if hasattr(self.consensus, 'get_local_validator_address'):
+    	         local_address = self.consensus.get_local_validator_address()
+    	         if local_address and self._validate_address_format(local_address):
+    	         	
+    	         	return local_address.lower()
+    	         	# Fallback 3: Check database for recently used validator
+    	         	cached_validator = self.database.get('last_used_validator')
+    	         	if cached_validator and self._validate_address_format(cached_validator):
+    	         		return cached_validator.lower()
+    	         	return None
+    	         	
+    	except Exception as e:
+    	    logger.warning(f"Address resolution failed: {e}")
+    	    return None   
+    	 
+                 
+        	
+    def _get_basic_validator_info(self, validator_address: str) -> Dict:
+    	try:
+    		info = self.consensus.get_validator_info(validator_address)
+    		
+    		# Enhanced validation of returned data
+    		required_fields = ['registered', 'active', 'registration_height']
+    		for field in required_fields:
+    			if field not in info:
+    				raise ValueError(f"Missing required field: {field}")
+    				
+    		# Additional derived information
+    		current_height = len(self.blockchain) - 1
+    		age_blocks = current_height - info.get('registration_height', current_height)
+    		return {
+    		    'is_registered': bool(info.get('registered', False)),
+    		    'is_active': bool(info.get('active', False)),
+    		    'registration_height': info.get('registration_height'),
+    		    'last_active_height': info.get('last_active_height'),
+    		    'validator_age_blocks': max(0, age_blocks),
+    		    'validator_age_days': self._blocks_to_days(age_blocks),
+    		    'public_key': info.get('public_key'),
+    		    'commission_rate': info.get('commission_rate', 0.0),
+    		    'max_commission_rate': info.get('max_commission_rate', 0.0),
+    		    'commission_change_rate': info.get('commission_change_rate', 0.0),
+    		    'identity': info.get('identity', {}),
+    		    'description': info.get('description', {}),
+    		    'status': self._determine_validator_status(info)
+    		}
+    	except Exception as e:
+    		logger.error(f"Failed to get basic validator info: {e}")
+    		return {
+    		    'error': f'basic_info_failure: {str(e)}',
+    		    'is_registered': False,
+    		    'is_active': False,
+    		    'status': 'unknown'
+    		}    	         	
+
+    def _get_staking_info(self, validator_address: str) -> Dict:
+    	try:
+    	    staked_amount = self.consensus.get_stake_amount(validator_address)
+    	    total_staked = self.consensus.get_total_stake()
+    	    delegated_stake = self.consensus.get_delegated_stake(validator_address)
+    	    
+    	    # Calculate percentages with safety checks 
+    	    stake_percentage = (staked_amount / total_staked * 100) if total_staked > 0 else 0
+    	    voting_power = self.consensus.get_voting_power(validator_address) if hasattr(
+            self.consensus, 'get_voting_power') else staked_amount
+    	    return {
+    	        'self_stake': staked_amount,
+    	        'delegated_stake': delegated_stake,
+    	        'total_stake': staked_amount + delegated_stake,
+    	        'total_network_stake': total_staked,
+    	        'stake_percentage': round(stake_percentage, 4),
+    	        'voting_power': voting_power,
+    	        'voting_power_percentage': (voting_power / total_staked * 100) if total_staked > 0 else 0,
+    	        'min_self_stake_requirement': self.config['stake_minimum'],
+    	        'meets_min_stake': staked_amount >= self.config['stake_minimum'],
+    	        'stake_rank': self.consensus.get_validator_rank(validator_address) if hasattr(
+                self.consensus, 'get_validator_rank') else None,
+                'delegators_count': self.consensus.get_delegators_count(validator_address) if hasattr(
+                self.consensus, 'get_delegators_count') else 0
+    	    }
+    	except Exception as e:
+    	    logger.error(f"Failed to get staking info: {e}")
+    	    return {
+    	        'error': f'staking_info_failure: {str(e)}',
+    	        'self_stake': 0,
+    	        'total_network_stake': 0,
+    	        'stake_percentage': 0
+    	    }	
+    	    
+    def _calculate_validator_performance(self, validator_address: str) -> Dict:
+        """Calculate comprehensive performance metrics with caching."""
+        cache_key = f"validator_perf_{validator_address}"
+        cached = self._get_cached_performance(cache_key)
+        if cached and not self._is_performance_data_stale(cached):
+            return cached
+        try:
+            # Count blocks validated with efficient scanning
+            blocks_validated = 0
+            recent_blocks = 0
+            total_blocks = max(1, len(self.blockchain) - 1)
+            
+            # Use efficient block scanning for large blockchains
+            if len(self.blockchain) > 1000:
+            	# For large chains, sample recent blocks and extrapolate
+            	sample_size = min(1000, total_blocks)
+            	sample_blocks = self.blockchain[-sample_size:]
+            	sample_validated = sum(1 for block in sample_blocks if block.get('validator') == validator_address)
+            	blocks_validated = int(sample_validated * (total_blocks / sample_size))
+            else:
+                # For small chains, scan all blocks
+                blocks_validated = sum(1 for block in self.blockchain[1:] if block.get('validator') == validator_address)
+            # Get detailed performance metrics
+            uptime = self.consensus.get_validator_uptime(validator_address)
+            block_times = self._get_validator_block_times(validator_address)
+            recent_activity = self._get_recent_validator_activity(validator_address)
+            performance_data = {
+                'blocks_validated': blocks_validated,
+                'validation_success_rate': round(
+                    (blocks_validated / total_blocks * 100) if total_blocks > 0 else 0, 2
+                ),
+                'uptime_percentage': round(uptime or 0, 2),
+                'average_block_time': round(
+                    sum(block_times) / len(block_times) if block_times else 0, 3
+                ),
+                'block_time_std_dev': round(
+                    statistics.stdev(block_times) if len(block_times) > 1 else 0, 3
+                ),
+                'missed_blocks': self.consensus.get_missed_blocks(validator_address),
+                'last_missed_block': self.consensus.get_last_missed_block(validator_address),
+                'consecutive_successes': self.consensus.get_consecutive_successes(validator_address),
+                'recent_activity': recent_activity,
+                'performance_score': self._calculate_performance_score(
+                    blocks_validated, uptime, block_times
+                ),
+                'reliability_rating': self._get_reliability_rating(uptime or 0),
+                'efficiency_rating': self._get_efficiency_rating(block_times)
+            
+            }
+            # Cache the performance data
+            self._cache_performance_data(cache_key, performance_data)
+            
+            return performance_data
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate performance: {e}")
+            return {
+                'error': f'performance_calculation_failure: {str(e)}',
+                'blocks_validated': 0,
+                'validation_success_rate': 0,
+                'uptime_percentage': 0
+            }                                              
+                                 
+    def _get_validator_economics(self, validator_address: str) -> Dict:
+    	"""Get comprehensive economic information with forecasting."""
+    	try:
+    		staked_amount = self.consensus.get_stake_amount(validator_address)
+    		total_rewards = self._calculate_validator_rewards(validator_address)
+    		pending_rewards = self._calculate_pending_rewards(validator_address)
+    		total_stake = self.consensus.get_total_stake()
+    		
+    		# Calculate advanced metrics
+    		apr = self._calculate_apr(validator_address, total_rewards)
+    		roi = self._calculate_roi(validator_address, total_rewards, staked_amount)
+    		annual_earnings = self._estimate_annual_earnings(validator_address)
+    		return {
+    		    'staked_amount': staked_amount,
+    		    'total_rewards_earned': total_rewards,
+    		    'pending_rewards': pending_rewards,
+    		    'unclaimed_rewards': self.consensus.get_unclaimed_rewards(validator_address),
+    		    'reward_history': self._get_reward_history(validator_address),
+    		    'apr': round(apr, 4),
+    		    'apy': round(self._calculate_apy(apr), 4),
+    		    'roi': round(roi, 4),
+    		    'annual_earnings_estimate': annual_earnings,
+    		    'fee_structure': self._get_fee_structure(),
+    		    'commission_earnings': self._calculate_commission_earnings(validator_address),
+    		    
+    		    'delegator_rewards': self._calculate_delegator_rewards(validator_address),
+    		    'economic_viability': self._assess_economic_viability(
+                staked_amount, apr, total_stake
+            ),
+    		    'break_even_estimation': self._calculate_break_even(validator_address)
+        
+    		    
+    		}
+    	except Exception as e:
+    		logger.error(f"Failed to get economics info: {e}")
+    		return {
+    		    'error': f'economics_calculation_failure: {str(e)}',
+    		    'staked_amount': 0,
+    		    'total_rewards_earned': 0,
+    		    'apr': 0
+    		}  
     
+    def _assess_slashing_risk(self, validator_address: str) -> Dict:    	
+    	                      
+        try:
+        	# Get comprehensive risk factors
+        	risk_factors = self._collect_risk_factors(validator_address)
+        	
+        	# Calculate risk score using weighted factors
+        	risk_score = self._calculate_risk_score(risk_factors)
+        	risk_level = self._determine_risk_level(risk_score)
+        	
+        	# Get mitigation recommendations
+        	recommendations = self._get_risk_recommendations(risk_level, risk_factors)
+        	
+        	# Calculate financial impact
+        	financial_impact = self._calculate_slashing_impact(validator_address, risk_score)
+        	return {
+        	    'risk_level': risk_level,
+        	    'risk_score': round(risk_score, 4),
+        	    'risk_factors': risk_factors,
+        	    'financial_impact': financial_impact,
+        	    'recommendations': recommendations,
+        	    'monitoring_required': risk_level in ['high', 'critical'],
+        	    'last_risk_assessment': int(time.time()),
+        	    'risk_trend': self._get_risk_trend(validator_address),
+        	    'insurance_coverage': self._get_insurance_coverage(validator_address)
+        	}
+        except Exception as e:
+            logger.error(f"Failed to assess slashing risk: {e}")
+            return {
+                
+                'risk_level': 'unknown',
+                'error': f'risk_assessment_failure: {str(e)}'
+            }	        	                   
+        		        	    
+  
     def _sync_loop(self):
         """Blockchain synchronization loop"""
         while True:
@@ -1044,15 +1398,125 @@ def generate_genesis_block(config: Dict) -> Dict:
 
 def validate_rayonix_address(address: str) -> bool:
     """Validate RAYONIX address"""
-    # RAYONIX uses Bech32 addresses starting with 'rx'
-    if address.startswith('rx1'):
+    # RAYONIX uses Bech32 addresses starting with 'ryx'
+    if not address or not isinstance(address, str):
+        return False
+        
+    # Check length and prefix
+    if not address.startswith('ryx1') or len(address) != 42:
+        return False
+        
+    # Bech32 validation
+    try:
+        hrp, data = bech32.decode(address)
+        return hrp == 'ryx' and data is not None
+    except:
+        return False
+        
+    def _get_with_timeout(self, future, timeout: int, operation: str) -> Any:
+        """Get future result with timeout and error handling."""
         try:
-            hrp, data = bech32.decode(address)
-            return hrp == 'rx' and data is not None
-        except:
-            return False
-    return False
-
+        	return future.result(timeout=timeout)
+        except TimeoutError:
+        	logger.warning(f"Timeout in {operation} operation")
+        	
+        	return {'error': f'timeout_in_{operation}', 'timed_out': True}
+        	
+        except Exception as e:
+        	 logger.error(f"Error in {operation} operation: {e}")
+        	 
+        	 return {'error': f'error_in_{operation}: {str(e)}'}
+    
+        
+    def _create_error_response(self, error_code: str, message: str, metrics: Dict, extra: Dict = None) -> Dict:
+    	"""Create standardized error response."""
+    	response = {
+    	    'error': {
+    	        'code': error_code,
+    	        'message': message,
+    	        'timestamp': int(time.time())
+        
+        
+    	    },
+    	    'system_info': {
+    	        'current_height': len(self.blockchain) - 1,
+    	        'timestamp': int(time.time())
+       
+    	    },
+    	    '_metrics': metrics
+    	    
+    	}
+    	if extra:
+    		response['error'].update(extra)
+    	return response        
+    
+    def _sign_validator_info(self, data: Dict) -> Dict:
+    	"""Sign validator information for data integrity."""
+    	try:
+    		# Create hash of the data
+    		data_hash = hashlib.sha256(
+    		    json.dumps(data, sort_keys=True).encode()
+    		).hexdigest()
+    		
+    		# Sign with node key if available
+    		signature = None
+    		if hasattr(self, 'node_key'):
+    			signature = self.node_key.sign(data_hash.encode()).hex()
+    			return {
+    			    'data_hash': data_hash,
+    			    'signature': signature,
+    			    'signing_node': getattr(self, 'node_id', 'unknown'),
+    			    'timestamp': int(time.time())
+    			}
+    	except Exception as e:
+    		logger.warning(f"Failed to sign validator info: {e}")
+    		return {'error': f'signing_failed: {str(e)}'}
+    		        
+    def _cache_validator_info(self, address: str, data: Dict):
+    	"""Cache validator information with expiration."""
+    	try:
+    		cache_data = {
+    		    'data': data,
+    		    'timestamp': time.time(),
+    		    'expires_at': time.time() + 300,
+    		    'height': len(self.blockchain) - 1
+    		}
+    		cache_key = f"validator_info_{address}"
+    		self.database.put(cache_key, cache_data)
+    	except Exception as e:
+    		logger.warning(f"Failed to cache validator info: {e}")
+    		
+# Additional helper methods would be implemented here for:
+# - _calculate_performance_score
+# - _get_reliability_rating
+# - _get_efficiency_rating
+# - _calculate_apy
+# - _calculate_commission_earnings
+# - _calculate_delegator_rewards
+# - _assess_economic_viability
+# - _calculate_break_even
+# - _collect_risk_factors
+# - _calculate_risk_score
+# - _determine_risk_level
+# - _calculate_slashing_impact
+# - _get_risk_trend
+# - _get_insurance_coverage
+# - And many more...    		
+    		
+    def _get_data_freshness(self) -> str:
+    	"""Get data freshness indicator."""
+    	height = len(self.blockchain) - 1
+    	if height < 10:
+    		return 'very_fresh'
+    	elif height < 100:
+    		return 'fresh'
+    	elif height < 1000:
+    		return 'recent'
+    	else:
+    		return 'established'
+    	
+           	
+    	
 def calculate_mining_reward(height: int, base_reward: int = 50, halving_interval: int = 210000) -> int:
     """Calculate mining reward at given height"""
     halvings = height // halving_interval
