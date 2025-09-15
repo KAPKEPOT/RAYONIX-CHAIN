@@ -979,7 +979,7 @@ Available Commands:
     
     def _show_validator_info(self):
         """Show validator information"""
-        if not hasattr(self.rayonix, 'get_validator_info'):
+        if not hasattr(self.rayonix_coin, 'get_validator_info'):
             print("Validator info not yet implemented in rayonix_coin")
             return
         info = self.rayonix_coin.get_validator_info()
