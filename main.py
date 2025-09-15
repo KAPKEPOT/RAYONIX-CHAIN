@@ -105,24 +105,24 @@ class RayonixNode:
             logger.info("Initializing RAYONIX Node...")
             
             # Get configuration values from config.py
-            network_type = self.get_config_value('network.network_type', 'mainnet')
-            data_dir = Path(self.config['data_dir'])
+            network_type = self.config.network.network_type
+            data_dir = Path(self.config.database.db_path)
             
             # Create data directory
-            data_dir_path = Path(data_dir)
             data_dir.mkdir(exist_ok=True, parents=True)
             
-            
+            # Initialize rayonix_coin with proper attribute access
             self.rayonix_coin = RayonixCoin(
-            network_type=self.config['network'],
-            data_dir=str(data_dir)
-        )
-            
+                network_type=network_type,
+                data_dir=str(data_dir)
+            )
+          
             # Initialize wallet with proper blockchain integration
             await self._initialize_wallet_with_blockchain()
             
             # Initialize network if enabled
-            if self.config.get('network_enabled', True):
+            if self.config.network.enabled:
+            	
             	await self._initialize_network()
             logger.info("RAYONIX Node initialized successfully with blockchain-wallet integration")
             return True
@@ -135,7 +135,7 @@ class RayonixNode:
             
     async def _initialize_wallet_with_blockchain(self):
     	"""Initialize wallet with proper blockchain reference integration"""
-    	wallet_file = Path(self.config['data_dir']) / 'wallet.dat'
+    	wallet_file = Path(self.config.database.db_path) / 'wallet.dat'
     	if wallet_file.exists():
     		try:
     			# Load existing wallet
@@ -161,7 +161,7 @@ class RayonixNode:
             # Create new wallet
             self.wallet = create_new_wallet(
                 wallet_type=WalletType.HD,
-                network=self.config['network'],
+                network=self.config.network.network_type,
                 address_type=AddressType.RAYONIX
             )
             # Establish blockchain reference
@@ -169,7 +169,7 @@ class RayonixNode:
                 logger.info("New wallet created with blockchain integration")
                 
                 # Save wallet immediately
-                wallet_file = Path(self.config['data_dir']) / 'wallet.dat'
+                wallet_file = Path(self.config.database.db_path) / 'wallet.dat'
                 if self.wallet.backup(str(wallet_file)):
                     logger.info("New wallet saved to disk")
                 else:
@@ -183,18 +183,18 @@ class RayonixNode:
     async def _initialize_network(self):
         """Initialize P2P network using config.py settings"""
         try:
-            # Get network settings from config
+            # Get network settings from config using attribute access
             network_config = NodeConfig(
-                network_type=NetworkType[self.get_config_value('network.network_type', 'mainnet').upper()],
-                listen_ip=self.get_config_value('network.listen_ip', '0.0.0.0'),
-                listen_port=self.get_config_value('network.listen_port', 30303),
-                max_connections=self.get_config_value('network.max_connections', 50),
-                bootstrap_nodes=self.get_config_value('network.bootstrap_nodes', []),
-                enable_encryption=self.get_config_value('network.enable_encryption', True),
-                enable_compression=self.get_config_value('network.enable_compression', True),
-                enable_dht=self.get_config_value('network.enable_dht', True),
-                connection_timeout=self.get_config_value('network.connection_timeout', 30),
-                message_timeout=self.get_config_value('network.message_timeout', 10)
+                network_type=NetworkType[self.config.network.network_type.upper()],
+                listen_ip=self.config.network.listen_ip,
+                listen_port=self.config.network.listen_port,
+                max_connections=self.config.network.max_connections,
+                bootstrap_nodes=self.config.network.bootstrap_nodes,
+                enable_encryption=self.config.network.enable_encryption,
+                enable_compression=self.config.network.enable_compression,
+                enable_dht=self.config.network.enable_dht,
+                connection_timeout=self.config.network.connection_timeout,
+                message_timeout=self.config.network.message_timeout
             )
             
             self.network = AdvancedP2PNetwork(network_config)
@@ -275,12 +275,12 @@ class RayonixNode:
                 if self.wallet and self.rayonix_coin:
                     # Check if we have enough balance to stake
                     balance_info = self.wallet.get_balance()
-                    if balance_info.total >= self.get_config_value('consensus.min_stake', 1000):
+                    if balance_info.total >= self.config.consensus.min_stake:
                         # Get the first address from wallet
                         from_address = list(self.wallet.addresses.keys())[0]
                         # Try to stake a portion of available balance
-                        stake_amount = min(balance_info.available // 2, self.get_config_value('consensus.max_stake', 10000000))
-                        if stake_amount >= self.get_config_value('consensus.min_stake', 1000):
+                        stake_amount = min(balance_info.available // 2, self.config.consensus.max_stake)
+                        if stake_amount >= self.config.consensus.min_stake:
                             try:
                                 result = self.rayonix_coin.register_validator(stake_amount)
                                 if result:
