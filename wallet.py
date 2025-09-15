@@ -1033,8 +1033,168 @@ class RayonixWallet:
             tokens={},
             error=str(error),
             error_type=error_type
-        )	    			    	    	    	   	    			    	    	    	
-    	   	    			    	    	
+        )	    			    	    	    	   	    			  
+    def _sign_balance_data(self, balance_data: WalletBalance) -> str:
+        try:
+            # Create a canonical, deterministic representation of the balance data
+            balance_dict = self._prepare_balance_data_for_signing(balance_data)
+            
+            # Serialize to canonical JSON with sorted keys
+            canonical_data = json.dumps(balance_dict, sort_keys=True, separators=(',', ':')).encode()
+            
+            # Add timestamp to prevent replay attacks
+            timestamp = str(int(time.time()))
+            signed_data = canonical_data + timestamp.encode()
+            
+            # Sign with wallet's master key if available and wallet is unlocked
+            if self.master_key and not self.locked:
+                 try:
+                     # Use deterministic ECDSA signing (RFC 6979)
+                     sk = SigningKey.from_string(self.master_key.private_key, curve=SECP256k1)
+                     
+                     # Sign with additional context to prevent misuse
+                     context_data = signed_data + b'balance_cache_v1'
+                     signature = sk.sign(context_data, hashfunc=hashlib.sha256, sigencode=ecdsa.util.sigencode_der)
+                     
+                     # Return signature + timestamp for validation
+                     return f"v1:{timestamp}:{signature.hex()}"
+                 except Exception as key_error:
+                     logger.warning(f"Cryptographic signing failed, falling back to HMAC: {key_error}")
+                     
+                     # Fallback to HMAC with derived key
+                     hmac_key = self._derive_balance_hmac_key()
+                     hmac_sig = hmac.new(hmac_key, signed_data, hashlib.sha256).digest()
+                     return f"hmac_v1:{timestamp}:{hmac_sig.hex()}"
+             
+            # Fallback: use HMAC with wallet ID as key for watch-only wallets
+            hmac_key = self.wallet_id.encode()
+            hmac_sig = hmac.new(hmac_key, signed_data, hashlib.sha256).digest()
+            return f"hmac_v1:{timestamp}:{hmac_sig.hex()}"
+        except Exception as e:
+            logger.error(f"Critical: Failed to sign balance data: {e}")
+            # Return error indicator that will fail validation
+            return "error:signature_failure" 
+                                                      
+    def _prepare_balance_data_for_signing(self, balance_data: WalletBalance) -> Dict:
+        """Prepare balance data for signing by removing volatile fields and normalizing."""
+        balance_dict = asdict(balance_data) if hasattr(balance_data, '__dataclass_fields__') else balance_data.__dict__
+        
+        # Remove volatile fields that shouldn't be signed
+        volatile_fields = ['signature', 'timestamp', 'last_online_update', 'data_freshness', 'confidence_level', 'warning', 'error']
+        for field in volatile_fields:
+        	balance_dict.pop(field, None)
+        	
+        # Normalize numeric fields to prevent type issues
+        numeric_fields = ['total', 'confirmed', 'unconfirmed', 'locked', 'available']
+        for field in numeric_fields:
+        	if field in balance_dict:
+        		balance_dict[field] = int(balance_dict[field])
+        		
+        # Sort nested dictionaries for deterministic ordering
+        if 'by_address' in balance_dict and balance_dict['by_address']:
+        	sorted_by_address = {}
+        	for addr in sorted(balance_dict['by_address'].keys()):
+        		sorted_by_address[addr] = balance_dict['by_address'][addr]
+        	balance_dict['by_address'] = sorted_by_address
+        	
+        if 'tokens' in balance_dict and balance_dict['tokens']:
+        	sorted_tokens = {}
+        	for token in sorted(balance_dict['tokens'].keys()):
+        		sorted_tokens[token] = balance_dict['tokens'][token]
+        	balance_dict['tokens'] = sorted_tokens
+        return balance_dict
+    	
+    def _derive_balance_hmac_key(self) -> bytes:
+    	"""Derive a secure HMAC key for balance signing."""
+    	# Use wallet ID and a constant salt to derive HMAC key
+    	salt = b'balance_hmac_salt_v1'
+    	return hashlib.pbkdf2_hmac('sha256', 
+                              self.wallet_id.encode(), 
+                              salt, 
+                              100000,  # 100k iterations
+                              32)  # 32 bytes   
+                              
+    def _validate_balance_signature(self, cache_data: Dict) -> bool:
+    	
+        try:
+        	balance_data = cache_data.get('balance')
+        	stored_signature = cache_data.get('signature', '')
+        	cache_timestamp = cache_data.get('timestamp', 0)
+        	
+        	# Basic validation
+        	if not balance_data or not stored_signature:
+        		logger.warning("Balance validation failed: missing data or signature")
+        		return False
+        	# Check for error signatures
+        	if stored_signature.startswith('error:'):
+        		logger.warning(f"Balance validation failed: error signature {stored_signature}")
+        		return False
+        		
+        	# Parse signature format
+        	if ':' not in stored_signature:
+        		logger.warning("Balance validation failed: invalid signature format")
+        		return False
+        		
+        	sig_parts = stored_signature.split(':', 2)
+        	if len(sig_parts) < 3:
+        		logger.warning("Balance validation failed: malformed signature")
+        		return False
+        		
+        	sig_version, sig_timestamp, sig_value = sig_parts
+        	# Check signature timestamp for freshness (prevent replay attacks)
+        	try:
+        		sig_time = int(sig_timestamp)
+        		current_time = time.time()
+        		
+        		# Reject signatures older than 24 hours
+        		if current_time - sig_time > 86400:
+        			logger.warning("Balance validation failed: signature too old")
+        			return False
+        			
+        			
+        		# Reject future signatures (clock skew protection)
+        		if sig_time > current_time + 300:
+        			logger.warning("Balance validation failed: signature from future")  # 5 minutes tolerance
+        		
+        		return False
+        	except ValueError:
+        		logger.warning("Balance validation failed: invalid timestamp")
+        		return False
+        	# Prepare data for verification (same as signing)
+        	balance_dict = self._prepare_balance_data_for_signing(balance_data)
+        	balance_dict = self._prepare_balance_data_for_signing(balance_data)
+        	canonical_data = json.dumps(balance_dict, sort_keys=True, separators=(',', ':')).encode()
+        	signed_data = canonical_data + sig_timestamp.encode()
+        	# Verify based on signature type
+        	if sig_version == 'v1':
+        		if not self.master_key or self.locked:
+        			logger.warning("Balance validation failed: cannot verify ECDSA without master key")
+        			return False
+        		try:
+        			context_data = signed_data + b'balance_cache_v1'
+        			public_key = self.master_key.public_key
+        			vk = VerifyingKey.from_string(public_key, curve=SECP256k1)
+        			return vk.verify(bytes.fromhex(sig_value), context_data, hashfunc=hashlib.sha256, sigdecode=ecdsa.util.sigdecode_der)
+        			
+        		except Exception as e:
+        			logger.error(f"ECDSA verification failed: {e}")
+        			return False
+        	elif sig_version == 'hmac_v1':
+        		# HMAC verification
+        		expected_hmac = hmac.new(self._derive_balance_hmac_key(), signed_data, hashlib.sha256).digest()
+        		
+        		# Use constant-time comparison to prevent timing attacks
+        		return hmac.compare_digest(expected_hmac, bytes.fromhex(sig_value))
+        		
+        	else:
+        		logger.warning(f"Balance validation failed: unknown signature version {sig_version}")
+        		return False
+        except Exception as e:
+            logger.error(f"Balance signature validation critically failed: {e}")
+            # In production, we should be conservative and reject on validation errors
+            return False		
+        		
+        
     def _is_utxo_confirmed(self, utxo: UTXO) -> bool:
     	"""Check if UTXO has sufficient confirmations"""
     	try:
@@ -1099,33 +1259,76 @@ class RayonixWallet:
         except Exception as e:
             logger.error(f"Balance reconciliation error for {address}: {e}")                                              
     def _update_balance_cache(self, balance_data: WalletBalance):
-        """Update balance cache with new data and metadata"""
-        cache_entry = {
-            'balance': balance_data,
-            'timestamp': time.time(),
-            'block_height': len(self.rayonix_coin.blockchain),
-            'signature': self._sign_balance_data(balance_data)
-        }
-        self._balance_cache = cache_entry
-        self._last_balance_update = time.time()                                                  	    			    			                  	    			    		    	                          	    			    			                                              
+        """Update balance cache with proper error handling and atomicity."""
+        try:
+        	# Create signature first (this might fail)
+        	signature = self._sign_balance_data(balance_data)
+        	
+        	# Prepare cache entry atomically
+        	cache_entry = {
+        	    'balance': balance_data,
+        	    'timestamp': time.time(),
+        	    'block_height': len(self.rayonix_coin.blockchain) if self.rayonix_coin else 0,
+        	    'signature': signature,
+        	    'version': '1.0'
+        	}
+        	# Atomic update
+        	self._balance_cache = cache_entry
+        	self._last_balance_update = time.time()
+        	
+        	# Log successful update
+        	if not signature.startswith('error:'):
+        		logger.debug("Balance cache updated with valid signature")
+        	else:
+        		logger.warning("Balance cache updated with error signature")
+        except Exception as e:
+        	logger.error(f"Critical: Failed to update balance cache: {e}")
+        	
+   	    	                          	    			    			                                              
     def _get_cached_balance(self) -> Optional[WalletBalance]:
         """Get cached balance with staleness validation"""
-        if not hasattr(self, '_balance_cache') or not self._balance_cache:
-            return None
-            
-        cache_age = time.time() - self._balance_cache['timestamp']
-        current_height = len(self.rayonix_coin.blockchain)
-        
-        # Consider cache stale if older than 5 minutes or blockchain advanced significantly
-        if cache_age > 300 or (current_height - self._balance_cache['block_height']) > 6:
-            return None
-            
-        # Validate cache signature
-        if not self._validate_balance_signature(self._balance_cache):
-            logger.warning("Balance cache signature validation failed")
-            return None
-            
-        return self._balance_cache['balance']                          	    			    			         
+        try:
+        	if not hasattr(self, '_balance_cache') or not self._balance_cache:
+        		return None
+        	cache_data = self._balance_cache
+        	
+        	# Check cache version
+        	if cache_data.get('version') != '1.0':
+        		logger.warning("Balance cache validation failed: incompatible version")
+        		return None
+        		
+        	# Check cache age with different thresholds for online/offline
+        	cache_age = time.time() - cache_data.get('timestamp', 0)
+        	max_online_age = 300
+        	max_offline_age = 86400
+        	
+        	is_online = self.rayonix_coin is not None
+        	max_age = max_online_age if is_online else max_offline_age
+        	
+        	if cache_age > max_age:
+        		logger.debug(f"Balance cache expired: {cache_age:.0f}s > {max_age}s")
+        		return None
+        		
+        	# Validate signature (critical security check)
+        	if not self._validate_balance_signature(cache_data):
+        		logger.warning("Balance cache validation failed: invalid signature")
+        		return None
+        		
+        	# Additional consistency checks
+        	balance_data = cache_data.get('balance')
+        	if not balance_data:
+        		return None
+        		
+        	# Ensure balance values are sane
+        	if (hasattr(balance_data, 'total') and balance_data.total < -1):
+        	    logger.warning("Balance cache validation failed: invalid total balance")
+        	    return None
+        	return balance_data
+        except Exception as e:
+          logger.error(f"Balance cache retrieval failed: {e}")
+          return None 
+          
+            	                          	    			    			         
     def _handle_balance_calculation_error(self, error: Exception) -> WalletBalance:           
         """Handle balance calculation errors gracefully"""
         error_type = type(error).__name__
