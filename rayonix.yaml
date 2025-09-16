@@ -1,8 +1,8 @@
 # Rayonix Blockchain Node Configuration
 # Network Configuration
 network:
-  network_type: "mainnet"
-  network_id: 1
+  network_type: "testnet"
+  network_id: 2
   listen_ip: "0.0.0.0"
   listen_port: 30303
   public_ip: null
@@ -18,9 +18,9 @@ network:
   enable_dht: true
   enable_gossip: true
   bootstrap_nodes:
-    - "node1.rayonix.org:30303"
-    - "node2.rayonix.org:30303"
-    - "node3.rayonix.org:30303"
+    - "node1.rayonix.site:30303"
+    - "node2.rayonix.site:30303"
+    - "node3.rayonix.site:30303"
   allowed_peers: []
   blocked_peers: []
 
