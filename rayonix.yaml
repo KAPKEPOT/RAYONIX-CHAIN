@@ -47,7 +47,7 @@ consensus:
 
 # Database Configuration
 database:
-  db_type: "leveldb"
+  db_type: "plyvel"
   db_path: "./rayonix_data"
   compression: "snappy"
   encryption: "fernet"
@@ -67,7 +67,7 @@ database:
 wallet:
   wallet_type: "hd"
   key_derivation: "bip44"
-  address_type: "bech32"
+  address_type: "RAYONIX"
   encryption: true
   compression: true
   passphrase: null
