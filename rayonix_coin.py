@@ -1428,34 +1428,7 @@ class RayonixCoin:
     def __del__(self):
         """Destructor"""
         self.close()
-
-# Utility functions
-    def create_rayonix_network(network_type: str = "mainnet") -> RayonixCoin:
-        """Create RAYONIX network instance"""
-        return RayonixCoin(network_type)
-
-    def generate_genesis_block(config: Dict) -> Dict:
-        """Generate genesis block with custom configuration"""
-        # This would create a custom genesis block for private networks
-        pass
-
-    def validate_rayonix_address(address: str) -> bool:
-        """Validate RAYONIX address"""
-        # RAYONIX uses Bech32 addresses starting with 'ryx'
-        if not address or not isinstance(address, str):
-            return False
-        
-        # Check length and prefix
-        if not address.startswith('ryx1') or len(address) != 42:
-            return False
-        
-        # Bech32 validation
-        try:
-            hrp, data = bech32.decode(address)
-            return hrp == 'ryx' and data is not None
-        except:
-            return False
-        
+      
     def _get_with_timeout(self, future, timeout: int, operation: str) -> Any:
         """Get future result with timeout and error handling."""
         try:
@@ -2239,7 +2212,31 @@ class RayonixCoin:
     	else:
     		return 'established'
     	
-           	
+def create_rayonix_network(network_type: str = "mainnet") -> RayonixCoin:
+    """Create RAYONIX network instance"""
+    return RayonixCoin(network_type)
+
+def generate_genesis_block(config: Dict) -> Dict:
+    """Generate genesis block with custom configuration"""
+    # This would create a custom genesis block for private networks
+    pass
+
+def validate_rayonix_address(address: str) -> bool:
+    """Validate RAYONIX address"""
+    # RAYONIX uses Bech32 addresses starting with 'ryx'
+    if not address or not isinstance(address, str):
+        return False
+    
+    # Check length and prefix
+    if not address.startswith('ryx1') or len(address) != 42:
+        return False
+    
+    # Bech32 validation
+    try:
+        hrp, data = bech32.decode(address)
+        return hrp == 'ryx' and data is not None
+    except:
+        return False           	
     	
 def calculate_mining_reward(height: int, base_reward: int = 50, halving_interval: int = 210000) -> int:
     """Calculate mining reward at given height"""
