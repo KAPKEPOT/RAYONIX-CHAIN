@@ -2215,11 +2215,106 @@ class RayonixCoin:
 def create_rayonix_network(network_type: str = "mainnet") -> RayonixCoin:
     """Create RAYONIX network instance"""
     return RayonixCoin(network_type)
-
-def generate_genesis_block(config: Dict) -> Dict:
+    
+@classmethod
+def generate_genesis_block(cls, config_manager: Any = None, custom_config: Optional[Dict] = None) -> Dict:
     """Generate genesis block with custom configuration"""
-    # This would create a custom genesis block for private networks
-    pass
+    try:
+    	# Use the global config manager if available, otherwise create a minimal one
+    	if config_manager is None:
+    		try:
+    			from config import get_config
+    			config_manager = get_config()
+    		except ImportError:
+    			config_manager = None
+    	# Get configuration values from config manager
+    	premine_amount = config_manager.get('consensus.block_reward', 50) * 20000 # 20,000 blocks worth
+    	foundation_address = config_manager.get('wallet.foundation_address', 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX')
+    	block_reward = config_manager.get('consensus.block_reward', 50)
+    	network_id = config_manager.get('network.network_id', 1)
+    	block_time = config_manager.get('consensus.block_time', 30)
+    	max_supply = config_manager.get('consensus.max_supply', 21000000)
+    	developer_fee_percent = config_manager.get('consensus.developer_fee_percent', 0.05)
+    	
+    	# Merge with custom configuration if provided
+    	genesis_config = {
+    	    'premine_amount': premine_amount,
+    	    'foundation_address': foundation_address,
+    	    'block_reward': block_reward,
+    	    'timestamp': int(time.time()),
+    	    'network_id': network_id,
+    	    'validator': 'genesis',
+    	    'version': 1,
+    	    'difficulty': 1,
+    	    'nonce': 0,
+    	    'block_time_target': block_time,
+    	    'max_supply': max_supply,
+    	    'developer_fee_percent': developer_fee_percent
+    	}
+    	if custom_config:
+    		genesis_config.update(custom_config)
+    		
+    	# Create premine transaction
+    	premine_tx = Transaction(
+    	    inputs=[],
+    	    outputs=[{
+    	        'address': genesis_config['foundation_address'],
+    	        'amount': genesis_config['premine_amount'],
+    	        'locktime': 0
+    	    }],
+    	    locktime=0
+    	)
+    	
+    	genesis_transactions = [premine_tx.to_dict()]
+    	
+    	# Create genesis block
+    	genesis_block = {
+    	    'height': 0,
+    	    'hash': '0' * 64,  # Temporary placeholder
+    	    'previous_hash': '0' * 64,
+    	    'merkle_root': '',
+    	    'timestamp': genesis_config['timestamp'],
+    	    'difficulty': genesis_config['difficulty'],
+    	    'nonce': genesis_config['nonce'],
+    	    'validator': genesis_config['validator'],
+    	    'transactions': genesis_transactions,
+    	    'version': genesis_config['version'],
+    	    'chainwork': 1,
+    	    'network_id': genesis_config['network_id'],
+    	    'config_hash': hashlib.sha256(json.dumps(genesis_config, sort_keys=True).encode()).hexdigest()
+    	}
+    	
+    	# Calculate merkle root using the instance method
+    	temp_instance = cls.__new__(cls)
+    	temp_instance.config = {'block_time_target': genesis_config['block_time_target']}
+    	genesis_block['merkle_root'] = temp_instance._calculate_merkle_root(genesis_transactions)
+    	# Calculate block hash
+    	block_data = temp_instance._get_block_signing_data(genesis_block)
+    	genesis_block['hash'] = hashlib.sha256(block_data).hexdigest()
+    	
+    	# Add signature if private key is provided in custom config
+    	if custom_config and 'private_key' in custom_config:
+    		try:
+    			signing_key = SigningKey.from_string(bytes.fromhex(custom_config['private_key']), curve=SECP256k1)
+    			signature = signing_key.sign(block_data)
+    			genesis_block['signature'] = signature.hex()
+    			genesis_block['public_key'] = signing_key.get_verifying_key().to_string().hex()
+    		except Exception as e:
+    			logger.warning(f"Could not sign genesis block: {e}")
+    	
+    	logger.info(f"Generated genesis block for network {genesis_config['network_id']}")
+    	logger.info(f"Premine: {genesis_config['premine_amount']} to {genesis_config['foundation_address']}")
+    	
+    	return genesis_block
+    	
+    except ImportError as e:
+    	logger.error(f"Config module not available: {e}")
+    	raise RuntimeError("Configuration module is required for genesis block generation")
+    	
+    except Exception as e:
+    	logger.error(f"Error generating genesis block: {e}")
+    	raise
+    
 
 def validate_rayonix_address(address: str) -> bool:
     """Validate RAYONIX address"""
