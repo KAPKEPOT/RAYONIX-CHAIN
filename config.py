@@ -62,7 +62,7 @@ class ConfigMetadata:
 @dataclass
 class NetworkConfig:
     enabled: bool = True
-    network_type: str = "mainnet"  # mainnet, testnet, devnet, regtest
+    network_type: str = "testnet"  # mainnet, testnet, devnet, regtest
     network_id: int = 1
     listen_ip: str = "0.0.0.0"
     listen_port: int = 30303
@@ -109,7 +109,7 @@ class ConsensusConfig:
 
 @dataclass
 class DatabaseConfig:
-    db_type: str = "leveldb"  # leveldb, rocksdb, sqlite, postgresql
+    db_type: str = "plyvel"  # leveldb, rocksdb, sqlite, postgresql
     db_path: str = "./rayonix_data"
     compression: str = "snappy"  # none, snappy, zlib, lz4, zstd
     encryption: str = "fernet"  # none, fernet, aes256, chacha20

@@ -974,9 +974,33 @@ Available Commands:
     
     def _show_contracts(self):
         """Show deployed contracts"""
-        # This would need to be implemented in rayonix_coin
-        print("Contract listing not yet implemented in rayonix_coin")
-    
+        try:
+        	# Check if rayonix_coin has the contract manager
+        	if not hasattr(self.rayonix_coin, 'contract_manager') or self.rayonix_coin.contract_manager is None:
+        		print("Contract system not initialized")
+        		return
+        	# Get contracts using the new method
+        	contracts = self.rayonix_coin.get_all_contracts()
+        	
+        	if not contracts:
+        		print("No contracts deployed")
+        		return
+        	print(f"Deployed Contracts ({len(contracts)}):")
+        	print("-" * 80)
+        	
+        	for i, contract in enumerate(contracts, 1):
+        		print(f"{i}. Address: {contract.get('address', 'Unknown')[:16]}...")
+        		print(f"   Creator: {contract.get('creator', 'Unknown')[:12]}...")
+        		print(f"   Type: {contract.get('type', 'Unknown')}")
+        		print(f"   Balance: {contract.get('balance', 0)} RXY")
+        		print(f"   State: {contract.get('state', 'Unknown')}")
+        		print(f"   Executions: {contract.get('execution_count', 0)}")
+        		print()
+        		
+        except Exception as e:
+        	print(f"Error displaying contracts: {e}")
+        	traceback.print_exc()
+     
     def _show_validator_info(self):
         """Show validator information"""
         if not hasattr(self.rayonix_coin, 'get_validator_info'):

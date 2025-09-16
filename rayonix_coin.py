@@ -1378,6 +1378,20 @@ class RayonixCoin:
             self.wallet.get_address(),
             value
         )
+        
+    def get_all_contracts(self) -> List[Dict]:
+    	"""Get all deployed contracts with basic information"""
+    	try:
+    		# Check if contract_manager exists and has the method
+    		if hasattr(self, 'contract_manager') and self.contract_manager is not None:
+    			return self.contract_manager.get_all_contracts()
+    			
+    		else:
+    			return []
+    	except Exception as e:
+    		logger.error(f"Error getting contracts: {e}")
+    		return []        
+    		
     
     def register_validator(self, stake_amount: int) -> bool:
         """Register as validator"""
