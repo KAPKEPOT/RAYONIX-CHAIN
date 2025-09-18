@@ -45,7 +45,7 @@ from utxo import UTXOSet, Transaction, UTXO
 from consensus import ProofOfStake, Validator, ConsensusState, ValidatorStatus, VoteType, BlockProposal, Vote, RoundState
 
 from smart_contract import ContractManager, SmartContract, ContractState, ExecutionResult
-from database import AdvancedDatabase, DatabaseConfig, DatabaseType, TransactionalDatabase
+from database import AdvancedDatabase, DatabaseConfig, DatabaseType, CompressionType, EncryptionType
 from wallet import RayonixWallet, WalletConfig, WalletType, AddressType, HDWallet, KeyManager
 from p2p_network import AdvancedP2PNetwork, NodeConfig, PeerManager, NetworkProtocol
 from crypto import CryptoUtils, SignatureVerifier, KeyDerivation, HashFunctions
