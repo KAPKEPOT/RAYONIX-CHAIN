@@ -5,6 +5,7 @@ import secrets
 import hmac
 import struct
 from typing import Any, Union, Optional, Tuple, Dict
+from dataclasses import dataclass, asdict, field
 import hashlib
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
