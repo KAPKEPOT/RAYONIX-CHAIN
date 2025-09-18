@@ -39,7 +39,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # Import internal modules
-from merkle import MerkleTree, CompactMerkleTree, SparseMerkleTree
+from merkle import MerkleTree, CompactMerkleTree, MerkleTreeConfig, HashAlgorithm, ProofFormat, MerkleTreeFactory, MerkleTreeStats, global_stats, create_merkle_tree_from_file, create_merkle_tree_from_large_file, batch_verify_proofs, batch_verify_proofs_async, create_merkle_mountain_range
 from utxo import UTXOSet, Transaction, UTXO
 from consensus import ProofOfStake, Validator, Delegation, SlashingEvidence
 from smart_contract import ContractManager, SmartContract, ContractState, ContractExecutionResult
