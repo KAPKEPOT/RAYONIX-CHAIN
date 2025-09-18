@@ -35,7 +35,7 @@ import sqlite3
 import contextlib
 from pathlib import Path
 import secure
-#from secure import SecureString, secure_dump, secure_load
+from secure import SecureString, secure_dump, secure_load
 import psutil
 import gc
 
