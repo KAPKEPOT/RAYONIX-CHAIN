@@ -47,7 +47,29 @@ from consensus import ProofOfStake, Validator, ConsensusState, ValidatorStatus, 
 from smart_contract import ContractManager, SmartContract, ContractState, ExecutionResult
 from database import AdvancedDatabase, DatabaseConfig, DatabaseType, CompressionType, EncryptionType
 from wallet import RayonixWallet, WalletConfig, WalletType, AddressType
-from p2p_network import AdvancedP2PNetwork, NodeConfig, NetworkProtocol
+from p2p_network import (
+    AdvancedP2PNetwork,
+    NodeConfig,
+    NetworkType,
+    ProtocolType,
+    MessageType,
+    ConnectionState,
+    PeerInfo,
+    NetworkMessage,
+    ConnectionMetrics
+)
+
+# Example usage:
+config = NodeConfig(
+    network_type=NetworkType.TESTNET,
+    listen_ip="0.0.0.0", 
+    listen_port=30303,
+    max_connections=10
+)
+
+network = AdvancedP2PNetwork(config)
+
+# You can then use the network instance
 from crypto import CryptoUtils, SignatureVerifier, KeyDerivation, HashFunctions
 
 class BlockchainState(Enum):
