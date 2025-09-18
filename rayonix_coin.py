@@ -1076,6 +1076,9 @@ class RayonixCoin:
         self.contract_manager = ContractManager()
         self.wallet = self._initialize_wallet()
         self.network = self._initialize_network()
+        self.gas_price = GAS_PRICE_CONFIG['base_gas_price']
+        self.gas_price_history = deque(maxlen=1000)
+        self.update_errors = 0
         
         # Initialize core managers
         self.state_manager = StateManager(self.database, self.utxo_set, self.consensus, self.contract_manager)
@@ -1100,7 +1103,7 @@ class RayonixCoin:
     
     def _load_configuration(self) -> Dict[str, Any]:
         """Load node configuration"""
-        config_path = os.path.join(self.data_dir, 'config.json')
+        config_path = os.path.join(self.data_dir, 'config.py')
         default_config = {
             'network': {
                 'type': self.network_type,
@@ -1326,12 +1329,21 @@ class RayonixCoin:
             self._mempool_management_loop,
             self._state_pruning_loop,
             self._performance_monitoring_loop,
-            self._fork_monitoring_loop
+            self._fork_monitoring_loop,
+            self.start_gas_price_updater  # Add gas price updater
         ]
         
         for task_func in tasks:
             task = asyncio.create_task(task_func())
             self.background_tasks.append(task)
+            
+        for task_func in tasks:
+            if task_func == self.start_gas_price_updater:
+                # Start gas price updater directly
+                task_func()
+            else:
+                task = asyncio.create_task(task_func())
+                self.background_tasks.append(task)
     
     async def _block_production_loop(self):
         """Proof-of-Stake block production loop"""
