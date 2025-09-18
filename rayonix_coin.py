@@ -23,6 +23,8 @@ import heapq
 import msgpack
 import zlib
 import lmdb
+import leveldb
+import rocksdb
 from contextlib import contextmanager
 from functools import lru_cache
 import cachetools
@@ -40,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 # Import internal modules
 from merkle import MerkleTree, CompactMerkleTree, SparseMerkleTree
-from utxo import UTXOSet, Transaction, UTXO, TransactionInput, TransactionOutput
+from utxo import UTXOSet, Transaction, UTXO
 from consensus import ProofOfStake, Validator, Delegation, SlashingEvidence
 from smart_contract import ContractManager, SmartContract, ContractState, ContractExecutionResult
 from database import AdvancedDatabase, DatabaseConfig, DatabaseType, TransactionalDatabase
@@ -1101,7 +1103,7 @@ class RayonixCoin:
     
     def _load_configuration(self) -> Dict[str, Any]:
         """Load node configuration"""
-        config_path = os.path.join(self.data_dir, 'config.py')
+        config_path = os.path.join(self.data_dir, 'rayonix.yaml')
         default_config = {
             'network': {
                 'type': self.network_type,
