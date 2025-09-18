@@ -1,12 +1,22 @@
 # utxo.py
 import hashlib
 import json
-from typing import List, Dict, Set, Tuple, Optional
+import plyvel
+import struct
+import threading
+from typing import List, Dict, Set, Tuple, Optional, Iterator
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
-# Add this import at the top
 from cryptography.exceptions import InvalidSignature
+from contextlib import contextmanager
+
+# Database key prefixes
+UTXO_PREFIX = b'u:'  # u:tx_hash:output_index -> UTXO data
+ADDRESS_INDEX_PREFIX = b'a:'  # a:address -> set of UTXO IDs
+SPENT_UTXO_PREFIX = b's:'  # s:tx_hash:output_index -> spent UTXO data
+METADATA_PREFIX = b'm:'  # m:key -> metadata values
+LAST_BLOCK_HEIGHT_KEY = b'm:last_block_height'
 
 class UTXO:
     def __init__(self, tx_hash: str, output_index: int, address: str, amount: int):
@@ -16,6 +26,7 @@ class UTXO:
         self.amount = amount
         self.spent = False
         self.locktime = 0  # Block height or timestamp when spendable
+        self.created_at_block = 0  # Block height when this UTXO was created
         
     def to_dict(self) -> Dict:
         return {
@@ -24,7 +35,8 @@ class UTXO:
             'address': self.address,
             'amount': self.amount,
             'spent': self.spent,
-            'locktime': self.locktime
+            'locktime': self.locktime,
+            'created_at_block': self.created_at_block
         }
     
     @classmethod
@@ -37,6 +49,7 @@ class UTXO:
         )
         utxo.spent = data['spent']
         utxo.locktime = data.get('locktime', 0)
+        utxo.created_at_block = data.get('created_at_block', 0)
         return utxo
     
     @property
@@ -54,6 +67,39 @@ class UTXO:
                 return current_time >= self.locktime
         
         return True
+
+    def serialize(self) -> bytes:
+        """Serialize UTXO to bytes for efficient storage"""
+        # Format: spent(1) + locktime(4) + created_at_block(4) + amount(8) + address_len(1) + address + tx_hash(32) + output_index(4)
+        spent_byte = b'\x01' if self.spent else b'\x00'
+        locktime_bytes = struct.pack('>I', self.locktime)
+        created_at_bytes = struct.pack('>I', self.created_at_block)
+        amount_bytes = struct.pack('>Q', self.amount)
+        address_bytes = self.address.encode('utf-8')
+        address_len = struct.pack('B', len(address_bytes))
+        tx_hash_bytes = bytes.fromhex(self.tx_hash)
+        output_index_bytes = struct.pack('>I', self.output_index)
+        
+        return (spent_byte + locktime_bytes + created_at_bytes + amount_bytes + 
+                address_len + address_bytes + tx_hash_bytes + output_index_bytes)
+    
+    @classmethod
+    def deserialize(cls, data: bytes) -> 'UTXO':
+        """Deserialize UTXO from bytes"""
+        spent = data[0] == 1
+        locktime = struct.unpack('>I', data[1:5])[0]
+        created_at_block = struct.unpack('>I', data[5:9])[0]
+        amount = struct.unpack('>Q', data[9:17])[0]
+        address_len = data[17]
+        address = data[18:18+address_len].decode('utf-8')
+        tx_hash = data[18+address_len:18+address_len+32].hex()
+        output_index = struct.unpack('>I', data[18+address_len+32:18+address_len+36])[0]
+        
+        utxo = cls(tx_hash, output_index, address, amount)
+        utxo.spent = spent
+        utxo.locktime = locktime
+        utxo.created_at_block = created_at_block
+        return utxo
 
 class Transaction:
     def __init__(self, inputs: List[Dict], outputs: List[Dict], locktime: int = 0, version: int = 1):
@@ -117,7 +163,7 @@ class Transaction:
         
         return signing_data
     
-    def verify_input_signature(self, input_index: int) -> bool:
+    def verify_input_signature(self, input_index: int, utxo_set: 'UTXOSet') -> bool:
         if input_index >= len(self.inputs) or 'signature' not in self.inputs[input_index]:
             return False
         
@@ -129,8 +175,16 @@ class Transaction:
                 ec.SECP256K1(), public_key_bytes
             )
             
-            # Reconstruct signing data (simplified - need UTXO reference)
-            signing_data = self._get_signing_data(input_index, None, 1)
+            # Get the referenced UTXO
+            tx_input = self.inputs[input_index]
+            utxo_id = f"{tx_input['tx_hash']}:{tx_input['output_index']}"
+            utxo = utxo_set.get_utxo(utxo_id)
+            
+            if not utxo:
+                return False
+            
+            # Reconstruct signing data
+            signing_data = self._get_signing_data(input_index, utxo, 1)
             
             public_key.verify(
                 signature,
@@ -138,7 +192,7 @@ class Transaction:
                 ec.ECDSA(hashes.SHA256())
             )
             return True
-        except (InvalidSignature, ValueError):
+        except (InvalidSignature, ValueError, Exception):
             return False
     
     def get_related_addresses(self) -> List[str]:
@@ -186,49 +240,125 @@ class Transaction:
         return total_input - total_output
 
 class UTXOSet:
-    def __init__(self):
-        self.utxos: Dict[str, UTXO] = {}
-        self.address_utxos: Dict[str, Set[str]] = {}
-        self.spent_utxos: Dict[str, UTXO] = {}
+    def __init__(self, db_path: str = './utxo_db'):
+        self.db_path = db_path
+        self.db = plyvel.DB(db_path, create_if_missing=True)
+        self.lock = threading.RLock()
         
-    def add_utxo(self, utxo: UTXO):
-        utxo_id = utxo.id
-        self.utxos[utxo_id] = utxo
-        
-        if utxo.address not in self.address_utxos:
-            self.address_utxos[utxo.address] = set()
-        self.address_utxos[utxo.address].add(utxo_id)
+    def close(self):
+        """Close the database connection"""
+        self.db.close()
     
-    def spend_utxo(self, utxo_id: str):
-        if utxo_id in self.utxos:
-            utxo = self.utxos[utxo_id]
+    def _get_utxo_key(self, utxo_id: str) -> bytes:
+        """Get database key for a UTXO"""
+        return UTXO_PREFIX + utxo_id.encode('utf-8')
+    
+    def _get_address_index_key(self, address: str) -> bytes:
+        """Get database key for address index"""
+        return ADDRESS_INDEX_PREFIX + address.encode('utf-8')
+    
+    def _get_spent_utxo_key(self, utxo_id: str) -> bytes:
+        """Get database key for spent UTXO"""
+        return SPENT_UTXO_PREFIX + utxo_id.encode('utf-8')
+    
+    @contextmanager
+    def atomic_write(self):
+        """Context manager for atomic database operations"""
+        batch = self.db.write_batch()
+        try:
+            yield batch
+            batch.write()
+        except Exception:
+            batch.clear()
+            raise
+    
+    def add_utxo(self, utxo: UTXO, batch=None):
+        """Add a UTXO to the database"""
+        utxo_id = utxo.id
+        utxo_key = self._get_utxo_key(utxo_id)
+        address_key = self._get_address_index_key(utxo.address)
+        
+        write_batch = batch if batch else self.db
+        
+        # Store the UTXO
+        write_batch.put(utxo_key, utxo.serialize())
+        
+        # Update address index
+        existing_utxos = set()
+        existing_data = write_batch.get(address_key)
+        if existing_data:
+            # Deserialize the set of UTXO IDs
+            existing_utxos = set(json.loads(existing_data.decode('utf-8')))
+        
+        existing_utxos.add(utxo_id)
+        write_batch.put(address_key, json.dumps(list(existing_utxos)).encode('utf-8'))
+    
+    def spend_utxo(self, utxo_id: str, batch=None):
+        """Mark a UTXO as spent"""
+        with self.lock:
+            utxo_key = self._get_utxo_key(utxo_id)
+            utxo_data = self.db.get(utxo_key)
+            
+            if not utxo_data:
+                return False
+            
+            utxo = UTXO.deserialize(utxo_data)
             utxo.spent = True
             
-            # Move to spent UTXOs
-            self.spent_utxos[utxo_id] = utxo
-            del self.utxos[utxo_id]
+            write_batch = batch if batch else self.db
             
-            # Remove from address index
-            if utxo.address in self.address_utxos:
-                self.address_utxos[utxo.address].discard(utxo_id)
-                if not self.address_utxos[utxo.address]:
-                    del self.address_utxos[utxo.address]
+            # Move to spent UTXOs
+            spent_key = self._get_spent_utxo_key(utxo_id)
+            write_batch.put(spent_key, utxo.serialize())
+            write_batch.delete(utxo_key)
+            
+            # Update address index
+            address_key = self._get_address_index_key(utxo.address)
+            existing_data = write_batch.get(address_key)
+            if existing_data:
+                existing_utxos = set(json.loads(existing_data.decode('utf-8')))
+                existing_utxos.discard(utxo_id)
+                
+                if existing_utxos:
+                    write_batch.put(address_key, json.dumps(list(existing_utxos)).encode('utf-8'))
+                else:
+                    write_batch.delete(address_key)
+            
+            return True
     
     def get_utxos_for_address(self, address: str, current_block_height: int = 0, 
                              current_time: int = 0) -> List[UTXO]:
-        utxo_ids = self.address_utxos.get(address, set())
-        return [
-            self.utxos[uid] for uid in utxo_ids 
-            if self.utxos[uid].is_spendable(current_block_height, current_time)
-        ]
+        """Get all spendable UTXOs for an address"""
+        with self.lock:
+            address_key = self._get_address_index_key(address)
+            address_data = self.db.get(address_key)
+            
+            if not address_data:
+                return []
+            
+            utxo_ids = json.loads(address_data.decode('utf-8'))
+            utxos = []
+            
+            for utxo_id in utxo_ids:
+                utxo_key = self._get_utxo_key(utxo_id)
+                utxo_data = self.db.get(utxo_key)
+                
+                if utxo_data:
+                    utxo = UTXO.deserialize(utxo_data)
+                    if utxo.is_spendable(current_block_height, current_time):
+                        utxos.append(utxo)
+            
+            return utxos
     
     def get_balance(self, address: str, current_block_height: int = 0, 
                    current_time: int = 0) -> int:
+        """Get the balance for an address"""
         utxos = self.get_utxos_for_address(address, current_block_height, current_time)
         return sum(utxo.amount for utxo in utxos)
     
     def find_spendable_utxos(self, address: str, amount: int, 
                             current_block_height: int = 0, current_time: int = 0) -> Tuple[List[UTXO], int]:
+        """Find UTXOs to spend for a given amount"""
         utxos = self.get_utxos_for_address(address, current_block_height, current_time)
         utxos.sort(key=lambda x: x.amount, reverse=True)
         
@@ -244,7 +374,61 @@ class UTXOSet:
         return selected, total
     
     def get_utxo(self, utxo_id: str) -> Optional[UTXO]:
-        return self.utxos.get(utxo_id) or self.spent_utxos.get(utxo_id)
+        """Get a UTXO by ID"""
+        with self.lock:
+            # First check unspent UTXOs
+            utxo_key = self._get_utxo_key(utxo_id)
+            utxo_data = self.db.get(utxo_key)
+            
+            if utxo_data:
+                return UTXO.deserialize(utxo_data)
+            
+            # Then check spent UTXOs
+            spent_key = self._get_spent_utxo_key(utxo_id)
+            spent_data = self.db.get(spent_key)
+            
+            if spent_data:
+                return UTXO.deserialize(spent_data)
+            
+            return None
+    
+    def validate_transaction(self, transaction: Transaction, current_block_height: int = 0) -> Tuple[bool, str]:
+        """
+        Validate a transaction before processing it.
+        
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        with self.lock:
+            # Check all inputs exist and are spendable
+            for i, tx_input in enumerate(transaction.inputs):
+                utxo_id = f"{tx_input['tx_hash']}:{tx_input['output_index']}"
+                utxo = self.get_utxo(utxo_id)
+                
+                if not utxo:
+                    return False, f"Input UTXO {utxo_id} does not exist"
+                
+                if utxo.spent:
+                    return False, f"Input UTXO {utxo_id} is already spent"
+                
+                if not utxo.is_spendable(current_block_height, 0):  # Using 0 for time as we're using block height
+                    return False, f"Input UTXO {utxo_id} is not spendable yet"
+                
+                # Verify signature
+                if not transaction.verify_input_signature(i, self):
+                    return False, f"Invalid signature for input {i}"
+            
+            # Check output amounts are positive
+            for output in transaction.outputs:
+                if output['amount'] <= 0:
+                    return False, "Output amount must be positive"
+            
+            # Check fee is reasonable (at least non-negative)
+            fee = transaction.calculate_fee(self)
+            if fee < 0:
+                return False, "Transaction has negative fee"
+            
+            return True, ""
     
     def process_transaction(self, transaction: Transaction, block_height: int = 0):
         """
@@ -254,47 +438,195 @@ class UTXOSet:
             transaction: The transaction to process
             block_height: Current block height for locktime validation
         """
-        # Spend the inputs
-        for tx_input in transaction.inputs:
-            utxo_id = f"{tx_input['tx_hash']}:{tx_input['output_index']}"
-            self.spend_utxo(utxo_id)
-        
-        # Create new UTXOs from outputs
-        for i, output in enumerate(transaction.outputs):
-            utxo = UTXO(
-                tx_hash=transaction.hash,
-                output_index=i,
-                address=output['address'],
-                amount=output['amount']
-            )
+        with self.atomic_write() as batch:
+            # Validate transaction first
+            is_valid, error_msg = self.validate_transaction(transaction, block_height)
+            if not is_valid:
+                raise ValueError(f"Invalid transaction: {error_msg}")
             
-            # Set locktime if specified in output
-            if 'locktime' in output:
-                utxo.locktime = output['locktime']
+            # Spend the inputs
+            for tx_input in transaction.inputs:
+                utxo_id = f"{tx_input['tx_hash']}:{tx_input['output_index']}"
+                self.spend_utxo(utxo_id, batch)
+            
+            # Create new UTXOs from outputs
+            for i, output in enumerate(transaction.outputs):
+                utxo = UTXO(
+                    tx_hash=transaction.hash,
+                    output_index=i,
+                    address=output['address'],
+                    amount=output['amount']
+                )
                 
-            self.add_utxo(utxo)
+                # Set locktime if specified in output
+                if 'locktime' in output:
+                    utxo.locktime = output['locktime']
+                
+                # Record the block height when this UTXO was created
+                utxo.created_at_block = block_height
+                
+                self.add_utxo(utxo, batch)
+    
+    def process_block_transactions(self, transactions: List[Transaction], block_height: int) -> bool:
+        """
+        Process all transactions in a block atomically.
+        
+        Returns:
+            True if all transactions were processed successfully, False otherwise
+        """
+        with self.atomic_write() as batch:
+            # First validate all transactions
+            for tx in transactions:
+                is_valid, error_msg = self.validate_transaction(tx, block_height)
+                if not is_valid:
+                    return False
+            
+            # Then process all transactions
+            for tx in transactions:
+                # Spend the inputs
+                for tx_input in tx.inputs:
+                    utxo_id = f"{tx_input['tx_hash']}:{tx_input['output_index']}"
+                    self.spend_utxo(utxo_id, batch)
+                
+                # Create new UTXOs from outputs
+                for i, output in enumerate(tx.outputs):
+                    utxo = UTXO(
+                        tx_hash=tx.hash,
+                        output_index=i,
+                        address=output['address'],
+                        amount=output['amount']
+                    )
+                    
+                    # Set locktime if specified in output
+                    if 'locktime' in output:
+                        utxo.locktime = output['locktime']
+                    
+                    # Record the block height when this UTXO was created
+                    utxo.created_at_block = block_height
+                    
+                    self.add_utxo(utxo, batch)
+            
+            # Update last processed block height
+            self.db.put(LAST_BLOCK_HEIGHT_KEY, struct.pack('>I', block_height))
+            
+            return True
+    
+    def get_last_processed_block_height(self) -> int:
+        """Get the last block height that was processed"""
+        data = self.db.get(LAST_BLOCK_HEIGHT_KEY)
+        if data:
+            return struct.unpack('>I', data)[0]
+        return 0
+    
+    def rebuild_indexes(self):
+        """Rebuild all indexes from UTXO data (for recovery/maintenance)"""
+        with self.lock:
+            with self.atomic_write() as batch:
+                # Clear existing address indexes
+                for key, _ in self.db.iterator(prefix=ADDRESS_INDEX_PREFIX):
+                    batch.delete(key)
+                
+                # Rebuild address indexes from UTXOs
+                for key, value in self.db.iterator(prefix=UTXO_PREFIX):
+                    utxo = UTXO.deserialize(value)
+                    utxo_id = key[len(UTXO_PREFIX):].decode('utf-8')
+                    
+                    # Update address index
+                    address_key = self._get_address_index_key(utxo.address)
+                    existing_data = self.db.get(address_key)
+                    existing_utxos = set()
+                    
+                    if existing_data:
+                        existing_utxos = set(json.loads(existing_data.decode('utf-8')))
+                    
+                    existing_utxos.add(utxo_id)
+                    batch.put(address_key, json.dumps(list(existing_utxos)).encode('utf-8'))
+    
+    def compact_database(self):
+        """Compact the database to reclaim space"""
+        self.db.compact_range()
+    
+    def get_stats(self) -> Dict:
+        """Get statistics about the UTXO set"""
+        with self.lock:
+            stats = {
+                'total_utxos': 0,
+                'total_spent_utxos': 0,
+                'total_addresses': 0,
+                'total_size_mb': 0
+            }
+            
+            # Count UTXOs
+            for _, _ in self.db.iterator(prefix=UTXO_PREFIX):
+                stats['total_utxos'] += 1
+            
+            # Count spent UTXOs
+            for _, _ in self.db.iterator(prefix=SPENT_UTXO_PREFIX):
+                stats['total_spent_utxos'] += 1
+            
+            # Count addresses
+            for _, _ in self.db.iterator(prefix=ADDRESS_INDEX_PREFIX):
+                stats['total_addresses'] += 1
+            
+            # Estimate database size
+            stats['total_size_mb'] = sum(1 for _ in self.db.iterator()) * 0.0001  # Rough estimate
+            
+            return stats
     
     def to_dict(self) -> Dict:
-        return {
-            'utxos': {uid: utxo.to_dict() for uid, utxo in self.utxos.items()},
-            'spent_utxos': {uid: utxo.to_dict() for uid, utxo in self.spent_utxos.items()},
-            'address_utxos': {addr: list(utxo_set) for addr, utxo_set in self.address_utxos.items()}
+        """Convert UTXO set to dictionary (for debugging, not for production use)"""
+        result = {
+            'utxos': {},
+            'spent_utxos': {},
+            'address_utxos': {}
         }
+        
+        with self.lock:
+            # Get all UTXOs
+            for key, value in self.db.iterator(prefix=UTXO_PREFIX):
+                utxo_id = key[len(UTXO_PREFIX):].decode('utf-8')
+                utxo = UTXO.deserialize(value)
+                result['utxos'][utxo_id] = utxo.to_dict()
+            
+            # Get all spent UTXOs
+            for key, value in self.db.iterator(prefix=SPENT_UTXO_PREFIX):
+                utxo_id = key[len(SPENT_UTXO_PREFIX):].decode('utf-8')
+                utxo = UTXO.deserialize(value)
+                result['spent_utxos'][utxo_id] = utxo.to_dict()
+            
+            # Get address indexes
+            for key, value in self.db.iterator(prefix=ADDRESS_INDEX_PREFIX):
+                address = key[len(ADDRESS_INDEX_PREFIX):].decode('utf-8')
+                utxo_ids = json.loads(value.decode('utf-8'))
+                result['address_utxos'][address] = utxo_ids
+        
+        return result
     
     @classmethod
-    def from_dict(cls, data: Dict) -> 'UTXOSet':
-        utxo_set = cls()
+    def from_dict(cls, data: Dict, db_path: str = './utxo_db') -> 'UTXOSet':
+        """Create UTXO set from dictionary (for debugging, not for production use)"""
+        utxo_set = cls(db_path)
         
-        # Load UTXOs
-        for uid, utxo_data in data.get('utxos', {}).items():
-            utxo_set.utxos[uid] = UTXO.from_dict(utxo_data)
-        
-        # Load spent UTXOs
-        for uid, utxo_data in data.get('spent_utxos', {}).items():
-            utxo_set.spent_utxos[uid] = UTXO.from_dict(utxo_data)
-        
-        # Load address index
-        for addr, utxo_ids in data.get('address_utxos', {}).items():
-            utxo_set.address_utxos[addr] = set(utxo_ids)
+        with utxo_set.atomic_write() as batch:
+            # Add UTXOs
+            for utxo_id, utxo_data in data.get('utxos', {}).items():
+                utxo = UTXO.from_dict(utxo_data)
+                batch.put(utxo_set._get_utxo_key(utxo_id), utxo.serialize())
+                
+                # Update address index
+                address_key = utxo_set._get_address_index_key(utxo.address)
+                existing_data = batch.get(address_key)
+                existing_utxos = set()
+                
+                if existing_data:
+                    existing_utxos = set(json.loads(existing_data.decode('utf-8')))
+                
+                existing_utxos.add(utxo_id)
+                batch.put(address_key, json.dumps(list(existing_utxos)).encode('utf-8'))
+            
+            # Add spent UTXOs
+            for utxo_id, utxo_data in data.get('spent_utxos', {}).items():
+                utxo = UTXO.from_dict(utxo_data)
+                batch.put(utxo_set._get_spent_utxo_key(utxo_id), utxo.serialize())
         
         return utxo_set
