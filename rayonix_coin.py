@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 from merkle import MerkleTree, CompactMerkleTree, MerkleTreeConfig, HashAlgorithm, ProofFormat, MerkleTreeFactory, MerkleTreeStats, global_stats, create_merkle_tree_from_file, create_merkle_tree_from_large_file, batch_verify_proofs, batch_verify_proofs_async, create_merkle_mountain_range
 
 from utxo import UTXOSet, Transaction, UTXO
-from consensus import ProofOfStake, Validator, ConsensusState, ValidatorStatus, VoteType, consensus, BlockProposal, Vote, RoundState
+from consensus import ProofOfStake, Validator, ConsensusState, ValidatorStatus, VoteType, BlockProposal, Vote, RoundState
 
 from smart_contract import ContractManager, SmartContract, ContractState, ContractExecutionResult
 from database import AdvancedDatabase, DatabaseConfig, DatabaseType, TransactionalDatabase
