@@ -46,7 +46,7 @@ import whois
 from abc import ABC, abstractmethod
 import resource
 import wasmtime
-import wasmtime.wat
+#import wasmtime.wat
 import psutil
 import gc
 
