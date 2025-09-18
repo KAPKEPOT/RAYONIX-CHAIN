@@ -47,7 +47,7 @@ from consensus import ProofOfStake, Validator, ConsensusState, ValidatorStatus, 
 from smart_contract import ContractManager, SmartContract, ContractState, ExecutionResult
 from database import AdvancedDatabase, DatabaseConfig, DatabaseType, CompressionType, EncryptionType
 from wallet import RayonixWallet, WalletConfig, WalletType, AddressType
-from p2p_network import AdvancedP2PNetwork, NodeConfig, PeerManager, NetworkProtocol
+from p2p_network import AdvancedP2PNetwork, NodeConfig, NetworkProtocol
 from crypto import CryptoUtils, SignatureVerifier, KeyDerivation, HashFunctions
 
 class BlockchainState(Enum):
