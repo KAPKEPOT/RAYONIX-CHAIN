@@ -18,7 +18,7 @@ import aiohttp
 from aiohttp import web
 import jsonrpcserver
 from jsonrpcserver import method, async_dispatch
-from jsonrpcserver.exceptions import InvalidParams
+from jsonrpcserver.exceptions import JsonRpcError
 
 # Configure logging first
 logging.basicConfig(
