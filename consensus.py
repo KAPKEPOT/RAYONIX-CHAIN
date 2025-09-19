@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 import asyncio
 from collections import defaultdict, deque
 import logging
+from rayonix_coin import Block
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
