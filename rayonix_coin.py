@@ -1086,7 +1086,7 @@ class ForkManager:
 class RayonixCoin:
     """Production-ready RAYONIX blockchain engine"""
     
-    def __init__(self, network_type: str = "mainnet", data_dir: str = "./rayonix_data"):
+    def __init__(self, network_type: str = "mainnet", data_dir: str = "./rayonix_data", gas_price_config=None):
         self.network_type = network_type
         self.data_dir = data_dir
         self.state = BlockchainState.STOPPED
@@ -1267,16 +1267,16 @@ class RayonixCoin:
         """Get bootstrap nodes for network"""
         if self.network_type == "mainnet":
             return [
-                "node1.rayonix.com:30303",
-                "node2.rayonix.com:30303",
-                "node3.rayonix.com:30303",
-                "node4.rayonix.com:30303"
+                "node1.rayonix.site:30303",
+                "node2.rayonix.site:30303",
+                "node3.rayonix.site:30303",
+                "node4.rayonix.site:30303"
             ]
         elif self.network_type == "testnet":
             return [
-                "testnet-node1.rayonix.com:30304",
-                "testnet-node2.rayonix.com:30304",
-                "testnet-node3.rayonix.com:30304"
+                "testnet-node1.rayonix.site:30304",
+                "testnet-node2.rayonix.site:30304",
+                "testnet-node3.rayonix.site:30304"
             ]
         else:
             return []
