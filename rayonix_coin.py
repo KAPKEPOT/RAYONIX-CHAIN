@@ -1433,10 +1433,301 @@ class RayonixCoin:
     
     def _load_blockchain_state(self):
         """Load full blockchain state from database"""
-        # This would load the entire state from the database
-        # For now, we assume the state manager handles this
-        logger.info("Blockchain state loaded from database")
+        logger.info("Loading blockchain state from database...")
+        try:
+        	# Load chain head
+        	try:
+        		chain_head_hash = self.database.get('chain_head')
+        		if chain_head_hash:
+        			self.chain_head = chain_head_hash
+        			logger.info(f"Chain head loaded: {self.chain_head[:16]}...")
+        		else:
+        			logger.warning("No chain head found in database")
+        	except KeyNotFoundError:
+        		logger.warning("Chain head not found in database")
+        		
+        	# Load UTXO set state
+        	try:
+        		utxo_state_data = self.database.get('utxo_set_state')
+        		if utxo_state_data:
+        			self.state_manager.utxo_set.from_bytes(utxo_state_data)
+        			logger.info("UTXO set state loaded successfully")
+        	except KeyNotFoundError:
+        		logger.warning("UTXO set state not found in database")
+        	except Exception as e:
+        		logger.error(f"Failed to load UTXO set state: {e}")
+        		raise
+        		
+        	# Load consensus state
+        	try:
+        		consensus_state_data = self.database.get('consensus_state')
+        		if consensus_state_data:
+        			self.state_manager.consensus.from_bytes(consensus_state_data)
+        			logger.info("Consensus state loaded successfully")
+        	except KeyNotFoundError:
+        		logger.warning("Consensus state not found in database")
+        	except Exception as e:
+        		logger.error(f"Failed to load consensus state: {e}")
+        		raise
+        		
+        	# Load contract states
+        	try:
+        		contract_states_data = self.database.get('contract_states')
+        		if contract_states_data:
+        			self.state_manager.contract_manager.from_bytes(contract_states_data)
+        			logger.info("Contract states loaded successfully")
+        	except KeyNotFoundError:
+        		logger.warning("Contract states not found in database")
+        	except Exception as e:
+        		logger.error(f"Failed to load contract states: {e}")
+        		raise
+        		
+        	# Verify state integrity
+        	try:
+        		stored_checksum = self.database.get('state_checksum')
+        		if stored_checksum:
+        			current_checksum = self.state_manager._calculate_state_hash()
+        			if stored_checksum != current_checksum:
+        				logger.warning("State checksum mismatch! State may be corrupted")
+        				# Attempt to restore from latest checkpoint
+        				if not self._restore_from_latest_checkpoint():
+        					logger.error("State integrity check failed and could not restore from checkpoint")
+        					raise IntegrityError("State integrity check failed")
+        				else:
+        					logger.info("State integrity verified successfully")
+        	except KeyNotFoundError:
+            
+        		logger.warning("State checksum not found in database")
+        	except Exception as e:
+        		logger.error(f"State integrity check failed: {e}")
+        		raise
+        		
+        	# Load block index and reconstruct chain if needed
+        	self._reconstruct_block_chain()
+        	
+        	# Load mempool transactions if any
+        	self._load_mempool()
+        	logger.info("Blockchain state loaded successfully from database")
+        	
+        except Exception as e:
+        	logger.error(f"Failed to load blockchain state: {e}")
+        	
+        	# Attempt emergency recovery
+        	if not self._emergency_recovery():
+        		logger.critical("Failed to load blockchain state and emergency recovery also failed!")
+        		raise DatabaseError(f"Failed to load blockchain state: {e}")
     
+    def _reconstruct_block_chain(self):
+    	"""Reconstruct the block chain from stored blocks"""
+    	logger.info("Reconstructing block chain...")
+    	try:
+    		# If we have a chain head, walk back to genesis
+    		if self.chain_head:
+    			current_hash = self.chain_head
+    			blocks = []
+    			# Walk the chain backwards
+    			while current_hash and current_hash != '0' * 64:
+    				
+    				try:
+    					block = self.database.get_block(current_hash)
+    					if block:
+    						blocks.append(block)
+    						current_hash = block.header.previous_hash
+    					else:
+    						logger.warning(f"Block {current_hash[:16]}... not found in database")
+    						break
+    				except Exception as e:
+    					logger.error(f"Error loading block {current_hash[:16]}...: {e}")
+    					break
+    				# Reverse to get from genesis to tip
+    				blocks.reverse()
+    				logger.info(f"Reconstructed chain with {len(blocks)} blocks")
+    				
+    				# Verify the reconstructed chain
+    				if not self._verify_reconstructed_chain(blocks):
+    					logger.warning("Reconstructed chain verification failed")
+    					# Try to repair the chain
+    					if not self._repair_block_chain():
+    						logger.error("Chain repair failed")
+    						raise IntegrityError("Block chain reconstruction failed")
+    				else:
+    					logger.info("No chain head found, starting with genesis only")
+    	except Exception as e:
+    		logger.error(f"Block chain reconstruction failed: {e}")
+    		raise
+    		
+    def _verify_reconstructed_chain(self, blocks: List[Block]) -> bool:
+    	"""Verify the integrity of a reconstructed block chain"""
+    	if not blocks:
+    		return True
+    	# Check genesis block
+    	if blocks[0].header.height != 0 or blocks[0].header.previous_hash != '0' * 64:
+    		logger.error("Invalid genesis block in reconstructed chain")
+    		return False
+    	# Verify each block links to the previous
+    	for i in range(1, len(blocks)):
+    		for i in range(1, len(blocks)):
+    			previous_block = blocks[i-1]
+    			
+    			if current_block.header.previous_hash != previous_block.hash:
+    				logger.error(f"Block {current_block.header.height} does not link to previous block")
+    				
+    				return False
+    			if current_block.header.height != previous_block.header.height + 1:
+    				logger.error(f"Height mismatch at block {current_block.header.height}")
+    				return False
+    		return True 
+    		
+    def _repair_block_chain(self) -> bool:
+    	"""Attempt to repair a corrupted block chain"""
+    	logger.warning("Attempting to repair corrupted block chain...")
+    	
+    	try:
+    		# Find the highest valid block we can trust
+    		best_block_hash = None
+    		best_height = -1
+    		
+    		# Iterate through all blocks to find the best candidate
+    		for key, value in self.database.iterate(prefix=b'block_'):
+    			try:
+    				block_hash = key.decode().replace('block_', '')
+    				block = self.database.get_block(block_hash)
+    				if block and block.header.height > best_height:
+    					# Basic validation
+    					if self._validate_block_basic(block):
+    						best_block_hash = block_hash
+    						best_height = block.header.height
+    			except Exception as e:
+    				logger.debug(f"Skipping invalid block during repair: {e}")
+    				continue
+    		if best_block_hash and best_height >= 0:
+    			logger.info(f"Found best valid block at height {best_height}: {best_block_hash[:16]}...")
+    			self.chain_head = best_block_hash
+    			self.database.put('chain_head', best_block_hash)
+    			# Reconstruct from this point
+    			self._reconstruct_block_chain()
+    			return True
+    		else:
+    			logger.error("No valid blocks found for chain repair")
+    			return False
+    	except Exception as e:
+    		logger.error(f"Chain repair failed: {e}")
+    		return False
+    		
+    def _validate_block_basic(self, block: Block) -> bool:
+    	"""Basic block validation for repair purposes"""
+    	try:
+    		# Check block structure
+    		if not block.header or not block.transactions:
+    			return False
+    		# Check block hash
+    		calculated_hash = self._calculate_block_hash(block.header)
+    		if calculated_hash != block.hash:
+    			return False
+    		# Check merkle root
+    		tx_hashes = [tx.hash for tx in block.transactions]
+    		calculated_root = MerkleTree(tx_hashes).get_root_hash()
+    		if calculated_root != block.header.merkle_root:
+    			return False
+    		return True
+    	except Exception:
+    		return False    
+
+    def _load_mempool(self):
+    	"""Load mempool transactions from database"""
+    	logger.info("Loading mempool transactions...")
+    	try:
+    		mempool_data = self.database.get('mempool')
+    		if mempool_data:
+    			# Deserialize mempool data
+    			mempool_transactions = msgpack.unpackb(mempool_data)
+    			
+    			# Add to transaction manager's mempool
+    			for tx_data in mempool_transactions:
+    				try:
+    					transaction = Transaction.from_dict(tx_data)
+    					if self.transaction_manager.validate_transaction(transaction).is_valid:
+    						self.transaction_manager.add_to_mempool(transaction)
+    				except Exception as e:
+    					logger.warning(f"Failed to load mempool transaction: {e}")
+    			logger.info(f"Loaded {len(mempool_transactions)} mempool transactions")
+    		else:
+    			logger.info("No mempool data found in database")
+    	except KeyNotFoundError:
+    		logger.info("Mempool not found in database")
+    	except Exception as e:
+    		logger.error(f"Failed to load mempool: {e}") 
+    		
+    def _restore_from_latest_checkpoint(self) -> bool:
+    	"""Restore state from the latest checkpoint"""
+    	logger.warning("Attempting to restore from latest checkpoint...")
+    	try:
+    		# Find all checkpoints
+    		checkpoints = []
+    		for key, value in self.database.iterate(prefix=b'checkpoint_'):
+    			try:
+    				checkpoint_id = key.decode().replace('checkpoint_', '')
+    				checkpoint_data = self.database.get(f"checkpoint_{checkpoint_id}")
+    				if checkpoint_data and 'timestamp' in checkpoint_data:
+    					checkpoints.append((checkpoint_id, checkpoint_data['timestamp']))
+    			except Exception as e:
+    				logger.debug(f"Skipping invalid checkpoint: {e}")
+    				continue
+    		# Sort checkpoints by timestamp (newest first)
+    		checkpoints.sort(key=lambda x: x[1], reverse=True)
+    		if checkpoints:
+    			latest_checkpoint_id = checkpoints[0][0]
+    			logger.info(f"Restoring from checkpoint: {latest_checkpoint_id}")
+    			return self.state_manager.restore_checkpoint(latest_checkpoint_id)
+    		else:
+    			logger.error("No checkpoints found for restoration")
+    			return False
+    	except Exception as e:
+    		logger.error(f"Checkpoint restoration failed: {e}")
+    		return False
+    		
+    def _emergency_recovery(self) -> bool:
+    	"""Attempt emergency recovery when normal loading fails"""
+    	logger.critical("Attempting emergency recovery...")
+    	try:
+    		# Try to restore from any available checkpoint
+    		if self._restore_from_latest_checkpoint():
+    			return True
+    		# If no checkpoints, try to rebuild from genesis
+    		logger.warning("No checkpoints available, attempting to rebuild from genesis")
+    		# Find genesis block
+    		genesis_block = None
+    		for key, value in self.database.iterate(prefix=b'block_'):
+    			try:
+    				block_hash = key.decode().replace('block_', '')
+    				block = self.database.get_block(block_hash)
+    				if block and block.header.height == 0:
+    					genesis_block = block
+    					break
+    			except Exception:
+    				continue
+    		if genesis_block:
+    			logger.info("Genesis block found, rebuilding state from genesis")
+    			# Reset state managers
+    			self.state_manager.utxo_set = UTXOSet()
+    			self.state_manager.consensus = ProofOfStake(self.config['consensus'])
+    			self.state_manager.contract_manager = ContractManager()
+    			# Process genesis block
+    			if self.state_manager.apply_block(genesis_block):
+    				self.chain_head = genesis_block.hash
+    				self.database.put('chain_head', genesis_block.hash)
+    				logger.info("Successfully rebuilt state from genesis")
+    				return True
+    			else:
+    				logger.error("Failed to apply genesis block during recovery")
+    				return False
+    		else:
+    			logger.error("Genesis block not found for emergency recovery")
+    			return False
+    	except Exception as e:
+    		logger.error(f"Emergency recovery failed: {e}")
+    		return False    		    		    		
+
     def start(self):
         """Start the blockchain node"""
         if self.running:
