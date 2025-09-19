@@ -38,6 +38,7 @@ import secure
 from secure import SecureString, secure_dump, secure_load
 import psutil
 import gc
+import plyvel
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

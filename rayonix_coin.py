@@ -29,6 +29,7 @@ import cachetools
 import aiohttp
 from aioprocessing import AioQueue, AioProcess
 import uvloop
+import plyvel
 
 # Configure uvloop for better async performance
 asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
