@@ -1261,6 +1261,7 @@ class RayonixCoin:
             'consensus': {
                 'foundation_address': 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX',
                 'block_reward': 50,
+                'premine_amount': 1000000,
                 'halving_interval': 210000,
                 'difficulty_adjustment_blocks': 2016,
                 'stake_minimum': 1000,
