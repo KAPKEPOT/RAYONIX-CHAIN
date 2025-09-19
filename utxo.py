@@ -194,14 +194,78 @@ class Transaction:
         return signing_data
         
     def to_bytes(self) -> bytes:
-    	"""Convert transaction to bytes for serialization"""
-    	try:
-    		# Convert transaction data to JSON and encode to bytes
-    		tx_dict = self.to_dict() if hasattr(self, 'to_dict') else asdict(self)
-    		return json.dumps(tx_dict, sort_keys=True).encode('utf-8')
-    	except Exception as e:
-    		logger.error(f"Error converting transaction to bytes: {e}")
-    		return b''
+        """Production-ready transaction serialization"""
+        try:
+            # Convert all outputs to dict if they are objects
+            serializable_outputs = []
+            for output in self.outputs:
+                if hasattr(output, 'to_dict'):
+                    serializable_outputs.append(output.to_dict())
+                else:
+                    serializable_outputs.append(output)
+            
+            # Use msgpack for efficient binary serialization
+            tx_data = {
+                'version': self.version,
+                'inputs': self.inputs,
+                'outputs': serializable_outputs,
+                'locktime': self.locktime,
+                'hash': self.hash
+            }
+            
+            # Compress for storage efficiency
+            serialized = msgpack.packb(tx_data, use_bin_type=True)
+            return zlib.compress(serialized)
+            
+        except Exception as e:
+            logger.error(f"Transaction serialization error: {e}")
+            # Fallback to JSON for compatibility
+            try:
+                tx_dict = {
+                    'version': self.version,
+                    'inputs': self.inputs,
+                    'outputs': [out.to_dict() if hasattr(out, 'to_dict') else out 
+                               for out in self.outputs],
+                    'locktime': self.locktime,
+                    'hash': self.hash
+                }
+                return json.dumps(tx_dict, sort_keys=True).encode('utf-8')
+            except Exception as fallback_error:
+                logger.critical(f"Critical: Transaction serialization completely failed: {fallback_error}")
+                raise SerializationError(f"Transaction cannot be serialized: {fallback_error}")
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> 'Transaction':
+        """Deserialize transaction from bytes"""
+        try:
+            # Try decompression first
+            try:
+                data = zlib.decompress(data)
+                tx_data = msgpack.unpackb(data, raw=False)
+            except:
+                # Fallback to JSON
+                tx_data = json.loads(data.decode('utf-8'))
+            
+            # Convert outputs to TransactionOutput objects
+            outputs = []
+            for output_dict in tx_data.get('outputs', []):
+                if isinstance(output_dict, dict):
+                    outputs.append(TransactionOutput.from_dict(output_dict))
+                else:
+                    outputs.append(output_dict)
+            
+            tx = cls(
+                inputs=tx_data.get('inputs', []),
+                outputs=outputs,
+                locktime=tx_data.get('locktime', 0),
+                version=tx_data.get('version', 1)
+            )
+            tx.hash = tx_data.get('hash', tx.calculate_hash())
+            return tx
+            
+        except Exception as e:
+            logger.error(f"Transaction deserialization error: {e}")
+            raise DeserializationError(f"Failed to deserialize transaction: {e}")
     
     def verify_input_signature(self, input_index: int, utxo_set: 'UTXOSet') -> bool:
         if input_index >= len(self.inputs) or 'signature' not in self.inputs[input_index]:

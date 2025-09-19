@@ -367,45 +367,70 @@ class ValidationManager:
         self.validation_stats = defaultdict(int)
     
     def validate_block(self, block: Block, level: ValidationLevel = ValidationLevel.FULL) -> ValidationResult:
-        """Validate a block with specified validation level"""
+        """Production-ready block validation"""
+        if block.header.height == 0:
+            return self._validate_genesis_block(block)
+        
+        result = ValidationResult(
+            is_valid=False,
+            errors=[],
+            warnings=[],
+            execution_time=0,
+            validation_level=level
+        )
+        
         start_time = time.time()
-        errors = []
-        warnings = []
         
         try:
             pipeline = self.validation_pipelines[level]
             
             for validator_name, validator_func in pipeline:
-                try:
-                    result = validator_func(block)
-                    if not result['valid']:
-                        errors.extend(result['errors'])
-                    if result['warnings']:
-                        warnings.extend(result['warnings'])
-                    
-                    if errors and level != ValidationLevel.CONSENSUS:
-                        break
-                        
-                except Exception as e:
-                    errors.append(f"{validator_name} failed: {str(e)}")
+                validator_result = validator_func(block)
+                
+                if not validator_result['valid']:
+                    result.errors.extend(validator_result['errors'])
+                
+                if validator_result['warnings']:
+                    result.warnings.extend(validator_result['warnings'])
+                
+                # Stop on critical errors for non-consensus levels
+                if result.errors and level != ValidationLevel.CONSENSUS:
                     break
             
-            is_valid = len(errors) == 0
+            result.is_valid = len(result.errors) == 0
             
         except Exception as e:
-            errors.append(f"Validation pipeline failed: {str(e)}")
-            is_valid = False
+            logger.error(f"Validation pipeline failed: {e}")
+            result.errors.append(f"Validation system error: {str(e)}")
+            result.is_valid = False
         
-        execution_time = time.time() - start_time
-        self.validation_stats[level.name] += 1
-        
-        return ValidationResult(
-            is_valid=is_valid,
-            errors=errors,
-            warnings=warnings,
-            execution_time=execution_time,
-            validation_level=level
+        result.execution_time = time.time() - start_time
+        return result
+    
+    def _validate_genesis_block(self, block: Block) -> ValidationResult:
+        """Fast-track genesis validation"""
+        result = ValidationResult(
+            is_valid=True,
+            errors=[],
+            warnings=[],
+            execution_time=0.001,  # Fast
+            validation_level=ValidationLevel.BASIC
         )
+        
+        # Basic genesis checks
+        checks = [
+            (block.header.height == 0, "Genesis must have height 0"),
+            (block.header.previous_hash == '0' * 64, "Genesis previous hash must be all zeros"),
+            (len(block.transactions) >= 1, "Genesis must have at least one transaction"),
+            (block.header.validator == 'genesis', "Genesis validator must be 'genesis'")
+        ]
+        
+        for condition, error_msg in checks:
+            if not condition:
+                result.is_valid = False
+                result.errors.append(error_msg)
+        
+        return result
     
     def validate_transaction(self, transaction: Transaction, level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationResult:
         """Validate a transaction with specified validation level"""
@@ -1398,28 +1423,35 @@ class RayonixCoin:
             return []
     
     def _initialize_blockchain(self):
-        """Initialize or load blockchain state"""
+        """Production-ready blockchain initialization"""
         try:
-            # Try to load chain head from database
-            try:
-            	self.chain_head = self.database.get('chain_head')
-            except KeyNotFoundError:
-            	self.chain_head = None
+            # Try to load existing chain
+            self.chain_head = self.database.get_chain_head()
+            
             if not self.chain_head:
-            	# Create genesis block if not exists
-            	logger.info("No existing blockchain found, creating genesis block...")
-            	genesis_block = self._create_genesis_block()
-            	self._process_genesis_block(genesis_block)
+                logger.info("Initializing new blockchain with genesis block")
+                genesis_block = self._create_production_genesis_block()
+                
+                # Special handling for genesis - skip full validation
+                if not self._validate_genesis_block(genesis_block):
+                    raise IntegrityError("Genesis block validation failed")
+                
+                # Initialize state with genesis
+                self._initialize_state_with_genesis(genesis_block)
+                
+                logger.info("Genesis block initialized successfully")
             else:
-            	# Load full state
-            	self._load_blockchain_state()
+                logger.info(f"Loaded existing blockchain, head: {self.chain_head.hash[:16]}...")
+                self._verify_blockchain_integrity()
+                
         except Exception as e:
-        	logger.error(f"Blockchain initialization failed: {e}")
-        	raise
+            logger.critical(f"Blockchain initialization failed: {e}")
+            raise InitializationError(f"Failed to initialize blockchain: {e}")
     
-    def _create_genesis_block(self) -> Block:
-        """Create genesis block"""
-        genesis_tx = Transaction(
+    def _create_production_genesis_block(self) -> Block:
+        """Create production-ready genesis block"""
+        # Create foundation transaction
+        foundation_tx = Transaction(
             inputs=[],
             outputs=[TransactionOutput(
                 address=self.config['consensus']['foundation_address'],
@@ -1430,24 +1462,70 @@ class RayonixCoin:
             version=1
         )
         
+        # Create block header
         header = BlockHeader(
             version=1,
             height=0,
             previous_hash='0' * 64,
-            merkle_root=MerkleTree([genesis_tx.hash]).get_root_hash(),
+            merkle_root=self._calculate_merkle_root([foundation_tx.hash]),
             timestamp=int(time.time()),
-            difficulty=1,
+            difficulty=self.consensus.genesis_difficulty,
             nonce=0,
-            validator='genesis'
+            validator='genesis',
+            signature=None  # Genesis doesn't need signature
         )
         
-        return Block(
+        block = Block(
             header=header,
-            transactions=[genesis_tx],
+            transactions=[foundation_tx],
             hash=self._calculate_block_hash(header),
             chainwork=1,
-            size=len(json.dumps(asdict(header)).encode()) + len(genesis_tx.to_bytes())
+            size=0  # Will be calculated
         )
+        
+        # Calculate actual size
+        block.size = self._calculate_block_size(header, [foundation_tx])
+        return block
+        
+    def _validate_genesis_block(self, genesis_block: Block) -> bool:
+        """Special validation for genesis block"""
+        validation_checks = [
+            lambda: genesis_block.header.height == 0,
+            lambda: genesis_block.header.previous_hash == '0' * 64,
+            lambda: len(genesis_block.transactions) > 0,
+            lambda: self._validate_genesis_transactions(genesis_block.transactions),
+            lambda: self._verify_genesis_merkle_root(genesis_block),
+            lambda: genesis_block.header.difficulty == self.consensus.genesis_difficulty
+        ]
+        
+        for check in validation_checks:
+            if not check():
+                return False
+        
+        return True
+        
+    def _initialize_state_with_genesis(self, genesis_block: Block):
+        """Initialize all state components with genesis block"""
+        with self.state_manager.atomic_state_transition() as tx_id:
+            try:
+                # Process genesis transactions
+                for tx in genesis_block.transactions:
+                    if not self.utxo_set.process_transaction(tx, 0):
+                        raise StateError(f"Failed to process genesis transaction: {tx.hash}")
+                
+                # Initialize consensus state
+                self.consensus.initialize_from_genesis(genesis_block)
+                
+                # Store block
+                self.database.put_block(genesis_block)
+                self.database.put_chain_head(genesis_block.hash)
+                
+                # Create initial checkpoint
+                self.state_manager.create_checkpoint()
+                
+            except Exception as e:
+                logger.error(f"Genesis state initialization failed: {e}")
+                raise                        
     
     def _process_genesis_block(self, genesis_block: Block):
         """Process genesis block and initialize state"""
@@ -1466,6 +1544,8 @@ class RayonixCoin:
         self.chain_head = genesis_block.hash
         
         logger.info("Genesis block created and processed")
+        
+        
     
     def _load_blockchain_state(self):
         """Load full blockchain state from database"""

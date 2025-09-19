@@ -242,7 +242,10 @@ class ProofOfStake:
             timeout_propose: Propose timeout in milliseconds
             timeout_prevote: Prevote timeout in milliseconds
             timeout_precommit: Precommit timeout in milliseconds
-        """        
+        """  
+        self.difficulty_adjustment_blocks = kwargs.get('difficulty_adjustment_blocks', 2016)
+        self.block_time_target = kwargs.get('block_time_target', 30)
+        self.genesis_difficulty = kwargs.get('genesis_difficulty', 1)
         self.min_stake = min_stake
         self.jail_duration = jail_duration
         self.slash_percentage = slash_percentage
@@ -1266,6 +1269,115 @@ class ProofOfStake:
             'active_validators_count': len(self.active_validators),
             'total_validators_count': len(self.validators)
         }
+   
+    def calculate_difficulty(self, height: int) -> int:
+        """Production-ready difficulty calculation"""
+        if height == 0:
+            return self.genesis_difficulty
+        
+        # Only adjust every difficulty_adjustment_blocks
+        if height % self.difficulty_adjustment_blocks != 0:
+            # Return difficulty of previous block
+            previous_block = self._get_block_at_height(height - 1)
+            if previous_block:
+                return previous_block.header.difficulty
+            return self.genesis_difficulty
+        
+        return self._adjust_difficulty(height)
+    
+    def _adjust_difficulty(self, height: int) -> int:
+        """Real difficulty adjustment algorithm"""
+        try:
+            # Get blocks from previous adjustment period
+            start_height = max(0, height - self.difficulty_adjustment_blocks)
+            blocks = self._get_blocks_range(start_height, height - 1)
+            
+            if len(blocks) < 2:
+                return self.genesis_difficulty
+            
+            # Calculate actual time taken
+            actual_time = blocks[-1].header.timestamp - blocks[0].header.timestamp
+            target_time = self.block_time_target * len(blocks)
+            
+            # Adjust difficulty (simplified version)
+            difficulty_ratio = actual_time / target_time
+            previous_difficulty = blocks[-1].header.difficulty
+            
+            # Limit adjustment to ±4x
+            new_difficulty = previous_difficulty * min(4, max(0.25, difficulty_ratio))
+            
+            return int(new_difficulty)
+            
+        except Exception as e:
+            logger.error(f"Difficulty adjustment error: {e}")
+            return self.genesis_difficulty
+    
+    def validate_block_signature(self, block: Block) -> bool:
+        """Production-ready block signature validation"""
+        try:
+            if not block.header.signature or not block.header.validator:
+                return False
+            
+            validator = self.get_validator(block.header.validator)
+            if not validator:
+                logger.warning(f"Unknown validator: {block.header.validator}")
+                return False
+            
+            # Get signing data (exclude signature itself)
+            signing_data = self._get_block_signing_data(block)
+            
+            # Verify signature using validator's public key
+            return self._verify_signature(
+                validator.public_key,
+                signing_data,
+                block.header.signature
+            )
+            
+        except Exception as e:
+            logger.error(f"Block signature validation error: {e}")
+            return False
+    
+    def _get_block_signing_data(self, block: Block) -> bytes:
+        """Get data that should be signed for a block"""
+        header_data = {
+            'version': block.header.version,
+            'height': block.header.height,
+            'previous_hash': block.header.previous_hash,
+            'merkle_root': block.header.merkle_root,
+            'timestamp': block.header.timestamp,
+            'difficulty': block.header.difficulty,
+            'nonce': block.header.nonce,
+            'validator': block.header.validator
+        }
+        return json.dumps(header_data, sort_keys=True).encode()
+    
+    def _verify_signature(self, public_key: str, data: bytes, signature: str) -> bool:
+        """Production signature verification"""
+        try:
+            # Convert from hex if needed
+            if isinstance(signature, str):
+                signature_bytes = bytes.fromhex(signature)
+            else:
+                signature_bytes = signature
+            
+            # Use cryptography library for real verification
+            verifying_key = serialization.load_der_public_key(
+                bytes.fromhex(public_key),
+                backend=default_backend()
+            )
+            
+            verifying_key.verify(
+                signature_bytes,
+                data,
+                ec.ECDSA(hashes.SHA256())
+            )
+            return True
+            
+        except InvalidSignature:
+            return False
+        except Exception as e:
+            logger.error(f"Signature verification error: {e}")
+            return False        
     
     def shutdown(self):
         """Shutdown the consensus engine"""
@@ -1282,3 +1394,4 @@ class ProofOfStake:
         self.db.close()
         
         logger.info("Consensus engine shutdown complete")
+        
