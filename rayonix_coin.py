@@ -593,7 +593,87 @@ class ValidationManager:
         """Calculate block hash for validation"""
         header_data = json.dumps(asdict(block.header), sort_keys=True).encode()
         return hashlib.sha256(header_data).hexdigest()
-
+        
+    def _validate_gas_limit(self, block: Block) -> Dict[str, Any]:
+    	"""Validate block gas limit"""
+    	errors = []
+    	warnings = []
+    	
+    	try:
+    		# Calculate total gas used by transactions
+    		total_gas_used = sum(tx.gas_used for tx in block.transactions if hasattr(tx, 'gas_used'))
+    		
+    		# Check if gas used exceeds gas limit
+    		if total_gas_used > self.config['max_gas_per_block']:
+    			errors.append(f"Block gas usage {total_gas_used} exceeds limit {self.config['max_gas_per_block']}")
+    			
+    	except Exception as e:
+    		errors.append(f"Error validating gas limit: {str(e)}")
+    	return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}
+    		
+    def _validate_block_size(self, block: Block) -> Dict[str, Any]:
+        """Validate block size"""
+        errors = []
+        try:
+        	if block.size > self.config['max_block_size']:
+        		errors.append(f"Block size {block.size} exceeds maximum {self.config['max_block_size']}")
+        		
+        except Exception as e:
+        	errors.append(f"Error validating block size: {str(e)}")
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}	
+        
+    def _validate_transaction(self, transaction: Transaction, level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationResult:
+        """Validate a transaction with specified validation level"""
+        start_time = time.time()
+        errors = []
+        warnings = []
+        try:
+        	# Basic transaction validation
+        	if not transaction.inputs:
+        		errors.append("Transaction has no inputs")
+        		
+        	if not transaction.outputs:
+        		errors.append("Transaction has no outputs")
+        		
+        	# Check transaction size
+        	tx_size = len(transaction.to_bytes())
+        	if tx_size > self.config['max_transaction_size']:
+        		errors.append(f"Transaction size {tx_size} exceeds maximum {self.config['max_transaction_size']}")
+        	# Check signature if present
+        	if level in [ValidationLevel.STANDARD, ValidationLevel.FULL, ValidationLevel.CONSENSUS]:
+        		if not self._validate_transaction_signature(transaction):
+        			errors.append("Invalid transaction signature")
+        	# Check inputs and outputs for FULL and CONSENSUS levels
+        	if level in [ValidationLevel.FULL, ValidationLevel.CONSENSUS]:
+        		input_sum = sum(inp.amount for inp in transaction.inputs)
+        		output_sum = sum(out.amount for out in transaction.outputs)
+        		if output_sum > input_sum:
+        			errors.append("Output amount exceeds input amount")
+        		# Check for double spends
+        		if self._check_double_spend(transaction):
+        			errors.append("Transaction contains double spend")
+        except Exception as e:
+        	errors.append(f"Transaction validation error: {str(e)}")
+        execution_time = time.time() - start_time
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            execution_time=execution_time,
+            validation_level=level
+        )
+        
+    def _validate_transaction_signature(self, transaction: Transaction) -> bool:
+    	"""Validate transaction signature"""
+    	# This would implement proper signature verification
+    	return True
+    	
+    def _check_double_spend(self, transaction: Transaction) -> bool:
+    	"""Check for double spends in transaction"""
+    	# This would check if any inputs are already spent
+    	# For now, return False as placeholder
+    	return False        
+ 
 class TransactionManager:
     """Advanced transaction creation and fee estimation"""
     
@@ -1158,7 +1238,9 @@ class RayonixCoin:
                 'max_transaction_size': 100000,
                 'min_transaction_fee': 1,
                 'max_future_block_time': 7200,
-                'max_past_block_time': 86400
+                'max_past_block_time': 86400,
+                'max_gas_per_block': 8000000,  # Add this
+                'max_gas_per_transaction': 1000000  # Add this
             },
             'transactions': {
                 'max_mempool_size': 10000,
