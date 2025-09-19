@@ -33,7 +33,7 @@ httplib2==0.31.0
 idna==3.10
 importlib_resources==6.5.2
 jsonschema==4.25.1
-jsonschema-specifications 2025.9.1
+jsonschema-specifications==2025.9.1
 lmdb==1.7.3
 lz4==4.4.4
 mnemonic==0.21
