@@ -1092,6 +1092,18 @@ class RayonixCoin:
         self.state = BlockchainState.STOPPED
         self.config = self._load_configuration()
         
+        # Initialize gas price configuration
+        self.gas_price_config = gas_price_config or {
+            'base_gas_price': 1000000000,
+            'min_gas_price': 500000000,
+            'max_gas_price': 10000000000,
+            'adjustment_factor': 1.125,
+            'target_utilization': 0.5
+        }
+        self.gas_price = self.gas_price_config.get('base_gas_price', 1000000000)
+        self.gas_price_history = deque(maxlen=1000)
+        self.update_errors = 0
+        
         # Initialize components
         self.database = self._initialize_database()
         self.utxo_set = UTXOSet()
@@ -1177,6 +1189,44 @@ class RayonixCoin:
             logger.warning(f"Failed to load config file: {e}")
         
         return default_config
+        
+    def update_gas_price(self, mempool_size: int, block_utilization: float) -> int:
+    	try:
+    		# Calculate new gas price based on utilization
+    		utilization = min(1.0, max(0.0, block_utilization))
+    		if utilization > self.gas_price_config.get('target_utilization', 0.5):
+    			# Increase gas price when utilization is high
+    			adjustment = self.gas_price_config.get('adjustment_factor', 1.125)
+    			new_price = int(self.gas_price * adjustment)
+    			
+    		else:
+    			# Decrease gas price when utilization is low
+    			adjustment = 1.0 / self.gas_price_config.get('adjustment_factor', 1.125)
+    			new_price = int(self.gas_price * adjustment)
+    			
+    		# Apply min/max bounds
+    		min_price = self.gas_price_config.get('min_gas_price', 500000000)
+    		max_price = self.gas_price_config.get('max_gas_price', 10000000000)
+    		new_price = max(min_price, min(new_price, max_price))
+    		
+    		# Update with smoothing to avoid drastic changes
+    		smoothing = 0.8  # 80% old price, 20% new price
+    		self.gas_price = int(smoothing * self.gas_price + (1 - smoothing) * new_price)
+    		
+    		# Record in history
+    		self.gas_price_history.append({
+    		    'timestamp': time.time(),
+    		    'gas_price': self.gas_price,
+    		    'mempool_size': mempool_size,
+    		    'utilization': utilization
+    		})
+    		
+    		return self.gas_price
+    		
+    	except Exception as e:
+    		logger.error(f"Error updating gas price: {e}")
+    		self.update_errors += 1
+    		return self.gas_price        
     
     def _initialize_database(self) -> AdvancedDatabase:
         """Initialize database with proper configuration"""
@@ -1353,7 +1403,8 @@ class RayonixCoin:
             self._state_pruning_loop,
             self._performance_monitoring_loop,
             self._fork_monitoring_loop,
-            self.start_gas_price_updater  # Add gas price updater
+            self.start_gas_price_updater,  # Add gas price updater,
+            self._gas_price_update_loop  # Add this
         ]
         
         for task_func in tasks:
@@ -1873,6 +1924,36 @@ class RayonixCoin:
         return self.contract_manager.execute_contract(
             contract_address, function_name, args, caller_address, value
         )
+        
+    async def _gas_price_update_loop(self):
+        while self.running:
+        	try:
+        		if self.state == BlockchainState.SYNCED:
+        			# Calculate network utilization metrics
+        			mempool_size = len(self.transaction_manager.mempool)
+        			recent_blocks = self._get_recent_blocks(10)
+        			
+        			if recent_blocks:
+        				# Calculate average block utilization
+        				total_capacity = sum(block.get('gas_limit', 8000000) for block in recent_blocks)
+        				total_used = sum(block.get('gas_used', 0) for block in recent_blocks)
+        				utilization = total_used / total_capacity if total_capacity > 0 else 0
+        				
+        				# Update gas price
+        				new_gas_price = self.update_gas_price(mempool_size, utilization)
+        				if self.config.get('logging.debug_gas_price', False):
+        					logger.debug(
+        					    f"Gas price updated: {new_gas_price}, "
+        					    f"mempool: {mempool_size}, utilization: {utilization:.2f}"
+        					)
+        		await asyncio.sleep(30)  # Update every 30 seconds
+        	except Exception as e:
+        	    logger.error(f"Gas price update error: {e}")
+        	    await asyncio.sleep(60)          
+                
+            
+            	                                                              
+ 
 @classmethod
 def generate_genesis_block(cls, config_manager: Any = None, custom_config: Optional[Dict] = None) -> Dict:
     """Generate genesis block with custom configuration"""
@@ -3011,3 +3092,16 @@ def calculate_mining_reward(height: int, base_reward: int = 50, halving_interval
     halvings = height // halving_interval
     reward = base_reward >> halvings
     return max(reward, 1)
+    
+def _get_recent_blocks(self, count: int) -> List[Dict]:
+    """Get recent blocks for gas price calculation"""
+    try:
+        if not self.blockchain:
+            return []
+        
+        start_idx = max(0, len(self.blockchain) - count)
+        return self.blockchain[start_idx:]
+        
+    except Exception as e:
+        logger.error(f"Error getting recent blocks: {e}")
+        return []    
