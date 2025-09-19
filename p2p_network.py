@@ -281,18 +281,30 @@ class AdvancedP2PNetwork:
             NetworkType.REGTEST: b'RAYR'
         }
         
-        # Current network magic
-        self.magic = self.network_magic[self.config.network_type]
-        
-        # Initialize protocol handlers
-        self.protocol_handlers = {
-            ProtocolType.TCP: self._handle_tcp_connection,
-            ProtocolType.UDP: self._handle_udp_connection,
-            ProtocolType.WEBSOCKET: self._handle_websocket_connection,
-            ProtocolType.HTTP: self._handle_http_connection,
-            ProtocolType.HTTPS: self._handle_https_connection
-        }
-
+        # Handle both enum and string network types
+        if isinstance(self.config.network_type, str):
+        	# Convert string to NetworkType enum
+        	network_type_upper = self.config.network_type.upper()
+        	try:
+        		self.config.network_type = NetworkType[network_type_upper]
+        		
+        	except KeyError:
+        		# Default to MAINNET if string doesn't match any enum
+        		logger.warning(f"Unknown network type: {self.config.network_type}, defaulting to MAINNET")
+        		self.config.network_type = NetworkType.MAINNET
+        		
+        	# Current network magic
+        	self.magic = self.network_magic[self.config.network_type]
+        	
+        	# Initialize protocol handlers
+        	self.protocol_handlers = {
+        	    ProtocolType.TCP: self._handle_tcp_connection,
+        	    ProtocolType.UDP: self._handle_udp_connection,
+        	    ProtocolType.WEBSOCKET: self._handle_websocket_connection,
+        	    ProtocolType.HTTP: self._handle_http_connection,
+        	    ProtocolType.HTTPS: self._handle_https_connection
+        	}
+   
     async def start(self):
         """Start the network node"""
         self.running = True
