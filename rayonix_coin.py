@@ -1365,19 +1365,21 @@ class RayonixCoin:
         """Initialize or load blockchain state"""
         try:
             # Try to load chain head from database
-            self.chain_head = self.database.get('chain_head')
-            
+            try:
+            	self.chain_head = self.database.get('chain_head')
+            except KeyNotFoundError:
+            	self.chain_head = None
             if not self.chain_head:
-                # Create genesis block if not exists
-                genesis_block = self._create_genesis_block()
-                self._process_genesis_block(genesis_block)
+            	# Create genesis block if not exists
+            	logger.info("No existing blockchain found, creating genesis block...")
+            	genesis_block = self._create_genesis_block()
+            	self._process_genesis_block(genesis_block)
             else:
-                # Load full state
-                self._load_blockchain_state()
-                
+            	# Load full state
+            	self._load_blockchain_state()
         except Exception as e:
-            logger.error(f"Blockchain initialization failed: {e}")
-            raise
+        	logger.error(f"Blockchain initialization failed: {e}")
+        	raise
     
     def _create_genesis_block(self) -> Block:
         """Create genesis block"""
