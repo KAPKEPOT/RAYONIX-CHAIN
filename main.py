@@ -439,9 +439,17 @@ class RayonixNode:
                 data_dir = Path(self.config.database.db_path)
                 data_dir.mkdir(exist_ok=True, parents=True)
                 
+                # Get gas price config from main config
+                gas_price_config = {
+                    'base_gas_price': self.config_manager.get('gas.base_gas_price', 1000000000),
+                    'min_gas_price': self.config_manager.get('gas.min_gas_price', 500000000),
+                }
+                
                 self.rayonix_coin = RayonixCoin(
                     network_type=network_type,
-                    data_dir=str(data_dir)
+                    data_dir=str(data_dir),
+                    gas_price_config=gas_price_config
+                    
                 )
             
             # Initialize wallet if not provided via dependencies
