@@ -166,6 +166,30 @@ class FeeEstimate:
     timestamp: float
     confidence: float
     mempool_size: int
+    
+@dataclass
+class TransactionOutput:
+    address: str
+    amount: int
+    locktime: int = 0
+    script_pubkey: Optional[str] = None
+    
+    def to_dict(self) -> Dict:
+        return {
+            'address': self.address,
+            'amount': self.amount,
+            'locktime': self.locktime,
+            'script_pubkey': self.script_pubkey
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'TransactionOutput':
+        return cls(
+            address=data['address'],
+            amount=data['amount'],
+            locktime=data.get('locktime', 0),
+            script_pubkey=data.get('script_pubkey')
+        )    
 
 class StateManager:
     """Manages blockchain state transitions atomically"""
