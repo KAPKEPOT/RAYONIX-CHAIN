@@ -1259,6 +1259,7 @@ class RayonixCoin:
                 'bootstrap_nodes': self._get_bootstrap_nodes()
             },
             'consensus': {
+                'foundation_address': 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX',
                 'block_reward': 50,
                 'halving_interval': 210000,
                 'difficulty_adjustment_blocks': 2016,
