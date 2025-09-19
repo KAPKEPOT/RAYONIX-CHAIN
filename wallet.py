@@ -182,323 +182,203 @@ class WalletState:
     security_score: int
 
 class WalletDatabase:
-    """Database layer for wallet persistence"""
+    """Database layer for wallet persistence using Plyvel"""
     
     def __init__(self, db_path: str):
         self.db_path = db_path
+        self.db = plyvel.DB(db_path, create_if_missing=True)
         self._init_db()
     
     def _init_db(self):
-        """Initialize database schema"""
-        with self._get_connection() as conn:
-            # Addresses table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS addresses (
-                    address TEXT PRIMARY KEY,
-                    index INTEGER NOT NULL,
-                    derivation_path TEXT NOT NULL,
-                    balance INTEGER DEFAULT 0,
-                    received INTEGER DEFAULT 0,
-                    sent INTEGER DEFAULT 0,
-                    tx_count INTEGER DEFAULT 0,
-                    is_used BOOLEAN DEFAULT FALSE,
-                    is_change BOOLEAN DEFAULT FALSE,
-                    labels TEXT DEFAULT '[]',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # Transactions table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS transactions (
-                    txid TEXT PRIMARY KEY,
-                    amount INTEGER NOT NULL,
-                    fee INTEGER NOT NULL,
-                    confirmations INTEGER DEFAULT 0,
-                    timestamp INTEGER NOT NULL,
-                    block_height INTEGER,
-                    from_address TEXT NOT NULL,
-                    to_address TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    direction TEXT NOT NULL,
-                    memo TEXT,
-                    exchange_rate REAL,
-                    metadata TEXT DEFAULT '{}',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # Wallet state table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS wallet_state (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    sync_height INTEGER DEFAULT 0,
-                    last_updated REAL NOT NULL,
-                    tx_count INTEGER DEFAULT 0,
-                    addresses_generated INTEGER DEFAULT 0,
-                    addresses_used INTEGER DEFAULT 0,
-                    total_received INTEGER DEFAULT 0,
-                    total_sent INTEGER DEFAULT 0,
-                    security_score INTEGER DEFAULT 0,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # UTXO index table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS wallet_utxos (
-                    txid TEXT NOT NULL,
-                    vout INTEGER NOT NULL,
-                    address TEXT NOT NULL,
-                    amount INTEGER NOT NULL,
-                    script_pubkey TEXT NOT NULL,
-                    confirmations INTEGER DEFAULT 0,
-                    spent BOOLEAN DEFAULT FALSE,
-                    spent_by TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (txid, vout)
-                )
-            ''')
-            
-            conn.commit()
+        """Initialize database schema with default collections"""
+        # Create default collections if they don't exist
+        collections = ['addresses', 'transactions', 'wallet_state', 'wallet_utxos']
+        for collection in collections:
+            # Check if collection exists by trying to get a marker key
+            marker_key = f"_{collection}_initialized".encode()
+            if not self.db.get(marker_key):
+                # Collection doesn't exist, mark it as initialized
+                self.db.put(marker_key, b'true')
+                logger.info(f"Initialized collection: {collection}")
     
-    @contextlib.contextmanager
-    def _get_connection(self):
-        """Get database connection with context management"""
-        conn = sqlite3.connect(self.db_path, isolation_level=None)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        conn.execute("PRAGMA busy_timeout=5000")
-        try:
-            yield conn
-        finally:
-            conn.close()
+    def _get_collection_key(self, collection: str, key: str) -> bytes:
+        """Get key for a specific collection"""
+        return f"{collection}:{key}".encode()
+    
+    def _get_all_collection_keys(self, collection: str) -> List[bytes]:
+        """Get all keys for a specific collection"""
+        keys = []
+        prefix = f"{collection}:".encode()
+        with self.db.iterator(prefix=prefix) as it:
+            for key, value in it:
+                keys.append(key)
+        return keys
     
     def save_address(self, address_info: AddressInfo):
         """Save address to database"""
-        with self._get_connection() as conn:
-            conn.execute('''
-                INSERT OR REPLACE INTO addresses 
-                (address, index, derivation_path, balance, received, sent, tx_count, is_used, is_change, labels)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                address_info.address,
-                address_info.index,
-                address_info.derivation_path,
-                address_info.balance,
-                address_info.received,
-                address_info.sent,
-                address_info.tx_count,
-                address_info.is_used,
-                address_info.is_change,
-                json.dumps(address_info.labels)
-            ))
-            conn.commit()
+        try:
+            key = self._get_collection_key('addresses', address_info.address)
+            value = json.dumps(asdict(address_info)).encode()
+            self.db.put(key, value)
+        except Exception as e:
+            logger.error(f"Failed to save address: {e}")
+            raise DatabaseError(f"Failed to save address: {e}")
     
     def get_address(self, address: str) -> Optional[AddressInfo]:
         """Get address from database"""
-        with self._get_connection() as conn:
-            cursor = conn.execute('SELECT * FROM addresses WHERE address = ?', (address,))
-            row = cursor.fetchone()
-            if row:
-                return AddressInfo(
-                    address=row[0],
-                    index=row[1],
-                    derivation_path=row[2],
-                    balance=row[3],
-                    received=row[4],
-                    sent=row[5],
-                    tx_count=row[6],
-                    is_used=bool(row[7]),
-                    is_change=bool(row[8]),
-                    labels=json.loads(row[9])
-                )
-        return None
+        try:
+            key = self._get_collection_key('addresses', address)
+            value = self.db.get(key)
+            if value:
+                data = json.loads(value.decode())
+                return AddressInfo(**data)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get address: {e}")
+            return None
     
     def get_all_addresses(self) -> List[AddressInfo]:
         """Get all addresses from database"""
         addresses = []
-        with self._get_connection() as conn:
-            cursor = conn.execute('SELECT * FROM addresses ORDER BY index')
-            for row in cursor.fetchall():
-                addresses.append(AddressInfo(
-                    address=row[0],
-                    index=row[1],
-                    derivation_path=row[2],
-                    balance=row[3],
-                    received=row[4],
-                    sent=row[5],
-                    tx_count=row[6],
-                    is_used=bool(row[7]),
-                    is_change=bool(row[8]),
-                    labels=json.loads(row[9])
-                ))
+        try:
+            prefix = "addresses:".encode()
+            with self.db.iterator(prefix=prefix) as it:
+                for key, value in it:
+                    data = json.loads(value.decode())
+                    addresses.append(AddressInfo(**data))
+            # Sort by index
+            addresses.sort(key=lambda x: x.index)
+        except Exception as e:
+            logger.error(f"Failed to get all addresses: {e}")
         return addresses
     
     def save_transaction(self, transaction: Transaction):
         """Save transaction to database"""
-        with self._get_connection() as conn:
-            conn.execute('''
-                INSERT OR REPLACE INTO transactions 
-                (txid, amount, fee, confirmations, timestamp, block_height, from_address, to_address, status, direction, memo, exchange_rate, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                transaction.txid,
-                transaction.amount,
-                transaction.fee,
-                transaction.confirmations,
-                transaction.timestamp,
-                transaction.block_height,
-                transaction.from_address,
-                transaction.to_address,
-                transaction.status,
-                transaction.direction,
-                transaction.memo,
-                transaction.exchange_rate,
-                json.dumps(transaction.metadata)
-            ))
-            conn.commit()
+        try:
+            key = self._get_collection_key('transactions', transaction.txid)
+            value = json.dumps(asdict(transaction)).encode()
+            self.db.put(key, value)
+        except Exception as e:
+            logger.error(f"Failed to save transaction: {e}")
+            raise DatabaseError(f"Failed to save transaction: {e}")
     
     def get_transaction(self, txid: str) -> Optional[Transaction]:
         """Get transaction from database"""
-        with self._get_connection() as conn:
-            cursor = conn.execute('SELECT * FROM transactions WHERE txid = ?', (txid,))
-            row = cursor.fetchone()
-            if row:
-                return Transaction(
-                    txid=row[0],
-                    amount=row[1],
-                    fee=row[2],
-                    confirmations=row[3],
-                    timestamp=row[4],
-                    block_height=row[5],
-                    from_address=row[6],
-                    to_address=row[7],
-                    status=row[8],
-                    direction=row[9],
-                    memo=row[10],
-                    exchange_rate=row[11],
-                    metadata=json.loads(row[12])
-                )
-        return None
+        try:
+            key = self._get_collection_key('transactions', txid)
+            value = self.db.get(key)
+            if value:
+                data = json.loads(value.decode())
+                return Transaction(**data)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get transaction: {e}")
+            return None
     
     def get_transactions(self, limit: int = 50, offset: int = 0) -> List[Transaction]:
         """Get transactions from database"""
         transactions = []
-        with self._get_connection() as conn:
-            cursor = conn.execute(
-                'SELECT * FROM transactions ORDER BY timestamp DESC LIMIT ? OFFSET ?',
-                (limit, offset)
-            )
-            for row in cursor.fetchall():
-                transactions.append(Transaction(
-                    txid=row[0],
-                    amount=row[1],
-                    fee=row[2],
-                    confirmations=row[3],
-                    timestamp=row[4],
-                    block_height=row[5],
-                    from_address=row[6],
-                    to_address=row[7],
-                    status=row[8],
-                    direction=row[9],
-                    memo=row[10],
-                    exchange_rate=row[11],
-                    metadata=json.loads(row[12])
-                ))
+        try:
+            prefix = "transactions:".encode()
+            count = 0
+            with self.db.iterator(prefix=prefix) as it:
+                for key, value in it:
+                    if count < offset:
+                        count += 1
+                        continue
+                    if len(transactions) >= limit:
+                        break
+                    data = json.loads(value.decode())
+                    transactions.append(Transaction(**data))
+                    count += 1
+            # Sort by timestamp descending
+            transactions.sort(key=lambda x: x.timestamp, reverse=True)
+        except Exception as e:
+            logger.error(f"Failed to get transactions: {e}")
         return transactions
     
     def save_wallet_state(self, state: WalletState):
         """Save wallet state to database"""
-        with self._get_connection() as conn:
-            conn.execute('''
-                INSERT OR REPLACE INTO wallet_state 
-                (id, sync_height, last_updated, tx_count, addresses_generated, addresses_used, total_received, total_sent, security_score)
-                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                state.sync_height,
-                state.last_updated,
-                state.tx_count,
-                state.addresses_generated,
-                state.addresses_used,
-                state.total_received,
-                state.total_sent,
-                state.security_score
-            ))
-            conn.commit()
+        try:
+            key = self._get_collection_key('wallet_state', 'current')
+            value = json.dumps(asdict(state)).encode()
+            self.db.put(key, value)
+        except Exception as e:
+            logger.error(f"Failed to save wallet state: {e}")
+            raise DatabaseError(f"Failed to save wallet state: {e}")
     
     def get_wallet_state(self) -> Optional[WalletState]:
         """Get wallet state from database"""
-        with self._get_connection() as conn:
-            cursor = conn.execute('SELECT * FROM wallet_state WHERE id = 1')
-            row = cursor.fetchone()
-            if row:
-                return WalletState(
-                    sync_height=row[1],
-                    last_updated=row[2],
-                    tx_count=row[3],
-                    addresses_generated=row[4],
-                    addresses_used=row[5],
-                    total_received=row[6],
-                    total_sent=row[7],
-                    security_score=row[8]
-                )
-        return None
+        try:
+            key = self._get_collection_key('wallet_state', 'current')
+            value = self.db.get(key)
+            if value:
+                data = json.loads(value.decode())
+                return WalletState(**data)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get wallet state: {e}")
+            return None
     
     def save_utxo(self, utxo: UTXO, address: str):
         """Save UTXO to wallet index"""
-        with self._get_connection() as conn:
-            conn.execute('''
-                INSERT OR REPLACE INTO wallet_utxos 
-                (txid, vout, address, amount, script_pubkey, confirmations, spent, spent_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                utxo.tx_hash,
-                utxo.vout,
-                address,
-                utxo.amount,
-                utxo.script_pubkey.hex() if hasattr(utxo.script_pubkey, 'hex') else utxo.script_pubkey,
-                utxo.confirmations,
-                utxo.spent,
-                utxo.spent_by
-            ))
-            conn.commit()
+        try:
+            # Create composite key: utxo:txid:vout
+            key = f"wallet_utxos:{utxo.tx_hash}:{utxo.vout}".encode()
+            utxo_data = {
+                'txid': utxo.tx_hash,
+                'vout': utxo.vout,
+                'address': address,
+                'amount': utxo.amount,
+                'script_pubkey': utxo.script_pubkey.hex() if hasattr(utxo.script_pubkey, 'hex') else utxo.script_pubkey,
+                'confirmations': utxo.confirmations,
+                'spent': utxo.spent,
+                'spent_by': utxo.spent_by
+            }
+            value = json.dumps(utxo_data).encode()
+            self.db.put(key, value)
+        except Exception as e:
+            logger.error(f"Failed to save UTXO: {e}")
+            raise DatabaseError(f"Failed to save UTXO: {e}")
     
     def get_utxos(self, address: Optional[str] = None) -> List[Dict]:
         """Get UTXOs from wallet index"""
         utxos = []
-        query = 'SELECT * FROM wallet_utxos WHERE spent = FALSE'
-        params = ()
-        
-        if address:
-            query += ' AND address = ?'
-            params = (address,)
-        
-        with self._get_connection() as conn:
-            cursor = conn.execute(query, params)
-            for row in cursor.fetchall():
-                utxos.append({
-                    'txid': row[0],
-                    'vout': row[1],
-                    'address': row[2],
-                    'amount': row[3],
-                    'script_pubkey': row[4],
-                    'confirmations': row[5],
-                    'spent': bool(row[6]),
-                    'spent_by': row[7]
-                })
+        try:
+            prefix = "wallet_utxos:".encode()
+            with self.db.iterator(prefix=prefix) as it:
+                for key, value in it:
+                    utxo_data = json.loads(value.decode())
+                    # Filter by address if specified
+                    if address and utxo_data['address'] != address:
+                        continue
+                    # Only include unspent UTXOs
+                    if not utxo_data['spent']:
+                        utxos.append(utxo_data)
+        except Exception as e:
+            logger.error(f"Failed to get UTXOs: {e}")
         return utxos
     
     def mark_utxo_spent(self, txid: str, vout: int, spent_by: str):
         """Mark UTXO as spent"""
-        with self._get_connection() as conn:
-            conn.execute(
-                'UPDATE wallet_utxos SET spent = TRUE, spent_by = ? WHERE txid = ? AND vout = ?',
-                (spent_by, txid, vout)
-            )
-            conn.commit()
+        try:
+            key = f"wallet_utxos:{txid}:{vout}".encode()
+            value = self.db.get(key)
+            if value:
+                utxo_data = json.loads(value.decode())
+                utxo_data['spent'] = True
+                utxo_data['spent_by'] = spent_by
+                self.db.put(key, json.dumps(utxo_data).encode())
+        except Exception as e:
+            logger.error(f"Failed to mark UTXO as spent: {e}")
+            raise DatabaseError(f"Failed to mark UTXO as spent: {e}")
+    
+    def close(self):
+        """Close the database"""
+        try:
+            self.db.close()
+        except Exception as e:
+            logger.error(f"Failed to close database: {e}")
 
 class WalletSynchronizer:
     """Service for synchronizing wallet state with blockchain"""
