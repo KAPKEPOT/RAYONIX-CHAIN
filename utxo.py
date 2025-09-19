@@ -11,6 +11,11 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
 from contextlib import contextmanager
 
+# Configure logging
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 # Database key prefixes
 UTXO_PREFIX = b'u:'  # u:tx_hash:output_index -> UTXO data
 ADDRESS_INDEX_PREFIX = b'a:'  # a:address -> set of UTXO IDs
