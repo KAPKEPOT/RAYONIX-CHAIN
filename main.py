@@ -443,6 +443,9 @@ class RayonixNode:
                 gas_price_config = {
                     'base_gas_price': self.config_manager.get('gas.base_gas_price', 1000000000),
                     'min_gas_price': self.config_manager.get('gas.min_gas_price', 500000000),
+                    'max_gas_price': self.config_manager.get('gas.max_gas_price', 10000000000),
+                    'adjustment_factor': self.config_manager.get('gas.adjustment_factor', 1.125),
+                    'target_utilization': self.config_manager.get('gas.target_utilization', 0.5)
                 }
                 
                 self.rayonix_coin = RayonixCoin(

@@ -1111,9 +1111,7 @@ class RayonixCoin:
         self.contract_manager = ContractManager()
         self.wallet = self._initialize_wallet()
         self.network = self._initialize_network()
-        self.gas_price = GAS_PRICE_CONFIG['base_gas_price']
-        self.gas_price_history = deque(maxlen=1000)
-        self.update_errors = 0
+        
         
         # Initialize core managers
         self.state_manager = StateManager(self.database, self.utxo_set, self.consensus, self.contract_manager)
