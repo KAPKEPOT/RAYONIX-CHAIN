@@ -110,10 +110,35 @@ class Transaction:
         self.hash = self.calculate_hash()
     
     def calculate_hash(self) -> str:
+        serializable_inputs = []
+        for inp in self.inputs:
+        	if isinstance(inp, dict):
+        		serializable_inputs.append(inp)
+        	else:
+        		# Convert TransactionInput object to dict if needed
+        		serializable_inputs.append({
+        		    'tx_hash': getattr(inp, 'tx_hash', ''),
+        		    'output_index': getattr(inp, 'output_index', 0),
+        		    'signature': getattr(inp, 'signature', ''),
+        		    'public_key': getattr(inp, 'public_key', ''),
+        		    'address': getattr(inp, 'address', '')
+        		})
+        serializable_outputs = []
+        for out in self.outputs:
+        	if isinstance(out, dict):
+        		serializable_outputs.append(out)
+        	else:
+        		# Convert TransactionOutput object to dict
+        		serializable_outputs.append({
+        		    'address': getattr(out, 'address', ''),
+        		    'amount': getattr(out, 'amount', 0),
+        		    'locktime': getattr(out, 'locktime', 0),
+        		    'script_pubkey': getattr(out, 'script_pubkey', '')
+        		})
         tx_data = json.dumps({
             'version': self.version,
-            'inputs': self.inputs,
-            'outputs': self.outputs,
+            'inputs': serializable_inputs,
+            'outputs': serializable_outputs,
             'locktime': self.locktime
         }, sort_keys=True)
         return hashlib.sha256(tx_data.encode()).hexdigest()
