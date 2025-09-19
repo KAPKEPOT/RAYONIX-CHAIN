@@ -187,6 +187,16 @@ class Transaction:
         }, sort_keys=True)
         
         return signing_data
+        
+    def to_bytes(self) -> bytes:
+    	"""Convert transaction to bytes for serialization"""
+    	try:
+    		# Convert transaction data to JSON and encode to bytes
+    		tx_dict = self.to_dict() if hasattr(self, 'to_dict') else asdict(self)
+    		return json.dumps(tx_dict, sort_keys=True).encode('utf-8')
+    	except Exception as e:
+    		logger.error(f"Error converting transaction to bytes: {e}")
+    		return b''
     
     def verify_input_signature(self, input_index: int, utxo_set: 'UTXOSet') -> bool:
         if input_index >= len(self.inputs) or 'signature' not in self.inputs[input_index]:
