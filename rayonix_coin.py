@@ -1195,7 +1195,7 @@ class RayonixCoin:
             network=self.network_type,
             address_type=AddressType.RAYONIX,
             encryption=True,
-            hd_wallet=True
+            wallet_type=WalletType.HD
         )
         
         wallet_path = os.path.join(self.data_dir, 'wallets')
