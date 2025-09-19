@@ -36,7 +36,7 @@ from config import ConfigManager, init_config, get_config, ConfigFormat, ConfigS
 
 # Import rayonix_coin instead of blockchain
 from rayonix_coin import RayonixCoin, create_rayonix_network, validate_rayonix_address
-from wallet import RayonixWallet, WalletConfig, WalletType, AddressType, create_new_wallet
+from wallet import RayonixWallet, WalletConfig, WalletType, AddressType
 from p2p_network import AdvancedP2PNetwork, NodeConfig, NetworkType, ProtocolType, MessageType
 from smart_contract import ContractManager, SmartContract
 from database import AdvancedDatabase, DatabaseConfig
