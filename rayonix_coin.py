@@ -44,6 +44,8 @@ from merkle import MerkleTree, CompactMerkleTree, MerkleTreeConfig, HashAlgorith
 
 from utxo import UTXOSet, Transaction, UTXO
 from consensus import ProofOfStake, Validator, ConsensusState, ValidatorStatus, VoteType, BlockProposal, Vote, RoundState
+# Remove the Block and BlockHeader classes from here
+from models import Block, BlockHeader
 
 from smart_contract import ContractManager, SmartContract, ContractState, ExecutionResult
 
