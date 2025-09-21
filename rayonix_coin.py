@@ -2993,7 +2993,7 @@ class ValidatorAnalyticsManager:
     	    (1.20, 'poor'),
     	    (float('inf'), 'inefficient')
     	]
-    	for threshold, rating, _ in rating_map:
+    	for threshold, rating in efficiency_map:
     		if uptime >= threshold:
     			return rating 
     	return 'inefficient'
