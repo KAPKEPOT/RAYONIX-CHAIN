@@ -231,7 +231,7 @@ class ProofOfStake:
                  slash_percentage: float = 0.01, epoch_blocks: int = 100,
                  max_validators: int = 100, db_path: str = './consensus_db',
                  timeout_propose: int = 3000, timeout_prevote: int = 1000,
-                 timeout_precommit: int = 1000):
+                 timeout_precommit: int = 1000, **kwargs):
         """
         Initialize Proof-of-Stake consensus
         
