@@ -2,7 +2,7 @@
 
 import asyncio
 import threading
-from typing import Optional, Set
+from typing import Optional, Set, Any  # Add Any import
 from pathlib import Path
 import logging
 
@@ -25,7 +25,7 @@ class RayonixNode:
         if dependencies:
             self.deps = dependencies
             self.config_manager = dependencies.config_manager
-            self.rayonix_coin = dependencies.rayonix_coin
+            self.rayonix_chain = dependencies.rayonix_coin
             self.wallet = dependencies.wallet
             self.network = dependencies.network
             self.contract_manager = dependencies.contract_manager
@@ -33,14 +33,14 @@ class RayonixNode:
         else:
             self.deps = NodeDependencies(
                 config_manager=None,
-                rayonix_coin=None,
+                rayonix_chain=None,
                 wallet=None,
                 network=None,
                 contract_manager=None,
                 database=None
             )
             self.config_manager = None
-            self.rayonix_coin = None
+            self.rayonix_chain = None
             self.wallet = None
             self.network = None
             self.contract_manager = None
@@ -73,8 +73,8 @@ class RayonixNode:
                 self.config_manager = init_config(config_path, encryption_key, auto_reload=True)
             
             # Initialize rayonix_coin if not provided via dependencies
-            if not self.rayonix_coin:
-                from external.rayonix_coin.rayonix_coin import RayonixCoin
+            if not self.rayonix_chain:
+                from blockchain.core.rayonix_chain import RayonixBlockchain
                 
                 network_type = self.config_manager.get('network.network_type', 'testnet')
                 data_dir = Path(self.config_manager.get('database.db_path', './rayonix_data'))
@@ -89,7 +89,7 @@ class RayonixNode:
                     'target_utilization': self.config_manager.get('gas.target_utilization', 0.5)
                 }
                 
-                self.rayonix_coin = RayonixCoin(
+                self.rayonix_chain = RayonixBlockchain(
                     network_type=network_type,
                     data_dir=str(data_dir),
                     gas_price_config=gas_price_config
@@ -121,8 +121,8 @@ class RayonixNode:
     
     async def _initialize_wallet_with_blockchain(self):
         """Initialize wallet with proper blockchain reference integration"""
-        from external.wallet.wallet import RayonixWallet, create_new_wallet
-        from external.wallet.wallet_config import WalletType, AddressType
+        from rayonix_wallet.core.wallet import RayonixWallet, create_new_wallet
+        from rayonix_wallet.core.wallet_config import WalletType, AddressType
         
         wallet_file = Path(self.config_manager.get('database.db_path', './rayonix_data')) / 'wallet.dat'
         if wallet_file.exists():
@@ -131,7 +131,7 @@ class RayonixNode:
                 self.wallet = RayonixWallet()
                 if self.wallet.restore(str(wallet_file)):
                     # Set blockchain reference after successful restore
-                    if self.wallet.set_blockchain_reference(self.rayonix_coin):
+                    if self.wallet.set_blockchain_reference(self.rayonix_chain):
                         logger.info("Wallet loaded and blockchain integration established")
                     else:
                         logger.warning("Wallet loaded but blockchain integration failed")
@@ -149,8 +149,8 @@ class RayonixNode:
     def _create_new_wallet_with_blockchain(self):
         """Create new wallet with blockchain integration"""
         try:
-            from external.wallet.wallet import create_new_wallet
-            from external.wallet.wallet_config import WalletType, AddressType
+            from rayonix_wallet.core.wallet import create_new_wallet
+            from rayonix_wallet.core.wallet_config import WalletType, AddressType
             
             # Create new wallet
             self.wallet = create_new_wallet(
@@ -159,7 +159,7 @@ class RayonixNode:
                 address_type=AddressType.RAYONIX
             )
             # Establish blockchain reference
-            if self.wallet.set_blockchain_reference(self.rayonix_coin):
+            if self.wallet.set_blockchain_reference(self.rayonix_chain):
                 logger.info("New wallet created with blockchain integration")
                 
                 # Save wallet immediately
@@ -257,8 +257,8 @@ class RayonixNode:
         if self.network:
             await self.network.stop()
         
-        # Save state through rayonix_coin
-        if self.rayonix_coin:
-            self.rayonix_coin.close()
+        # Save state through rayonix_chain
+        if self.rayonix_chain:
+            self.rayonix_chain.close()
         
         logger.info("RAYONIX Node stopped gracefully")
