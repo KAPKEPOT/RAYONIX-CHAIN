@@ -1,0 +1,35 @@
+network/
+├── __init__.py
+├── config/
+│   ├── __init__.py
+│   ├── node_config.py          # NodeConfig class
+│   └── network_types.py        # NetworkType, ProtocolType, ConnectionState, MessageType enums
+├── models/
+│   ├── __init__.py
+│   ├── peer_info.py            # PeerInfo class
+│   ├── network_message.py      # NetworkMessage class
+│   ├── connection_metrics.py   # ConnectionMetrics class
+│   └── message_header.py       # MessageHeader class
+├── core/
+│   ├── __init__.py
+│   ├── advanced_p2p_network.py # Main AdvancedP2PNetwork class
+│   ├── connection_manager.py   # Connection management logic
+│   ├── peer_discovery.py       # Peer discovery mechanisms
+│   ├── message_processor.py    # Message handling and processing
+│   └── security_manager.py     # Encryption, handshake, security
+├── protocols/
+│   ├── __init__.py
+│   ├── tcp_handler.py          # TCP protocol implementation
+│   ├── udp_handler.py          # UDP protocol implementation
+│   ├── websocket_handler.py    # WebSocket protocol implementation
+│   ├── http_handler.py         # HTTP protocol implementation
+│   └── udp_protocol.py         # UDPProtocol class
+├── utils/
+│   ├── __init__.py
+│   ├── serialization.py        # Message serialization/deserialization
+│   ├── compression.py          # Data compression utilities
+│   ├── rate_limiter.py         # Rate limiting implementation
+│   ├── ban_manager.py          # Ban management
+│   └── metrics_collector.py    # Metrics collection and reporting
+├── exceptions.py               # Custom exceptions (NetworkError, ConnectionError, etc.)
+└── main.py                     # Main entry point and example usage
