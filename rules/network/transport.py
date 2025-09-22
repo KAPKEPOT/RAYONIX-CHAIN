@@ -1,7 +1,3 @@
-"""
-Network transport layer for consensus communication
-"""
-
 import asyncio
 import aiohttp
 from typing import Dict, List, Optional, Callable
@@ -10,8 +6,8 @@ import time
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
-from ..exceptions import NetworkError
-from ..utils import RateLimiter, Backoff
+from rules.exceptions import NetworkError
+from rules.utils import RateLimiter, Backoff
 
 logger = logging.getLogger('consensus.network')
 

@@ -1,7 +1,3 @@
-"""
-Message serialization and deserialization for network communication
-"""
-
 import json
 import msgpack
 from typing import Dict, Any, Optional
@@ -9,7 +5,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 
-from ..exceptions import NetworkError
+from rules.exceptions import NetworkError
 
 logger = logging.getLogger('consensus.network')
 
