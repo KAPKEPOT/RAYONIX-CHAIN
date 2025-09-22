@@ -71,7 +71,7 @@ class SyncManager:
         # Update state manager
         self.node.state_manager.update_sync_state(
             syncing=True,
-            current_block=self.node.rayonix_coin.get_block_count(),
+            current_block=self.node.rayonix_chain.get_block_count(),
             target_block=0,  # Will be updated during sync
             last_sync_time=time.time()
         )
@@ -85,7 +85,7 @@ class SyncManager:
                 logger.warning("Could not determine best block height from peers")
                 return
             
-            current_height = self.node.rayonix_coin.get_block_count()
+            current_height = self.node.rayonix_chain.get_block_count()
             
             # Update target block
             self.node.state_manager.update_sync_state(target_block=best_block_height)
@@ -109,7 +109,7 @@ class SyncManager:
                 
                 # Process blocks
                 for block in blocks:
-                    if not self.node.rayonix_coin._process_block(block):
+                    if not self.node.rayonix_chain._process_block(block):
                         logger.warning(f"Failed to process block {block.get('height')}")
                         break
                     
@@ -141,7 +141,7 @@ class SyncManager:
     async def _end_sync(self):
         """End synchronization process"""
         self.syncing = False
-        current_height = self.node.rayonix_coin.get_block_count()
+        current_height = self.node.rayonix_chain.get_block_count()
         
         # Update state manager
         self.node.state_manager.update_sync_state(

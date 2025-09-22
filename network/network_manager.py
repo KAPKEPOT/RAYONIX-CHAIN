@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from typing import Dict, List, Optional
+from network.core.p2p_network import AdvancedP2PNetwork
 
 logger = logging.getLogger("rayonix_node.network")
 
@@ -16,8 +17,7 @@ class NetworkManager:
     
     async def initialize_network(self) -> bool:
         """Initialize the P2P network"""
-        try:
-            from external.p2p_network.p2p_network import AdvancedP2PNetwork
+        try:       
             
             network_config = {
                 'listen_ip': self.node.get_config_value('network.listen_ip', '0.0.0.0'),

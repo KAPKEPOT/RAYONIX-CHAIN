@@ -57,13 +57,13 @@ async def handle_transaction_message(message_data: Dict[str, Any], context: Any)
             return False
         
         # Check if we already have this transaction
-        existing_tx = context.rayonix_coin.get_transaction(transaction.get('hash'))
+        existing_tx = context.rayonix_chain.get_transaction(transaction.get('hash'))
         if existing_tx:
             logger.debug(f"Already have transaction {transaction.get('hash')}")
             return True
         
         # Add to mempool
-        success = context.rayonix_coin._add_to_mempool(transaction)
+        success = context.rayonix_chain._add_to_mempool(transaction)
         if success:
             logger.info(f"Added transaction {transaction.get('hash')} to mempool")
             return True
@@ -114,7 +114,7 @@ async def handle_sync_request_message(message_data: Dict[str, Any], context: Any
             return False
         
         # Validate block range
-        current_height = context.rayonix_coin.get_block_count()
+        current_height = context.rayonix_chain.get_block_count()
         if from_block < 0 or to_block > current_height or from_block > to_block:
             logger.warning(f"Invalid sync range requested: {from_block}-{to_block}")
             return False
@@ -122,7 +122,7 @@ async def handle_sync_request_message(message_data: Dict[str, Any], context: Any
         # Send requested blocks
         blocks_to_send = []
         for height in range(from_block, to_block + 1):
-            block = context.rayonix_coin.get_block_by_height(height)
+            block = context.rayonix_chain.get_block_by_height(height)
             if block:
                 blocks_to_send.append(block)
         
