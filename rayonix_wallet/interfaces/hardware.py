@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
-from ..core.exceptions import WalletError
+from rayonix_wallet.core.exceptions import WalletError
 
 class HardwareWalletInterface(ABC):
     """Abstract base class for hardware wallet interfaces"""
