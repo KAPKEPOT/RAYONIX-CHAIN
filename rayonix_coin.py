@@ -6,6 +6,9 @@ import time
 import threading
 import asyncio
 import statistics
+import msgpack
+import zlib
+from utxo import SerializationError, DeserializationError
 from typing import Dict, List, Optional, Any, Tuple, Set, Callable, Union
 from dataclasses import dataclass, field, asdict
 from enum import Enum, auto
@@ -84,6 +87,17 @@ network = AdvancedP2PNetwork(config)
 
 # You can then use the network instance
 #from crypto import CryptoUtils, SignatureVerifier, KeyDerivation, HashFunctions
+class InitializationError(Exception):
+    """Exception raised during blockchain initialization"""
+    pass
+
+class IntegrityError(Exception):
+    """Exception raised when blockchain integrity is compromised"""
+    pass
+
+class DatabaseError(Exception):
+    """Exception raised for database-related errors"""
+    pass
 
 class BlockchainState(Enum):
     SYNCING = auto()
@@ -1547,7 +1561,18 @@ class RayonixCoin:
         
         logger.info("Genesis block created and processed")
         
-        
+    def _validate_genesis_transactions(self, transactions: List[Transaction]) -> bool:
+    	if not transactions:
+    		return False
+    	if len(transactions) == 0:
+    		return False
+    	for tx in transactions:
+    		if tx.inputs and len(tx.inputs) > 0:
+    			return False
+    		for output in tx.outputs:
+    			if output.get('amount', 0) <= 0:
+    				return False
+    	return True        
     
     def _load_blockchain_state(self):
         """Load full blockchain state from database"""
