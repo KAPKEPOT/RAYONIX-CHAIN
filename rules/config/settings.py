@@ -10,11 +10,11 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
-from ..exceptions import ConsensusError
+from rules.exceptions import ConsensusError
 
 logger = logging.getLogger('consensus.config')
 
-class Environment(Enum):
+class Environment:
     DEVELOPMENT = "development"
     TESTING = "testing"
     STAGING = "staging"

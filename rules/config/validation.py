@@ -10,7 +10,7 @@ import ipaddress
 import logging
 
 from .settings import Settings, Environment
-from ..exceptions import ConsensusError
+from rules.exceptions import ConsensusError
 
 logger = logging.getLogger('consensus.config')
 
