@@ -1,0 +1,52 @@
+from enum import Enum, auto
+
+class NetworkType(Enum):
+    MAINNET = auto()
+    TESTNET = auto()
+    DEVNET = auto()
+    REGTEST = auto()
+
+class ProtocolType(Enum):
+    TCP = auto()
+    UDP = auto()
+    WEBSOCKET = auto()
+    HTTP = auto()
+    HTTPS = auto()
+
+class ConnectionState(Enum):
+    DISCONNECTED = auto()
+    CONNECTING = auto()
+    CONNECTED = auto()
+    AUTHENTICATING = auto()
+    READY = auto()
+    ERROR = auto()
+
+class MessageType(Enum):
+    PING = auto()
+    PONG = auto()
+    HANDSHAKE = auto()
+    PEER_LIST = auto()
+    BLOCK = auto()
+    TRANSACTION = auto()
+    CONSENSUS = auto()
+    SYNC_REQUEST = auto()
+    SYNC_RESPONSE = auto()
+    GOSSIP = auto()
+    RPC_REQUEST = auto()
+    RPC_RESPONSE = auto()
+    GET_BLOCKS = auto()
+    BLOCK_HEADERS = auto()
+    GET_DATA = auto()
+    NOT_FOUND = auto()
+    MEMPOOL = auto()
+    FILTER_LOAD = auto()
+    FILTER_ADD = auto()
+    FILTER_CLEAR = auto()
+    MERKLE_BLOCK = auto()
+    ALERT = auto()
+    SEND_HEADERS = auto()
+    FEE_FILTER = auto()
+    SEND_CMPCT = auto()
+    CMPCT_BLOCK = auto()
+    GET_BLOCK_TXN = auto()
+    BLOCK_TXN = auto()
