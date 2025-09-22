@@ -1,13 +1,9 @@
-"""
-Database utilities and connection management
-"""
-
 import plyvel
 from typing import Optional
 import logging
 from pathlib import Path
 
-from ..exceptions import StorageError
+from rules.exceptions import StorageError
 
 logger = logging.getLogger('consensus.storage')
 

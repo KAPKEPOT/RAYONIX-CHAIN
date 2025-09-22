@@ -1,14 +1,10 @@
-"""
-Vote storage implementation
-"""
-
 import plyvel
 import pickle
 from typing import Dict, List, Optional
 import logging
 from collections import defaultdict
 
-from ..exceptions import StorageError
+from rules.exceptions import StorageError
 
 logger = logging.getLogger('consensus.storage')
 

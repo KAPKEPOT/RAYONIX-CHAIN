@@ -1,14 +1,10 @@
-"""
-Block storage implementation using LevelDB
-"""
-
 import plyvel
 import pickle
 from typing import Dict, List, Optional, Any
 import logging
 from pathlib import Path
 
-from ..exceptions import StorageError
+from rules.exceptions import StorageError
 
 logger = logging.getLogger('consensus.storage')
 
