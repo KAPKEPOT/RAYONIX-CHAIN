@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
-from .network_types import NetworkType
+from network.config.network_types import NetworkType
 
 @dataclass
 class NodeConfig:
