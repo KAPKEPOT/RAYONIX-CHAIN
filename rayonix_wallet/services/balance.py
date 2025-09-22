@@ -1,6 +1,6 @@
 from typing import Dict, Optional
-from ..core.types import WalletBalance
-from ..core.exceptions import WalletError
+from rayonix_wallet.core.types import WalletBalance
+from rayonix_wallet.core.exceptions import WalletError
 
 class BalanceCalculator:
     """Balance calculation and management"""

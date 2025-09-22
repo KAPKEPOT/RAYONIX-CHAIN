@@ -1,7 +1,7 @@
 import json
 from typing import Dict, List, Optional
-from ..core.exceptions import MultisigError
-from ..crypto.signing import TransactionSigner
+from rayonix_wallet.core.exceptions import MultisigError
+from rayonix_wallet.crypto.signing import TransactionSigner
 
 class MultisigManager:
     """Multi-signature wallet support"""

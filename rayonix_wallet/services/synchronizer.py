@@ -1,9 +1,9 @@
 import threading
 import time
 from typing import List, Dict, Optional
-from ..core.types import Transaction, AddressInfo
-from ..core.exceptions import SyncError
-from ..storage.database import WalletDatabase
+from rayonix_wallet.core.types import Transaction, AddressInfo
+from rayonix_wallet.core.exceptions import SyncError
+from rayonix_wallet.storage.database import WalletDatabase
 
 class WalletSynchronizer:
     """Blockchain synchronization service"""
