@@ -1,0 +1,41 @@
+rayonix-node/
+├── main.py                      # Entry point and CLI interface
+├── config/                      # Configuration management
+│   ├── __init__.py
+│   ├── config_manager.py
+│   └── config_schema.py
+├── core/                        # Core blockchain components
+│   ├── __init__.py
+│   ├── node.py                  # Main RayonixNode class
+│   ├── dependencies.py          # NodeDependencies container
+│   └── state_manager.py         # Sync state and node state management
+├── api/                         # API server components
+│   ├── __init__.py
+│   ├── server.py                # RayonixAPIServer class
+│   ├── jsonrpc_methods.py       # JSON-RPC method implementations
+│   └── rest_routes.py           # REST API route handlers
+├── cli/                         # Command-line interface
+│   ├── __init__.py
+│   ├── command_handler.py       # Command parsing and execution
+│   ├── interactive.py           # Interactive mode implementation
+│   └── history_manager.py       # Command history management
+├── network/                     # Network-related components
+│   ├── __init__.py
+│   ├── network_manager.py       # Network initialization and management
+│   ├── message_handlers.py      # Block/transaction message handlers
+│   └── sync_manager.py          # Block synchronization logic
+├── tasks/                       # Background tasks
+│   ├── __init__.py
+│   ├── staking_task.py          # Staking loop implementation
+│   ├── mempool_task.py          # Mempool processing
+│   └── peer_monitor.py          # Peer monitoring
+├── utils/                       # Utility functions
+│   ├── __init__.py
+│   ├── validators.py            # Address validation, etc.
+│   └── helpers.py               # Common helper functions
+└── external/                    # External dependencies (would be packages)
+    ├── rayonix_coin/            # Would be a separate package
+    ├── wallet/                  # Would be a separate package  
+    ├── p2p_network/             # Would be a separate package
+    ├── smart_contract/          # Would be a separate package
+    └── database/                # Would be a separate package
