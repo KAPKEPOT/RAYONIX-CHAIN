@@ -7,7 +7,7 @@ from network.config.node_config import NodeConfig
 from network.config.network_types import NetworkType, ProtocolType, ConnectionState, MessageType
 from network.models.peer_info import PeerInfo
 from network.models.network_message import NetworkMessage
-from networm.exceptions import NetworkError, ConnectionError
+from network.exceptions import NetworkError, ConnectionError
 from network.core.connection_manager import ConnectionManager
 from network.core.peer_discovery import PeerDiscovery
 from network.core.message_processor import MessageProcessor
