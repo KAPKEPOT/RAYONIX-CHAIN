@@ -2,11 +2,11 @@ import asyncio
 import ssl
 import logging
 from typing import Dict, Any, Optional, Tuple
-from ..interfaces.protocol_interface import IProtocolHandler
-from ..exceptions import ConnectionError
-from ..utils.serialization import serialize_message, deserialize_message
-from ..utils.compression import compress_data, decompress_data
-from ..models.message_header import MessageHeader
+from network.interfaces.protocol_interface import IProtocolHandler
+from network.exceptions import ConnectionError
+from network.utils.serialization import serialize_message, deserialize_message
+from network.utils.compression import compress_data, decompress_data
+from network.models.message_header import MessageHeader
 import struct
 import hashlib
 

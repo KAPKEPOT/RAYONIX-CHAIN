@@ -1,10 +1,10 @@
 import asyncio
 import logging
 from typing import Dict, Any, Tuple
-from ..interfaces.protocol_interface import IProtocolHandler
-from ..utils.serialization import deserialize_message
-from ..utils.compression import decompress_data
-from ..models.message_header import MessageHeader
+from network.interfaces.protocol_interface import IProtocolHandler
+from network.utils.serialization import deserialize_message
+from network.utils.compression import decompress_data
+from network.models.message_header import MessageHeader
 import struct
 import hashlib
 

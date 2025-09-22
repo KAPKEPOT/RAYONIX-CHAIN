@@ -1,9 +1,9 @@
 import asyncio
 import logging
 from typing import Dict, Any
-from ..interfaces.protocol_interface import IProtocolHandler
-from ..utils.serialization import serialize_message, deserialize_message
-from ..utils.compression import compress_data, decompress_data
+from network.interfaces.protocol_interface import IProtocolHandler
+from network.utils.serialization import serialize_message, deserialize_message
+from network.utils.compression import compress_data, decompress_data
 from aiohttp import web, ClientSession
 
 logger = logging.getLogger("HTTPHandler")
