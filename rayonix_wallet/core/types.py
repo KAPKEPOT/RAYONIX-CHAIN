@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from ecdsa.curves import Curve
 from ecdsa import SECP256k1
-from ..utils.secure import SecureString
+from rayonix_wallet.utils.secure import SecureString
 
 class WalletType(Enum):
     """Types of wallets"""

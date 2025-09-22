@@ -4,20 +4,20 @@ import gc
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import asdict
 
-from .config import WalletConfig
-from .types import WalletType, SecureKeyPair, Transaction, AddressInfo, WalletBalance, WalletState
-from .exceptions import WalletError
-from ..crypto.key_management import KeyManager
-from ..crypto.address import AddressDerivation
-from ..storage.database import WalletDatabase
-from ..storage.backup import BackupManager
-from ..services.synchronizer import WalletSynchronizer
-from ..services.transaction import TransactionManager
-from ..services.balance import BalanceCalculator
-from ..services.multisig import MultisigManager
-from ..utils.validation import validate_address_format
-from ..utils.qr_code import generate_qr_code
-from ..interfaces.blockchain import BlockchainInterface
+from rayonix_wallet.core.config import WalletConfig
+from rayonix_wallet.core.types import WalletType, SecureKeyPair, Transaction, AddressInfo, WalletBalance, WalletState
+from rayonix_wallet.core.exceptions import WalletError
+from rayonix_wallet.crypto.key_management import KeyManager
+from rayonix_wallet.crypto.address import AddressDerivation
+from rayonix_wallet.storage.database import WalletDatabase
+from rayonix_wallet.storage.backup import BackupManager
+from rayonix_wallet.services.synchronizer import WalletSynchronizer
+from rayonix_wallet.services.transaction import TransactionManager
+from rayonix_wallet.services.balance import BalanceCalculator
+from rayonix_wallet.services.multisig import MultisigManager
+from rayonix_wallet.utils.validation import validate_address_format
+from rayonix_wallet.utils.qr_code import generate_qr_code
+from rayonix_wallet.interfaces.blockchain import BlockchainInterface
 
 class RayonixWallet:
     """Advanced cryptographic wallet with enterprise-grade features"""

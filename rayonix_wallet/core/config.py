@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Dict, Optional
-from .types import WalletType, KeyDerivation, AddressType
+from rayonix_wallet.core.types import WalletType, KeyDerivation, AddressType
 
 @dataclass
 class WalletConfig:
