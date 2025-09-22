@@ -7,7 +7,7 @@ from typing import Optional
 class NodeDependencies:
     """Container for node dependencies to enable dependency injection"""
     config_manager: 'ConfigManager'
-    rayonix_coin: 'RayonixCoin'
+    rayonix_chain: 'RayonixBlockchain'
     wallet: Optional['RayonixWallet'] = None
     network: Optional['AdvancedP2PNetwork'] = None
     contract_manager: Optional['ContractManager'] = None
