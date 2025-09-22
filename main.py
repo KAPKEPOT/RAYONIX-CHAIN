@@ -68,7 +68,7 @@ async def main():
     # Load wallet from mnemonic if provided
     if args.wallet_mnemonic and node.wallet is None:
         try:
-            from external.wallet.wallet import RayonixWallet
+            from rayonix_wallet.core.wallet import RayonixWallet
             node.wallet = RayonixWallet()
             if node.wallet.restore_from_mnemonic(args.wallet_mnemonic):
                 logger.info("Wallet loaded from command line mnemonic")
