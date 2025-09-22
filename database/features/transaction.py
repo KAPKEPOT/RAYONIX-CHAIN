@@ -4,7 +4,7 @@ import threading
 import time
 import logging
 
-from ..utils.exceptions import TransactionError
+from database.utils.exceptions import TransactionError
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ import time
 import logging
 from pathlib import Path
 
-from ..utils.exceptions import DatabaseError
+from database.utils.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 

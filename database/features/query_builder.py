@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 import logging
 
-from ..utils.exceptions import DatabaseError
+from database.utils.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 
