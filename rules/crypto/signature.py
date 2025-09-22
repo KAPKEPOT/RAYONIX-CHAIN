@@ -11,7 +11,7 @@ from cryptography.exceptions import InvalidSignature
 import hashlib
 import logging
 
-from ..exceptions import CryptoError
+from rules.exceptions import CryptoError
 
 logger = logging.getLogger('consensus.crypto')
 

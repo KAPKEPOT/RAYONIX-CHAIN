@@ -11,7 +11,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidKey
 import logging
 
-from ..exceptions import CryptoError
+from rules.exceptions import CryptoError
 
 logger = logging.getLogger('consensus.crypto')
 
