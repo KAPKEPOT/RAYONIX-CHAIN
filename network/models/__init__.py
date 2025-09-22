@@ -1,6 +1,6 @@
-from .peer_info import PeerInfo
-from .network_message import NetworkMessage
-from .connection_metrics import ConnectionMetrics
-from .message_header import MessageHeader
+from network.models.peer_info import PeerInfo
+from network.models.network_message import NetworkMessage
+from network.models.connection_metrics import ConnectionMetrics
+from network.models.message_header import MessageHeader
 
 __all__ = ['PeerInfo', 'NetworkMessage', 'ConnectionMetrics', 'MessageHeader']

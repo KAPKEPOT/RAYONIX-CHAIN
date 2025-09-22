@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Optional
 import time
-from ..config.network_types import MessageType
+from network.config.network_types import MessageType
 
 @dataclass
 class NetworkMessage:

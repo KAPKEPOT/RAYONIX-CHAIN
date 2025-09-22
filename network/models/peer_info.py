@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 import time
-from ..config.network_types import ProtocolType, ConnectionState
+from network.config.network_types import ProtocolType, ConnectionState
 
 @dataclass
 class PeerInfo:
