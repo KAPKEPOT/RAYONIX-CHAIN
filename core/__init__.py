@@ -1,1 +1,1 @@
-
+# core/__init__.py - Core blockchain components package initialization
