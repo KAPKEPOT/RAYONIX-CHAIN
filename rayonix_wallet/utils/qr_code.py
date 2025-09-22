@@ -1,7 +1,7 @@
 import qrcode
 from io import BytesIO
 from typing import Optional
-from ..core.exceptions import WalletError
+from rayonix_wallet.core.exceptions import WalletError
 
 def generate_qr_code(data: str, size: int = 10, border: int = 4, 
                    error_correction: str = "H") -> bytes:

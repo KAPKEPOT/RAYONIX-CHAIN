@@ -1,7 +1,7 @@
 import re
 from typing import Optional
-from ..core.types import AddressType
-from ..core.exceptions import WalletError
+from rayonix_wallet.core.types import AddressType
+from rayonix_wallet.core.exceptions import WalletError
 
 def validate_address_format(address: str, address_type: AddressType, network: str = "mainnet") -> bool:
     """Validate cryptocurrency address format"""

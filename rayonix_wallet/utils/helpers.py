@@ -2,9 +2,9 @@ import os
 import secrets
 import hashlib
 from typing import Optional, Tuple
-from ..core.wallet import RayonixWallet
-from ..core.config import WalletConfig
-from ..core.types import WalletType
+from rayonix_wallet.core.wallet import RayonixWallet
+from rayonix_wallet.core.config import WalletConfig
+from rayonix_wallet.core.types import WalletType
 
 def generate_mnemonic(strength: int = 256) -> str:
     """Generate BIP39 mnemonic phrase"""
