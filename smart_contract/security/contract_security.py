@@ -6,12 +6,12 @@ from typing import Dict, Any, Optional, List, Set
 from dataclasses import dataclass, field
 from collections import defaultdict, deque
 
-from ..security.behavioral_analyzer import BehavioralAnalyzer
-from ..security.threat_intelligence import ThreatIntelligenceFeed
-from ..security.validators.input_validator import InputValidator
-from ..security.validators.domain_validator import DomainValidator
-from ..security.validators.ip_validator import IPValidator
-from ....exceptions.security_errors import (
+from smart_contract.security.behavioral_analyzer import BehavioralAnalyzer
+from smart_contract.security.threat_intelligence import ThreatIntelligenceFeed
+from smart_contract.security.validators.input_validator import InputValidator
+from smart_contract.security.validators.domain_validator import DomainValidator
+from smart_contract.security.validators.ip_validator import IPValidator
+from smart_contract.exceptions.security_errors import (
     SecurityViolationError, RateLimitExceededError, BlacklistedAddressError, InputValidationError
 )
 
