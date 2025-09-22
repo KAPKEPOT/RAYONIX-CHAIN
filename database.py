@@ -761,7 +761,20 @@ class AdvancedDatabase:
             return False
             
         except Exception as e:
+            
             raise DatabaseError(f"Compaction failed: {e}")
+    
+    def get_chain_head(self) -> Optional[Any]:
+    	try:
+    		chain_head_data = self.get(b'chain_head')
+    		if chain_head_data:
+    			return self._deserialize_value(chain_head_data)
+    		return None
+    	except KeyNotFoundError:
+    		return None
+    	except Exception as e:
+    		logger.error(f"Error getting chain head: {e}")
+    		return None    
     
     def backup(self, backup_path: str) -> bool:
         """Create database backup"""

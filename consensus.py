@@ -5,7 +5,7 @@ import json
 import time
 import random
 import threading
-from typing import Dict, List, Optional, Tuple, Set, Any
+from typing import Dict, List, Optional, Tuple, Set, Any, Callable
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.exceptions import InvalidSignature
@@ -16,15 +16,25 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from datetime import datetime, timedelta
 import asyncio
+from collections import defaultdict, deque
+import logging
+# Remove the import from rayonix_coin
+from models import Block
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('ConsensusEngine')
 
 class ConsensusState(Enum):
     """Consensus process states"""
     IDLE = auto()
-    PROPOSING = auto()
-    VOTING = auto()
-    COMMITTING = auto()
+    PROPOSE = auto()
+    PREVOTE = auto()
+    PRECOMMIT = auto()
+    COMMITTED = auto()
     VIEW_CHANGE = auto()
     RECOVERY = auto()
+    NEW_HEIGHT = auto()
 
 class ValidatorStatus(Enum):
     """Validator status levels"""
@@ -33,6 +43,12 @@ class ValidatorStatus(Enum):
     INACTIVE = auto()
     SLASHED = auto()
     PENDING = auto()
+    UNBONDING = auto()
+
+class VoteType(Enum):
+    """Vote types for BFT consensus"""
+    PREVOTE = auto()
+    PRECOMMIT = auto()
 
 @dataclass
 class Validator:
@@ -51,6 +67,8 @@ class Validator:
     voting_power: int = 0
     jail_until: Optional[float] = None
     delegators: Dict[str, int] = field(default_factory=dict)  # address -> amount
+    missed_blocks: int = 0  # Track blocks missed for unavailability slashing
+    signed_blocks: int = 0  # Track blocks signed
     
     @property
     def total_stake(self) -> int:
@@ -78,7 +96,9 @@ class Validator:
             'slashing_count': self.slashing_count,
             'voting_power': self.voting_power,
             'jail_until': self.jail_until,
-            'delegators': self.delegators              
+            'delegators': self.delegators,
+            'missed_blocks': self.missed_blocks,
+            'signed_blocks': self.signed_blocks
         }
     
     @classmethod
@@ -97,12 +117,15 @@ class Validator:
             slashing_count=data['slashing_count'],
             voting_power=data['voting_power'],
             jail_until=data.get('jail_until'),
-            delegators=data.get('delegators', {})
+            delegators=data.get('delegators', {}),
+            missed_blocks=data.get('missed_blocks', 0),
+            signed_blocks=data.get('signed_blocks', 0)
         )
 
 @dataclass
 class BlockProposal:
     """Block proposal structure"""
+    height: int
     block_hash: str
     validator_address: str
     timestamp: float
@@ -110,10 +133,12 @@ class BlockProposal:
     view_number: int
     round_number: int
     parent_hash: str
+    tx_hashes: List[str] = field(default_factory=list)
     justification: Optional[Dict] = None
     
     def to_dict(self) -> Dict:
         return {
+            'height': self.height,
             'block_hash': self.block_hash,
             'validator_address': self.validator_address,
             'timestamp': self.timestamp,
@@ -121,37 +146,92 @@ class BlockProposal:
             'view_number': self.view_number,
             'round_number': self.round_number,
             'parent_hash': self.parent_hash,
+            'tx_hashes': self.tx_hashes,
             'justification': self.justification
         }
 
 @dataclass
 class Vote:
     """Vote for block proposal"""
+    height: int
     block_hash: str
     validator_address: str
     timestamp: float
     signature: str
-    view_number: int
     round_number: int
-    vote_type: str  # 'pre-vote', 'pre-commit', 'commit'
+    vote_type: VoteType
     
     def to_dict(self) -> Dict:
         return {
+            'height': self.height,
             'block_hash': self.block_hash,
             'validator_address': self.validator_address,
             'timestamp': self.timestamp,
             'signature': self.signature,
-            'view_number': self.view_number,
             'round_number': self.round_number,
-            'vote_type': self.vote_type
+            'vote_type': self.vote_type.name
         }
+
+@dataclass
+class RoundState:
+    """State for a specific height and round"""
+    height: int
+    round: int
+    step: ConsensusState
+    proposer: Optional[Validator] = None
+    proposal: Optional[BlockProposal] = None
+    prevotes: Dict[str, Vote] = field(default_factory=dict)  # validator_address -> vote
+    precommits: Dict[str, Vote] = field(default_factory=dict)  # validator_address -> vote
+    prevote_polka: Optional[Set[str]] = None  # Set of block hashes with 2/3+ prevotes
+    precommit_polka: Optional[Set[str]] = None  # Set of block hashes with 2/3+ precommits
+    locked_value: Optional[str] = None  # Locked block hash for this round
+    valid_value: Optional[str] = None  # Valid block hash for this round
+    start_time: float = field(default_factory=time.time)
+
+class EpochState:
+    """State for managing epoch transitions"""
+    def __init__(self, epoch_blocks: int = 100):
+        self.epoch_blocks = epoch_blocks
+        self.current_epoch = 0
+        self.next_epoch_validators: Dict[str, Validator] = {}
+        self.pending_stakes: List[Tuple[str, int]] = []  # (address, amount)
+        self.pending_unstakes: List[Tuple[str, int]] = []  # (address, amount)
+        self.pending_delegations: List[Tuple[str, str, int]] = []  # (delegator, validator, amount)
+        self.pending_undelegations: List[Tuple[str, str, int]] = []  # (delegator, validator, amount)
+        self.reward_pool: int = 0  # Accumulated rewards for distribution
+
+class ABCIApplication:
+    """Application Blockchain Interface for decoupling consensus from execution"""
+    def __init__(self):
+        self.check_tx_fn: Optional[Callable[[str], bool]] = None
+        self.deliver_tx_fn: Optional[Callable[[str], bool]] = None
+        self.commit_fn: Optional[Callable[[], str]] = None
+        self.begin_block_fn: Optional[Callable[[int, str], None]] = None
+        self.end_block_fn: Optional[Callable[[int], None]] = None
+    
+    def set_check_tx(self, fn: Callable[[str], bool]):
+        self.check_tx_fn = fn
+    
+    def set_deliver_tx(self, fn: Callable[[str], bool]):
+        self.deliver_tx_fn = fn
+    
+    def set_commit(self, fn: Callable[[], str]):
+        self.commit_fn = fn
+    
+    def set_begin_block(self, fn: Callable[[int, str], None]):
+        self.begin_block_fn = fn
+    
+    def set_end_block(self, fn: Callable[[int], None]):
+        self.end_block_fn = fn
 
 class ProofOfStake:
     """Complete Proof-of-Stake consensus implementation with BFT features"""
     
     def __init__(self, min_stake: int = 1000, jail_duration: int = 3600,
                  slash_percentage: float = 0.01, epoch_blocks: int = 100,
-                 max_validators: int = 100, db_path: str = './consensus_db'):
+                 max_validators: int = 100, db_path: str = './consensus_db',
+                 timeout_propose: int = 3000, timeout_prevote: int = 1000,
+                 timeout_precommit: int = 1000, **kwargs):
         """
         Initialize Proof-of-Stake consensus
         
@@ -161,47 +241,67 @@ class ProofOfStake:
             slash_percentage: Percentage of stake to slash for violations
             epoch_blocks: Number of blocks per epoch
             max_validators: Maximum number of active validators
-        """        
+            timeout_propose: Propose timeout in milliseconds
+            timeout_prevote: Prevote timeout in milliseconds
+            timeout_precommit: Precommit timeout in milliseconds
+        """  
+        self.difficulty_adjustment_blocks = kwargs.get('difficulty_adjustment_blocks', 2016)
+        self.block_time_target = kwargs.get('block_time_target', 30)
+        self.genesis_difficulty = kwargs.get('genesis_difficulty', 1)
         self.min_stake = min_stake
         self.jail_duration = jail_duration
         self.slash_percentage = slash_percentage
         self.epoch_blocks = epoch_blocks
         self.max_validators = max_validators
         
+        # Timeout values in seconds
+        self.timeout_propose = timeout_propose / 1000.0
+        self.timeout_prevote = timeout_prevote / 1000.0
+        self.timeout_precommit = timeout_precommit / 1000.0
+        
         self.validators: Dict[str, Validator] = {}
         self.active_validators: List[Validator] = []
         self.pending_validators: List[Validator] = []
         
-        self.current_epoch = 0
-        self.current_view = 0
-        self.current_round = 0
-        self.last_block_time = time.time()
+        # BFT consensus state
+        self.height = 0
+        self.round = 0
+        self.step = ConsensusState.NEW_HEIGHT
+        self.locked_round = -1
+        self.valid_round = -1
+        self.locked_value: Optional[str] = None
+        self.valid_value: Optional[str] = None
         
+        # Round states for each height and round
+        self.round_states: Dict[Tuple[int, int], RoundState] = {}
+        
+        # Epoch management
+        self.epoch_state = EpochState(epoch_blocks)
+        
+        # Block and vote storage
         self.block_proposals: Dict[str, BlockProposal] = {}
-        self.votes: Dict[str, List[Vote]] = {}  # block_hash -> votes
-        self.locked_blocks: Set[str] = set()
+        self.votes: Dict[Tuple[int, int, VoteType], Dict[str, Vote]] = defaultdict(dict)
         self.executed_blocks: Set[str] = set()
         
-        self.state = ConsensusState.IDLE
-        self.epoch_rewards: Dict[str, int] = {}
-               
+        # ABCI interface
+        self.abci = ABCIApplication()
         
         # Database for persistence
         self.db = plyvel.DB(db_path, create_if_missing=True)
         
-        # COMPATIBILITY ATTRIBUTES
-        self.total_stake = 0  # Total stake across all validators
-        self._compatibility_mode = True  # Flag for blockchain compatibility
+        # Total stake for compatibility
+        self.total_stake = 0
         
-        #self._load_state()
-        
-        # Lock for thread safety
+        # Locks for thread safety
         self.lock = threading.RLock()
         self.validator_lock = threading.RLock()
+        self.consensus_lock = threading.RLock()
+        
+        # Background task management
+        self._running = True
+        self._timeout_handlers: Dict[Tuple[int, int, ConsensusState], threading.Timer] = {}
         
         self._load_state()
-        
-        # Start background tasks
         self._start_background_tasks()
     
     def _load_state(self):
@@ -219,32 +319,47 @@ class ProofOfStake:
                 active_data = pickle.loads(active_data_bytes)
                 self.active_validators = [Validator.from_dict(v) for v in active_data]
             
-            # Load other state
-            epoch_bytes = self.db.get(b'current_epoch')
-            if epoch_bytes:
-                self.current_epoch = int.from_bytes(epoch_bytes, 'big')
+            # Load height and round
+            height_bytes = self.db.get(b'height')
+            if height_bytes:
+                self.height = int.from_bytes(height_bytes, 'big')
             
-            view_bytes = self.db.get(b'current_view')
-            if view_bytes:
-                self.current_view = int.from_bytes(view_bytes, 'big')
-            
-            round_bytes = self.db.get(b'current_round')
+            round_bytes = self.db.get(b'round')
             if round_bytes:
-                self.current_round = int.from_bytes(round_bytes, 'big')
+                self.round = int.from_bytes(round_bytes, 'big')
             
-            # Load total_stake for compatibility
-            total_stake_bytes = self.db.get(b'total_stake')
-            if total_stake_bytes:
-                self.total_stake = int.from_bytes(total_stake_bytes, 'big')
-            else:
-                self.update_total_stake()  # Calculate if not stored
+            # Load step
+            step_bytes = self.db.get(b'step')
+            if step_bytes:
+                self.step = ConsensusState(int.from_bytes(step_bytes, 'big'))
+            
+            # Load locked and valid values
+            locked_value_bytes = self.db.get(b'locked_value')
+            if locked_value_bytes:
+                self.locked_value = locked_value_bytes.decode('utf-8')
+            
+            valid_value_bytes = self.db.get(b'valid_value')
+            if valid_value_bytes:
+                self.valid_value = valid_value_bytes.decode('utf-8')
+            
+            # Load locked and valid rounds
+            locked_round_bytes = self.db.get(b'locked_round')
+            if locked_round_bytes:
+                self.locked_round = int.from_bytes(locked_round_bytes, 'big')
+            
+            valid_round_bytes = self.db.get(b'valid_round')
+            if valid_round_bytes:
+                self.valid_round = int.from_bytes(valid_round_bytes, 'big')
+            
+            # Update total stake
+            self.update_total_stake()
             
         except Exception as e:
-            print(f"Error loading state: {e}")
+            logger.error(f"Error loading state: {e}")
             # Initialize fresh state
             self.update_total_stake()
             self._save_state()
-        
+    
     def _save_state(self):
         """Save consensus state to database"""
         with self.lock:
@@ -259,314 +374,189 @@ class ProofOfStake:
             active_data = [v.to_dict() for v in self.active_validators]
             self.db.put(b'active_validators', pickle.dumps(active_data))
             
-            # Save other state
-            self.db.put(b'current_epoch', self.current_epoch.to_bytes(8, 'big'))
-            self.db.put(b'current_view', self.current_view.to_bytes(8, 'big'))
-            self.db.put(b'current_round', self.current_round.to_bytes(8, 'big'))
-            self.db.put(b'total_stake', self.total_stake.to_bytes(8, 'big'))  # Save total_stake
+            # Save consensus state
+            self.db.put(b'height', self.height.to_bytes(8, 'big'))
+            self.db.put(b'round', self.round.to_bytes(8, 'big'))
+            self.db.put(b'step', self.step.value.to_bytes(4, 'big'))
+            
+            if self.locked_value:
+                self.db.put(b'locked_value', self.locked_value.encode('utf-8'))
+            
+            if self.valid_value:
+                self.db.put(b'valid_value', self.valid_value.encode('utf-8'))
+            
+            self.db.put(b'locked_round', self.locked_round.to_bytes(8, 'big'))
+            self.db.put(b'valid_round', self.valid_round.to_bytes(8, 'big'))
+            
+            # Save total stake
+            self.db.put(b'total_stake', self.total_stake.to_bytes(8, 'big'))
     
     def _start_background_tasks(self):
         """Start background maintenance tasks"""
         def epoch_processor():
-            while True:
-                time.sleep(30)  # Check every 30 seconds
+            while self._running:
+                time.sleep(30)
                 self._process_epoch_transition()
         
         def validator_updater():
-            while True:
-                time.sleep(60)  # Update every minute
+            while self._running:
+                time.sleep(60)
                 self._update_validator_set()
         
         def jail_checker():
-            while True:
-                time.sleep(300)  # Check every 5 minutes
+            while self._running:
+                time.sleep(300)
                 self._check_jailed_validators()
+        
+        def unavailability_checker():
+            while self._running:
+                time.sleep(self.epoch_blocks * 5)  # Check every ~5 blocks worth of time
+                self._check_unavailability()
         
         # Start background threads
         threading.Thread(target=epoch_processor, daemon=True).start()
         threading.Thread(target=validator_updater, daemon=True).start()
         threading.Thread(target=jail_checker, daemon=True).start()
+        threading.Thread(target=unavailability_checker, daemon=True).start()
     
-    # BLOCKCHAIN COMPATIBILITY METHODS
-    def validate_validator(self, address: str) -> bool:
-        """Check if validator is active and valid - for blockchain compatibility"""
+    def _check_unavailability(self):
+        """Check for validator unavailability and apply slashing"""
         with self.validator_lock:
-            return (address in self.validators and 
-                   self.validators[address].status == ValidatorStatus.ACTIVE)
-    
-    def validate_block(self, block: Any) -> bool:
-        """Validate block for blockchain compatibility"""
-        # Basic validation - check if validator exists and is active
-        if not self.validate_validator(block.validator):
-            return False
-        # Additional validation can be added here
-        return True
-    
-    def add_validator_simple(self, address: str, stake: int) -> bool:
-        """Simple validator addition for blockchain compatibility"""
-        # Generate a dummy public key for compatibility
-        dummy_public_key = "dummy_public_key_" + address
-        return self.register_validator(address, dummy_public_key, stake, 0.1)
-        
-    def is_validator(self, address: str) -> bool:
-    	"""Check if an address is a registered validator"""
-    	with self.validator_lock:
-    		if address not in self.validators:
-    		    return False 
-    		    
-    		validator = self.validators[address]
-    		
-    		# Check if validator is active and meets minimum requirements
-    		return (validator.status == ValidatorStatus.ACTIVE and
-                validator.effective_stake >= self.min_stake and
-                validator.uptime >= 80.0 and  # Minimum 80% uptime
-                (validator.jail_until is None or validator.jail_until <= time.time()))  		                        
-    def should_validate(self, validator_address: str, current_time: float) -> bool:
-    	"""Check if it's this validator's turn to create a block"""
-    	with self.validator_lock:
-    		# Basic validation checks
-    		if not self.is_validator(validator_address):
-    			return False
-    			
-    		if not self.active_validators:
-    			return False
-    			
-    		# Get current validator
-    		validator = self.validators[validator_address]
-    		
-    		# Calculate stake-weighted probability with anti-concentration
-    		total_effective_stake = sum(v.effective_stake for v in self.active_validators)
-    		if total_effective_stake == 0:
-    			return False
-    			
-    		validator_stake_share = validator.effective_stake / total_effective_stake
-    		
-    		# Apply anti-concentration: no validator can have more than 33% probability
-    		max_share = 0.33
-    		adjusted_share = min(validator_stake_share, max_share)
-    		
-    		# Deterministic selection based on time, view, and round
-    		selection_seed = hashlib.sha256(
-    		f"{self.current_epoch}_{self.current_view}_{self.current_round}_{current_time}".encode()
-    		).digest()
-    		selection_value = int.from_bytes(selection_seed[:8], 'big') / (2**64 - 1)
-    		
-    		# Check if this validator should validate based on stake share
-    		should_validate = selection_value < adjusted_share
-    		
-    		# Additional checks for view consistency
-                            		
-    		if should_validate:
-    		    # Ensure we don't have consecutive blocks from same validator
-    		    if len(self.executed_blocks) > 0:
-    		    	last_block_time = self.last_block_time
-    		    	time_since_last_block = current_time - last_block_time
-    		    	
-    		    	# Prevent rapid succession from same validator
-                                            		    	
-    		    	if (validator_address == getattr(self, '_last_validator', None) and 
-                    time_since_last_block < 5.0):
-                         return False
-             
-           #  return should_validate                                                        		
-    def get_validator_public_key(self, validator_address: str) -> Optional[str]:
-        """Get public key for a validator"""
-        with self.validator_lock:
-            if not self.is_validator(validator_address):
-            	return None
-            	
-            validator = self.validators[validator_address]
-            
-            # Additional security checks
-            if (validator.status != ValidatorStatus.ACTIVE or
-            validator.jail_until and validator.jail_until > time.time()):
-            	return None
-            return validator.public_key
-    		    		
-    def update_total_stake(self):
-        """Update total stake calculation"""
-        with self.validator_lock:
-            self.total_stake = sum(
-                (v.staked_amount + v.total_delegated) 
-                for v in self.validators.values()
-            )
-    
-    def to_dict(self) -> Dict:
-        """Convert to dictionary for serialization - blockchain compatibility"""
-        with self.validator_lock:
-            self.update_total_stake()
-            return {
-                'validators': {addr: validator.to_dict() for addr, validator in self.validators.items()},
-                'min_stake': self.min_stake,
-                'total_stake': self.total_stake,
-                'active_validators': [v.to_dict() for v in self.active_validators],
-                'current_epoch': self.current_epoch,
-                'compatibility_mode': self._compatibility_mode
-            }
-    
-    @classmethod
-    def from_dict(cls, data: Dict) -> 'ProofOfStake':
-        """Create from dictionary for deserialization - blockchain compatibility"""
-        min_stake = data.get('min_stake', 1000)
-        pos = cls(min_stake=min_stake)
-        
-        # Load validators
-        validators_data = data.get('validators', {})
-        for addr, validator_data in validators_data.items():
-            pos.validators[addr] = Validator.from_dict(validator_data)
-        
-        # Load active validators
-        active_data = data.get('active_validators', [])
-        pos.active_validators = [Validator.from_dict(v) for v in active_data]
-        
-        pos.total_stake = data.get('total_stake', 0)
-        pos.current_epoch = data.get('current_epoch', 0)
-        pos._compatibility_mode = data.get('compatibility_mode', True)
-        
-        return pos
-    
-    def register_validator(self, address: str, public_key: str, stake_amount: int, 
-                          commission_rate: float = 0.1) -> bool:
-        """
-        Register a new validator
-        
-        Args:
-            address: Validator address
-            public_key: Validator public key
-            stake_amount: Amount of tokens to stake
-            commission_rate: Commission rate (0.0 to 1.0)
-        
-        Returns:
-            True if registration successful, False otherwise
-        """
-        if not all([address, public_key]) or stake_amount <= 0:
-        	return False
-        	
-        if not (0 <= commission_rate <= 0.2):
-        	return False
-        	
-        try:
-        	if len(public_key) not in [130, 66]:
-        		return False
-        		
-        	if not all(c in '0123456789abcdefABCDEF' for c in public_key):
-        		return False
-        except:
-        	return False
-        	
-        with self.validator_lock:
-            # Check for duplicate registration
-            if address in self.validators:
-            	existing_validator = self.validators[address]
-            	
-            	if existing_validator.status != ValidatorStatus.SLASHED:
-            		return False
-            		
-            # Check minimum stake requirement
-            if stake_amount < self.min_stake:
-                return False
+            for validator in self.validators.values():
+                if validator.status != ValidatorStatus.ACTIVE:
+                    continue
                 
-            # Check maximum validator limit
-            if len(self.validators) >= self.max_validators * 2:
-            	return False
+                # Calculate missed block percentage
+                total_blocks = validator.missed_blocks + validator.signed_blocks
+                if total_blocks == 0:
+                    continue
+                
+                missed_percentage = validator.missed_blocks / total_blocks
+                
+                # Slash if missed more than 50% of blocks
+                if missed_percentage > 0.5:
+                    self.slash_validator(
+                        validator.address,
+                        {'type': 'unavailability', 'missed_percentage': missed_percentage},
+                        'system'
+                    )
+                    logger.warning(f"Validator {validator.address} slashed for unavailability")
+    
+    def _process_epoch_transition(self):
+        """Process epoch transition and distribute rewards"""
+        if self.height % self.epoch_blocks != 0:
+            return
+        
+        with self.lock:
+            # Process all pending staking operations
+            self._process_pending_stakes()
             
-            if commission_rate < 0 or commission_rate > 0.2:  # Max 20% commission
-                return False
-            
-            validator = Validator(
-                address=address,
-                public_key=public_key,
-                staked_amount=stake_amount,
-                commission_rate=commission_rate,
-                status=ValidatorStatus.PENDING,uptime=100.0,
-                last_active=time.time(),
-                created_block_height=self.current_epoch * self.epoch_blocks,
-                voting_power=self._calculate_voting_power(stake_amount, 0, 100.0)
-            )
-            
-            self.validators[address] = validator
-            self.pending_validators.append(validator)
-            
-            # Update total stake
-            self.total_stake += stake_amount  
-            
-            # Schedule validator set update
+            # Update validator set for next epoch
             self._update_validator_set()
             
-            # Persist state
+            # Distribute rewards if we have a reward pool
+            if self.epoch_state.reward_pool > 0:
+                self._distribute_epoch_rewards()
+            
+            # Reset reward pool for next epoch
+            self.epoch_state.reward_pool = 0
+            self.epoch_state.current_epoch += 1
+            
             self._save_state()
-            
-            logger.info(f"Validator registered: {address} with stake {stake_amount}")
-            
-            return True
     
-    def delegate_tokens(self, delegator_address: str, validator_address: str, amount: int) -> bool:
-        """
-        Delegate tokens to a validator
-        
-        Args:
-            delegator_address: Address of the delegator
-            validator_address: Address of the validator
-            amount: Amount of tokens to delegate
-        
-        Returns:
-            True if delegation successful, False otherwise
-        """
+    def _process_pending_stakes(self):
+        """Process all pending stake operations"""
         with self.validator_lock:
-            if validator_address not in self.validators:
-                return False
+            # Process new stakes
+            for address, amount in self.epoch_state.pending_stakes:
+                if address in self.validators:
+                    self.validators[address].staked_amount += amount
+                else:
+                    # This should not happen as validators must be registered first
+                    logger.warning(f"Pending stake for unknown validator: {address}")
             
-            validator = self.validators[validator_address]
+            # Process unstakes
+            for address, amount in self.epoch_state.pending_unstakes:
+                if address in self.validators:
+                    validator = self.validators[address]
+                    if validator.staked_amount >= amount:
+                        validator.staked_amount -= amount
+                    else:
+                        # Slash the validator for trying to unstake more than they have
+                        self.slash_validator(
+                            address,
+                            {'type': 'over_unstake', 'attempted': amount, 'actual': validator.staked_amount},
+                            'system'
+                        )
             
-            if validator.status not in [ValidatorStatus.ACTIVE, ValidatorStatus.PENDING]:
-                return False
+            # Process delegations
+            for delegator, validator_addr, amount in self.epoch_state.pending_delegations:
+                if validator_addr in self.validators:
+                    validator = self.validators[validator_addr]
+                    current_delegation = validator.delegators.get(delegator, 0)
+                    validator.delegators[delegator] = current_delegation + amount
+                    validator.total_delegated += amount
             
-            # Update delegation
-            current_delegation = validator.delegators.get(delegator_address, 0)
-            validator.delegators[delegator_address] = current_delegation + amount
-            validator.total_delegated += amount
-            self.total_stake += amount  # UPDATE total_stake
+            # Process undelegations
+            for delegator, validator_addr, amount in self.epoch_state.pending_undelegations:
+                if validator_addr in self.validators:
+                    validator = self.validators[validator_addr]
+                    if delegator in validator.delegators:
+                        current_delegation = validator.delegators[delegator]
+                        if current_delegation >= amount:
+                            validator.delegators[delegator] = current_delegation - amount
+                            validator.total_delegated -= amount
+                            
+                            if validator.delegators[delegator] == 0:
+                                del validator.delegators[delegator]
             
-            self._save_state()
-            return True
+            # Clear pending operations
+            self.epoch_state.pending_stakes.clear()
+            self.epoch_state.pending_unstakes.clear()
+            self.epoch_state.pending_delegations.clear()
+            self.epoch_state.pending_undelegations.clear()
     
-    def undelegate_tokens(self, delegator_address: str, validator_address: str, amount: int) -> bool:
-        """
-        Undelegate tokens from a validator
+    def _distribute_epoch_rewards(self):
+        """Distribute epoch rewards to validators and delegators"""
+        total_effective_stake = sum(v.effective_stake for v in self.active_validators)
+        if total_effective_stake == 0:
+            return
         
-        Args:
-            delegator_address: Address of the delegator
-            validator_address: Address of the validator
-            amount: Amount of tokens to undelegate
+        total_reward = self.epoch_state.reward_pool
         
-        Returns:
-            True if undelegation successful, False otherwise
-        """
-        with self.validator_lock:
-            if validator_address not in self.validators:
-                return False
+        for validator in self.active_validators:
+            if validator.effective_stake == 0:
+                continue
             
-            validator = self.validators[validator_address]
+            # Validator's share of rewards
+            validator_share = (validator.effective_stake / total_effective_stake) * total_reward
             
-            if delegator_address not in validator.delegators:
-                return False
+            # Commission goes to validator
+            commission = validator_share * validator.commission_rate
+            validator.total_rewards += commission
             
-            current_delegation = validator.delegators[delegator_address]
-            if amount > current_delegation:
-                return False
+            # Remainder goes to delegators proportionally
+            delegator_rewards = validator_share - commission
             
-            validator.delegators[delegator_address] = current_delegation - amount
-            validator.total_delegated -= amount
-            self.total_stake -= amount  # UPDATE total_stake
-            
-            if validator.delegators[delegator_address] == 0:
-                del validator.delegators[delegator_address]
-            
-            self._save_state()
-            return True
+            if validator.total_delegated > 0:
+                self._distribute_delegator_rewards(validator, delegator_rewards)
+    
+    def _distribute_delegator_rewards(self, validator: Validator, total_rewards: int):
+        """Distribute rewards to delegators"""
+        for delegator_address, delegated_amount in validator.delegators.items():
+            delegator_share = (delegated_amount / validator.total_delegated) * total_rewards
+            # In real implementation, this would transfer tokens to delegators
+            # For now, just track in validator object
+            if 'delegator_rewards' not in validator.__dict__:
+                validator.delegator_rewards = {}
+            validator.delegator_rewards[delegator_address] = \
+                validator.delegator_rewards.get(delegator_address, 0) + delegator_share
     
     def _update_validator_set(self):
-        """Update the active validator set based on stake"""
+        """Update the active validator set based on stake at epoch boundaries"""
+        if self.height % self.epoch_blocks != 0:
+            return
+        
         with self.validator_lock:
             # Sort validators by effective stake
             sorted_validators = sorted(
@@ -591,48 +581,6 @@ class ProofOfStake:
             self.active_validators = new_active
             self._save_state()
     
-    def _process_epoch_transition(self):
-        """Process epoch transition and distribute rewards"""
-        with self.lock:
-            self.current_epoch += 1
-            
-            # Calculate total stake for reward distribution
-            total_stake = sum(v.effective_stake for v in self.active_validators)
-            if total_stake == 0:
-                return
-            
-            # Distribute rewards (simplified - would come from block rewards)
-            epoch_reward = 1000  # Fixed reward per epoch for demo
-            
-            for validator in self.active_validators:
-                if validator.effective_stake > 0:
-                    # Validator's share of rewards
-                    validator_share = (validator.effective_stake / total_stake) * epoch_reward
-                    
-                    # Commission goes to validator
-                    commission = validator_share * validator.commission_rate
-                    validator.total_rewards += commission
-                    
-                    # Remainder goes to delegators proportionally
-                    delegator_rewards = validator_share - commission
-                    self._distribute_delegator_rewards(validator, delegator_rewards)
-            
-            self._save_state()
-    
-    def _distribute_delegator_rewards(self, validator: Validator, total_rewards: int):
-        """Distribute rewards to delegators"""
-        if validator.total_delegated == 0:
-            return
-        
-        for delegator_address, delegated_amount in validator.delegators.items():
-            delegator_share = (delegated_amount / validator.total_delegated) * total_rewards
-            # In real implementation, this would transfer tokens to delegators
-            # For now, just track in validator object
-            if 'delegator_rewards' not in validator.__dict__:
-                validator.delegator_rewards = {}
-            validator.delegator_rewards[delegator_address] = \
-                validator.delegator_rewards.get(delegator_address, 0) + delegator_share
-    
     def _check_jailed_validators(self):
         """Check and release jailed validators"""
         current_time = time.time()
@@ -645,12 +593,14 @@ class ProofOfStake:
                     
                     validator.status = ValidatorStatus.ACTIVE
                     validator.jail_until = None
+                    validator.missed_blocks = 0
+                    validator.signed_blocks = 0
             
             self._save_state()
     
-    def select_proposer(self, view_number: int, round_number: int) -> Optional[Validator]:
+    def select_proposer(self, height: int, round: int) -> Optional[Validator]:
         """
-        Select block proposer for current view and round
+        Select block proposer for current height and round
         
         Uses weighted random selection based on stake
         """
@@ -662,9 +612,9 @@ class ProofOfStake:
             if total_stake == 0:
                 return None
             
-            # Deterministic selection based on view and round
+            # Deterministic selection based on height and round
             random_seed = hashlib.sha256(
-                f"{view_number}_{round_number}_{self.current_epoch}".encode()
+                f"{height}_{round}_{self.epoch_state.current_epoch}".encode()
             ).digest()
             
             random_number = int.from_bytes(random_seed, 'big') % total_stake
@@ -677,132 +627,376 @@ class ProofOfStake:
             
             return self.active_validators[-1]
     
-    def propose_block(self, block_hash: str, validator_address: str, 
-                     parent_hash: str, private_key: ec.EllipticCurvePrivateKey) -> Optional[BlockProposal]:
-        """
-        Create a block proposal
-        
-        Args:
-            block_hash: Hash of the proposed block
-            validator_address: Address of proposing validator
-            parent_hash: Hash of parent block
-            private_key: Validator's private key for signing
-        
-        Returns:
-            Block proposal if successful, None otherwise
-        """
-        with self.lock:
-            if self.state != ConsensusState.IDLE:
-                return None
+    def start_new_height(self, height: int):
+        """Start consensus for a new block height"""
+        with self.consensus_lock:
+            self.height = height
+            self.round = 0
+            self.step = ConsensusState.PROPOSE
+            self.locked_round = -1
+            self.valid_round = -1
+            self.locked_value = None
+            self.valid_value = None
             
-            if validator_address not in self.validators:
-                return None
+            # Clear old round states
+            self.round_states = {}
             
-            validator = self.validators[validator_address]
-            if validator.status != ValidatorStatus.ACTIVE:
-                return None
+            # Start the propose step
+            self._start_round(0)
+    
+    def _start_round(self, round: int):
+        """Start a new round"""
+        with self.consensus_lock:
+            self.round = round
+            self.step = ConsensusState.PROPOSE
             
-            # Check if this validator is the proposer for current view/round
-            expected_proposer = self.select_proposer(self.current_view, self.current_round)
-            if not expected_proposer or expected_proposer.address != validator_address:
-                return None
+            # Get the proposer for this round
+            proposer = self.select_proposer(self.height, round)
             
-            # Create proposal
-            proposal = BlockProposal(
-                block_hash=block_hash,
-                validator_address=validator_address,
-                timestamp=time.time(),
-                signature="",
-                view_number=self.current_view,
-                round_number=self.current_round,
-                parent_hash=parent_hash
+            # Create round state
+            round_state = RoundState(
+                height=self.height,
+                round=round,
+                step=ConsensusState.PROPOSE,
+                proposer=proposer,
+                start_time=time.time()
             )
             
-            # Sign proposal
-            signing_data = self._get_proposal_signing_data(proposal)
-            signature = self._sign_data(signing_data, private_key)
-            proposal.signature = signature
+            self.round_states[(self.height, round)] = round_state
             
-            self.block_proposals[block_hash] = proposal
-            self.state = ConsensusState.PROPOSING
-            self._save_state()
+            # Set timeout for propose step
+            self._set_timeout(self.height, round, ConsensusState.PROPOSE, self.timeout_propose)
             
-            return proposal
+            # If we're the proposer, create a proposal
+            # In real implementation, this would be triggered by the proposer's logic
+            logger.info(f"Starting round {round} at height {self.height}, proposer: {proposer.address if proposer else 'None'}")
     
-    def vote_for_proposal(self, block_hash: str, validator_address: str, 
-                         vote_type: str, private_key: ec.EllipticCurvePrivateKey) -> Optional[Vote]:
-        """
-        Vote for a block proposal
+    def _set_timeout(self, height: int, round: int, step: ConsensusState, timeout: float):
+        """Set a timeout for a specific step"""
+        key = (height, round, step)
         
-        Args:
-            block_hash: Hash of the block being voted on
-            validator_address: Address of voting validator
-            vote_type: Type of vote ('pre-vote', 'pre-commit', 'commit')
-            private_key: Validator's private key for signing
+        # Cancel any existing timeout
+        if key in self._timeout_handlers:
+            self._timeout_handlers[key].cancel()
+        
+        # Create new timeout
+        def timeout_handler():
+            with self.consensus_lock:
+                if (self.height == height and self.round == round and self.step == step):
+                    self._on_timeout(height, round, step)
+        
+        timer = threading.Timer(timeout, timeout_handler)
+        timer.daemon = True
+        timer.start()
+        
+        self._timeout_handlers[key] = timer
+    
+    def _on_timeout(self, height: int, round: int, step: ConsensusState):
+        """Handle timeout for a step"""
+        logger.warning(f"Timeout at height {height}, round {round}, step {step}")
+        
+        if step == ConsensusState.PROPOSE:
+            # Move to prevote step with nil value
+            self._prevote(height, round, None)
+        elif step == ConsensusState.PREVOTE:
+            # Move to precommit step with nil value
+            self._precommit(height, round, None)
+        elif step == ConsensusState.PRECOMMIT:
+            # Move to next round
+            self._start_round(round + 1)
+    
+    def receive_proposal(self, proposal: BlockProposal) -> bool:
+        """
+        Receive a block proposal from the network
         
         Returns:
-            Vote object if successful, None otherwise
+            True if proposal is valid and accepted, False otherwise
         """
-        with self.lock:
-            if block_hash not in self.block_proposals:
-                return None
+        with self.consensus_lock:
+            # Check if this proposal is for the current height and round
+            if proposal.height != self.height or proposal.round_number != self.round:
+                logger.warning(f"Proposal for wrong height/round: {proposal.height}/{proposal.round_number}, current: {self.height}/{self.round}")
+                return False
             
-            if validator_address not in self.validators:
-                return None
+            # Check if we're in the propose step
+            if self.step != ConsensusState.PROPOSE:
+                logger.warning(f"Not in propose step, current step: {self.step}")
+                return False
             
-            validator = self.validators[validator_address]
-            if validator.status != ValidatorStatus.ACTIVE:
-                return None
+            # Verify the proposer is correct
+            expected_proposer = self.select_proposer(self.height, self.round)
+            if not expected_proposer or expected_proposer.address != proposal.validator_address:
+                logger.warning(f"Invalid proposer: {proposal.validator_address}, expected: {expected_proposer.address if expected_proposer else 'None'}")
+                return False
             
-            proposal = self.block_proposals[block_hash]
+            # Verify the signature
+            if not self.verify_validator_signature(proposal.validator_address, self._get_proposal_signing_data(proposal), proposal.signature):
+                logger.warning(f"Invalid proposal signature from {proposal.validator_address}")
+                return False
+            
+            # Verify the block is valid using ABCI
+            if self.abci.check_tx_fn:
+                for tx_hash in proposal.tx_hashes:
+                    if not self.abci.check_tx_fn(tx_hash):
+                        logger.warning(f"Invalid transaction in proposal: {tx_hash}")
+                        return False
+            
+            # Store the proposal
+            self.block_proposals[proposal.block_hash] = proposal
+            
+            # Update round state
+            round_state = self.round_states.get((self.height, self.round))
+            if round_state:
+                round_state.proposal = proposal
+                round_state.step = ConsensusState.PREVOTE
+            
+            # Move to prevote step
+            self.step = ConsensusState.PREVOTE
+            self._set_timeout(self.height, self.round, ConsensusState.PREVOTE, self.timeout_prevote)
+            
+            # Send prevote for this block
+            self._prevote(self.height, self.round, proposal.block_hash)
+            
+            return True
+    
+    def _prevote(self, height: int, round: int, block_hash: Optional[str]):
+        """Send a prevote for a block"""
+        with self.consensus_lock:
+            if height != self.height or round != self.round:
+                return
             
             # Create vote
-            vote = Vote(
-                block_hash=block_hash,
-                validator_address=validator_address,
-                timestamp=time.time(),
-                signature="",
-                view_number=proposal.view_number,
-                round_number=proposal.round_number,
-                vote_type=vote_type
-            )
+            vote = self._create_vote(height, round, block_hash, VoteType.PREVOTE)
+            if not vote:
+                return
             
-            # Sign vote
-            signing_data = self._get_vote_signing_data(vote)
-            signature = self._sign_data(signing_data, private_key)
-            vote.signature = signature
+            # Store vote locally
+            vote_key = (height, round, VoteType.PREVOTE)
+            self.votes[vote_key][vote.validator_address] = vote
             
-            # Store vote
-            if block_hash not in self.votes:
-                self.votes[block_hash] = []
-            self.votes[block_hash].append(vote)
+            # Check if we have +2/3 prevotes for this block
+            self._check_prevote_polka(height, round, block_hash)
             
-            # Check if we have enough votes to commit
-            if self._check_vote_threshold(block_hash, vote_type):
-                self.state = ConsensusState.COMMITTING
-                self.executed_blocks.add(block_hash)
-                
-                # Update validator stats
-                validator.last_active = time.time()
-                validator.uptime = min(100.0, validator.uptime + 0.1)
-            
-            self._save_state()
-            return vote
+            # In real implementation, broadcast the vote to the network
+            logger.info(f"Prevote for block {block_hash} at height {height}, round {round}")
     
-    def _check_vote_threshold(self, block_hash: str, vote_type: str) -> bool:
-        """Check if vote threshold is reached for commitment"""
-        if block_hash not in self.votes:
-            return False
+    def _precommit(self, height: int, round: int, block_hash: Optional[str]):
+        """Send a precommit for a block"""
+        with self.consensus_lock:
+            if height != self.height or round != self.round:
+                return
+            
+            # Create vote
+            vote = self._create_vote(height, round, block_hash, VoteType.PRECOMMIT)
+            if not vote:
+                return
+            
+            # Store vote locally
+            vote_key = (height, round, VoteType.PRECOMMIT)
+            self.votes[vote_key][vote.validator_address] = vote
+            
+            # Check if we have +2/3 precommits for this block
+            self._check_precommit_polka(height, round, block_hash)
+            
+            # In real implementation, broadcast the vote to the network
+            logger.info(f"Precommit for block {block_hash} at height {height}, round {round}")
+    
+    def _create_vote(self, height: int, round: int, block_hash: Optional[str], vote_type: VoteType) -> Optional[Vote]:
+        """Create a vote object"""
+        # This would use the validator's private key to sign in real implementation
+        # For now, we'll just create the vote object without a real signature
         
-        votes = self.votes[block_hash]
-        type_votes = [v for v in votes if v.vote_type == vote_type]
+        validator_address = "current_validator"  # This would be the address of the current validator
         
-        # Need 2/3 of voting power for Byzantine Fault Tolerance
+        vote = Vote(
+            height=height,
+            block_hash=block_hash or "nil",
+            validator_address=validator_address,
+            timestamp=time.time(),
+            signature="dummy_signature",  # This would be a real signature
+            round_number=round,
+            vote_type=vote_type
+        )
+        
+        return vote
+    
+    def _check_prevote_polka(self, height: int, round: int, block_hash: str):
+        """Check if we have +2/3 prevotes for a block (polka)"""
+        vote_key = (height, round, VoteType.PREVOTE)
+        votes = self.votes.get(vote_key, {})
+        
+        # Count votes for this block
+        block_votes = [v for v in votes.values() if v.block_hash == block_hash]
+        
+        # Calculate voting power
         total_voting_power = sum(v.voting_power for v in self.active_validators)
         voted_power = sum(self.validators[v.validator_address].voting_power 
-                         for v in type_votes if v.validator_address in self.validators)
+                         for v in block_votes if v.validator_address in self.validators)
         
-        return voted_power > (2 * total_voting_power) / 3
+        if voted_power > (2 * total_voting_power) / 3:
+            # We have a polka!
+            round_state = self.round_states.get((height, round))
+            if round_state:
+                round_state.prevote_polka = block_hash
+            
+            # Update locked and valid values
+            if self.locked_round < round:
+                self.locked_value = block_hash
+                self.locked_round = round
+            
+            self.valid_value = block_hash
+            self.valid_round = round
+            
+            # Move to precommit step
+            self.step = ConsensusState.PRECOMMIT
+            self._set_timeout(height, round, ConsensusState.PRECOMMIT, self.timeout_precommit)
+            
+            # Send precommit for this block
+            self._precommit(height, round, block_hash)
+    
+    def _check_precommit_polka(self, height: int, round: int, block_hash: str):
+        """Check if we have +2/3 precommits for a block (commit)"""
+        vote_key = (height, round, VoteType.PRECOMMIT)
+        votes = self.votes.get(vote_key, {})
+        
+        # Count votes for this block
+        block_votes = [v for v in votes.values() if v.block_hash == block_hash]
+        
+        # Calculate voting power
+        total_voting_power = sum(v.voting_power for v in self.active_validators)
+        voted_power = sum(self.validators[v.validator_address].voting_power 
+                         for v in block_votes if v.validator_address in self.validators)
+        
+        if voted_power > (2 * total_voting_power) / 3:
+            # We have a commit!
+            round_state = self.round_states.get((height, round))
+            if round_state:
+                round_state.precommit_polka = block_hash
+            
+            # Commit the block
+            self._commit_block(height, block_hash)
+    
+    def _commit_block(self, height: int, block_hash: str):
+        """Commit a block and move to the next height"""
+        with self.consensus_lock:
+            # Get the block proposal
+            proposal = self.block_proposals.get(block_hash)
+            if not proposal:
+                logger.error(f"Block proposal not found for hash: {block_hash}")
+                return
+            
+            # Use ABCI to deliver transactions
+            if self.abci.begin_block_fn:
+                self.abci.begin_block_fn(height, block_hash)
+            
+            if self.abci.deliver_tx_fn:
+                for tx_hash in proposal.tx_hashes:
+                    if not self.abci.deliver_tx_fn(tx_hash):
+                        logger.error(f"Failed to deliver transaction: {tx_hash}")
+                        # In real implementation, this would be a serious error
+            
+            if self.abci.end_block_fn:
+                self.abci.end_block_fn(height)
+            
+            # Get app hash from ABCI
+            app_hash = self.abci.commit_fn() if self.abci.commit_fn else ""
+            
+            # Mark block as executed
+            self.executed_blocks.add(block_hash)
+            
+            # Update validator stats
+            with self.validator_lock:
+                if proposal.validator_address in self.validators:
+                    validator = self.validators[proposal.validator_address]
+                    validator.last_active = time.time()
+                    validator.signed_blocks += 1
+                    
+                    # Update uptime
+                    total_blocks = validator.missed_blocks + validator.signed_blocks
+                    if total_blocks > 0:
+                        validator.uptime = (validator.signed_blocks / total_blocks) * 100
+            
+            # Move to next height
+            self.step = ConsensusState.COMMITTED
+            logger.info(f"Committed block {block_hash} at height {height}")
+            
+            # Start next height
+            self.start_new_height(height + 1)
+            
+            self._save_state()
+    
+    def receive_vote(self, vote: Vote) -> bool:
+        """
+        Receive a vote from the network
+        
+        Returns:
+            True if vote is valid and accepted, False otherwise
+        """
+        with self.consensus_lock:
+            # Check if this vote is for the current height and round
+            if vote.height != self.height or vote.round_number != self.round:
+                logger.warning(f"Vote for wrong height/round: {vote.height}/{vote.round_number}, current: {self.height}/{self.round}")
+                return False
+            
+            # Verify the validator is active
+            if vote.validator_address not in self.validators:
+                logger.warning(f"Vote from unknown validator: {vote.validator_address}")
+                return False
+            
+            validator = self.validators[vote.validator_address]
+            if validator.status != ValidatorStatus.ACTIVE:
+                logger.warning(f"Vote from inactive validator: {vote.validator_address}")
+                return False
+            
+            # Verify the signature
+            if not self.verify_validator_signature(vote.validator_address, self._get_vote_signing_data(vote), vote.signature):
+                logger.warning(f"Invalid vote signature from {vote.validator_address}")
+                return False
+            
+            # Store the vote
+            vote_key = (vote.height, vote.round_number, vote.vote_type)
+            self.votes[vote_key][vote.validator_address] = vote
+            
+            # Check for polka if this is a prevote
+            if vote.vote_type == VoteType.PREVOTE and vote.block_hash != "nil":
+                self._check_prevote_polka(vote.height, vote.round_number, vote.block_hash)
+            
+            # Check for commit if this is a precommit
+            if vote.vote_type == VoteType.PRECOMMIT and vote.block_hash != "nil":
+                self._check_precommit_polka(vote.height, vote.round_number, vote.block_hash)
+            
+            return True
+    
+    def _proposal_signing_data(self, proposal: BlockProposal) -> bytes:
+        """Get the data that should be signed for a proposal"""
+        data = f"{proposal.height}|{proposal.round_number}|{proposal.block_hash}|{proposal.parent_hash}|{','.join(proposal.tx_hashes)}"
+        return data.encode('utf-8')
+    
+    def _get_vote_signing_data(self, vote: Vote) -> bytes:
+        """Get the data that should be signed for a vote"""
+        data = f"{vote.height}|{vote.round_number}|{vote.vote_type.name}|{vote.block_hash}"
+        return data.encode('utf-8')
+    
+    def verify_validator_signature(self, validator_address: str, data: bytes, signature: str) -> bool:
+        """
+        Verify a signature from a validator
+        
+        In a real implementation, this would use the validator's public key
+        to verify the signature against the data.
+        """
+        # This is a placeholder implementation
+        # In production, you would use proper cryptographic verification
+        
+        if validator_address not in self.validators:
+            return False
+        
+        # For demonstration, we'll just check if the signature is a non-empty string
+        return bool(signature and isinstance(signature, str))
+    
+    def add_reward(self, amount: int):
+        """Add rewards to the epoch reward pool"""
+        with self.lock:
+            self.epoch_state.reward_pool += amount
     
     def slash_validator(self, validator_address: str, evidence: Dict, reporter: str) -> bool:
         """
@@ -810,463 +1004,396 @@ class ProofOfStake:
         
         Args:
             validator_address: Address of validator to slash
-            evidence: Evidence of misbehavior
-            reporter: Address of the reporter
+            evidence: Dictionary containing evidence of misbehavior
+            reporter: Address of the reporter (for potential rewards)
         
         Returns:
-            True if slashing successful, False otherwise
+            True if slashing was successful, False otherwise
         """
         with self.validator_lock:
             if validator_address not in self.validators:
+                logger.warning(f"Attempt to slash unknown validator: {validator_address}")
                 return False
             
             validator = self.validators[validator_address]
             
-            # Verify evidence (simplified)
-            if not self._validate_evidence(evidence, validator):
+            # Check evidence type
+            evidence_type = evidence.get('type')
+            
+            if evidence_type == 'double_sign':
+                # Verify double signing evidence
+                if not self._verify_double_sign_evidence(validator, evidence):
+                    logger.warning(f"Invalid double sign evidence for validator {validator_address}")
+                    return False
+                
+                # Apply severe slashing for double signing
+                slash_amount = int(validator.total_stake * self.slash_percentage)
+                validator.staked_amount = max(0, validator.staked_amount - slash_amount)
+                validator.status = ValidatorStatus.SLASHED
+                validator.slashing_count += 1
+                
+                logger.warning(f"Validator {validator_address} slashed for double signing: {slash_amount}")
+                
+            elif evidence_type == 'unavailability':
+                # Verify unavailability evidence
+                missed_percentage = evidence.get('missed_percentage', 0)
+                if missed_percentage < 0.5:  # Only slash if missed more than 50%
+                    logger.warning(f"Insufficient unavailability evidence for validator {validator_address}: {missed_percentage}")
+                    return False
+                
+                # Apply moderate slashing for unavailability
+                slash_amount = int(validator.staked_amount * (self.slash_percentage / 2))
+                validator.staked_amount = max(0, validator.staked_amount - slash_amount)
+                validator.status = ValidatorStatus.JAILED
+                validator.jail_until = time.time() + self.jail_duration
+                validator.slashing_count += 1
+                
+                logger.warning(f"Validator {validator_address} jailed for unavailability: {slash_amount}")
+            
+            else:
+                logger.warning(f"Unknown evidence type: {evidence_type}")
                 return False
             
-            # Calculate slash amount
-            slash_amount = int(validator.total_stake * self.slash_percentage)
+            # Update validator set if needed
+            if validator.status != ValidatorStatus.ACTIVE:
+                self._update_validator_set()
             
-            # Apply slashing
-            if validator.staked_amount >= slash_amount:
-                validator.staked_amount -= slash_amount
-            else:
-                # Also slash delegations proportionally if needed
-                remaining_slash = slash_amount - validator.staked_amount
-                validator.staked_amount = 0
-                
-                total_delegated = validator.total_delegated
-                for delegator_address in list(validator.delegators.keys()):
-                    delegation = validator.delegators[delegator_address]
-                    delegator_slash = int((delegation / total_delegated) * remaining_slash)
-                    validator.delegators[delegator_address] = delegation - delegator_slash
-                    validator.total_delegated -= delegator_slash
-            
-            # Jail validator
-            validator.status = ValidatorStatus.JAILED
-            validator.jail_until = time.time() + self.jail_duration
-            validator.slashing_count += 1
-            
-            # Reward reporter (small percentage of slashed amount)
-            reporter_reward = int(slash_amount * 0.1)
-            # In real implementation, this would transfer tokens to reporter
-            
-            self._update_validator_set()
             self._save_state()
-            
             return True
     
-    def _validate_evidence(self, evidence: Dict, validator: Validator) -> bool:
-        """Validate slashing evidence"""
-        # This would verify cryptographic evidence of double-signing or other violations
-        # For now, return True for demonstration
+    def _verify_double_sign_evidence(self, validator: Validator, evidence: Dict) -> bool:
+        """
+        Verify double signing evidence
+        
+        In a real implementation, this would cryptographically verify
+        that the validator signed two different blocks at the same height.
+        """
+        # Extract evidence
+        block1 = evidence.get('block1')
+        block2 = evidence.get('block2')
+        signature1 = evidence.get('signature1')
+        signature2 = evidence.get('signature2')
+        
+        if not all([block1, block2, signature1, signature2]):
+            return False
+        
+        # Check if blocks are at the same height
+        if block1.get('height') != block2.get('height'):
+            return False
+        
+        # Check if blocks are different
+        if block1.get('hash') == block2.get('hash'):
+            return False
+        
+        # In real implementation, verify both signatures against validator's public key
+        # For now, we'll assume the evidence is valid if all required fields are present
+        
         return True
     
-    def _get_proposal_signing_data(self, proposal: BlockProposal) -> str:
-        """Get data to sign for block proposal"""
-        return json.dumps({
-            'block_hash': proposal.block_hash,
-            'validator_address': proposal.validator_address,
-            'timestamp': proposal.timestamp,
-            'view_number': proposal.view_number,
-            'round_number': proposal.round_number,
-            'parent_hash': proposal.parent_hash
-        }, sort_keys=True)
-    
-    def _get_vote_signing_data(self, vote: Vote) -> str:
-        """Get data to sign for vote"""
-        return json.dumps({
-            'block_hash': vote.block_hash,
-            'validator_address': vote.validator_address,
-            'timestamp': vote.timestamp,
-            'view_number': vote.view_number,
-            'round_number': vote.round_number,
-            'vote_type': vote.vote_type
-        }, sort_keys=True)
-    
-    def _sign_data(self, data: str, private_key: ec.EllipticCurvePrivateKey) -> str:
-        """Sign data with private key"""
-        signature = private_key.sign(
-            data.encode('utf-8'),
-            ec.ECDSA(hashes.SHA256())
-        )
-        return signature.hex()
-    
-    def verify_signature(self, data: str, signature: str, public_key: str) -> bool:
-        """Verify signature with public key"""
-        try:
-            pub_key = ec.EllipticCurvePublicKey.from_encoded_point(
-                ec.SECP256K1(), bytes.fromhex(public_key)
+    def register_validator(self, address: str, public_key: str, stake_amount: int, commission_rate: float = 0.1) -> bool:
+        """
+        Register a new validator
+        
+        Args:
+            address: Validator address
+            public_key: Validator public key
+            stake_amount: Amount of stake to lock
+            commission_rate: Commission rate (0.0 to 1.0)
+        
+        Returns:
+            True if registration successful, False otherwise
+        """
+        with self.validator_lock:
+            if address in self.validators:
+                logger.warning(f"Validator already registered: {address}")
+                return False
+            
+            if stake_amount < self.min_stake:
+                logger.warning(f"Insufficient stake: {stake_amount}, minimum: {self.min_stake}")
+                return False
+            
+            if commission_rate < 0 or commission_rate > 1:
+                logger.warning(f"Invalid commission rate: {commission_rate}")
+                return False
+            
+            # Create new validator
+            validator = Validator(
+                address=address,
+                public_key=public_key,
+                staked_amount=stake_amount,
+                commission_rate=commission_rate,
+                status=ValidatorStatus.PENDING,
+                created_block_height=self.height
             )
-            pub_key.verify(
-                bytes.fromhex(signature),
-                data.encode('utf-8'),
+            
+            self.validators[address] = validator
+            self.pending_validators.append(validator)
+            
+            # Add to pending stakes for next epoch
+            self.epoch_state.pending_stakes.append((address, stake_amount))
+            
+            self.update_total_stake()
+            self._save_state()
+            
+            logger.info(f"Registered new validator: {address} with stake {stake_amount}")
+            return True
+    
+    def stake(self, validator_address: str, amount: int) -> bool:
+        """
+        Add stake to an existing validator
+        
+        Args:
+            validator_address: Validator address
+            amount: Amount to stake
+        
+        Returns:
+            True if staking successful, False otherwise
+        """
+        with self.validator_lock:
+            if validator_address not in self.validators:
+                logger.warning(f"Unknown validator: {validator_address}")
+                return False
+            
+            # Add to pending stakes for next epoch
+            self.epoch_state.pending_stakes.append((validator_address, amount))
+            
+            logger.info(f"Added stake {amount} to validator {validator_address}")
+            return True
+    
+    def unstake(self, validator_address: str, amount: int) -> bool:
+        """
+        Remove stake from a validator
+        
+        Args:
+            validator_address: Validator address
+            amount: Amount to unstake
+        
+        Returns:
+            True if unstaking successful, False otherwise
+        """
+        with self.validator_lock:
+            if validator_address not in self.validators:
+                logger.warning(f"Unknown validator: {validator_address}")
+                return False
+            
+            validator = self.validators[validator_address]
+            
+            if amount > validator.staked_amount:
+                logger.warning(f"Attempt to unstake more than available: {amount} > {validator.staked_amount}")
+                return False
+            
+            # Add to pending unstakes for next epoch
+            self.epoch_state.pending_unstakes.append((validator_address, amount))
+            
+            logger.info(f"Unstaked {amount} from validator {validator_address}")
+            return True
+    
+    def delegate(self, delegator_address: str, validator_address: str, amount: int) -> bool:
+        """
+        Delegate stake to a validator
+        
+        Args:
+            delegator_address: Delegator address
+            validator_address: Validator address
+            amount: Amount to delegate
+        
+        Returns:
+            True if delegation successful, False otherwise
+        """
+        with self.validator_lock:
+            if validator_address not in self.validators:
+                logger.warning(f"Unknown validator: {validator_address}")
+                return False
+            
+            # Add to pending delegations for next epoch
+            self.epoch_state.pending_delegations.append((delegator_address, validator_address, amount))
+            
+            logger.info(f"Delegated {amount} to validator {validator_address} from {delegator_address}")
+            return True
+    
+    def undelegate(self, delegator_address: str, validator_address: str, amount: int) -> bool:
+        """
+        Remove delegation from a validator
+        
+        Args:
+            delegator_address: Delegator address
+            validator_address: Validator address
+            amount: Amount to undelegate
+        
+        Returns:
+            True if undelegation successful, False otherwise
+        """
+        with self.validator_lock:
+            if validator_address not in self.validators:
+                logger.warning(f"Unknown validator: {validator_address}")
+                return False
+            
+            validator = self.validators[validator_address]
+            
+            if delegator_address not in validator.delegators:
+                logger.warning(f"No delegation found for {delegator_address} with validator {validator_address}")
+                return False
+            
+            if amount > validator.delegators[delegator_address]:
+                logger.warning(f"Attempt to undelegate more than delegated: {amount} > {validator.delegators[delegator_address]}")
+                return False
+            
+            # Add to pending undelegations for next epoch
+            self.epoch_state.pending_undelegations.append((delegator_address, validator_address, amount))
+            
+            logger.info(f"Undelegated {amount} from validator {validator_address} by {delegator_address}")
+            return True
+    
+    def update_total_stake(self):
+        """Update the total stake in the system"""
+        with self.validator_lock:
+            self.total_stake = sum(v.total_stake for v in self.validators.values())
+    
+    def get_validator(self, address: str) -> Optional[Validator]:
+        """Get validator by address"""
+        return self.validators.get(address)
+    
+    def get_active_validators(self) -> List[Validator]:
+        """Get list of active validators"""
+        return self.active_validators.copy()
+    
+    def get_consensus_state(self) -> Dict:
+        """Get current consensus state"""
+        return {
+            'height': self.height,
+            'round': self.round,
+            'step': self.step.name,
+            'locked_round': self.locked_round,
+            'valid_round': self.valid_round,
+            'locked_value': self.locked_value,
+            'valid_value': self.valid_value,
+            'total_stake': self.total_stake,
+            'active_validators_count': len(self.active_validators),
+            'total_validators_count': len(self.validators)
+        }
+   
+    def calculate_difficulty(self, height: int) -> int:
+        """Production-ready difficulty calculation"""
+        if height == 0:
+            return self.genesis_difficulty
+        
+        # Only adjust every difficulty_adjustment_blocks
+        if height % self.difficulty_adjustment_blocks != 0:
+            # Return difficulty of previous block
+            previous_block = self._get_block_at_height(height - 1)
+            if previous_block:
+                return previous_block.header.difficulty
+            return self.genesis_difficulty
+        
+        return self._adjust_difficulty(height)
+    
+    def _adjust_difficulty(self, height: int) -> int:
+        """Real difficulty adjustment algorithm"""
+        try:
+            # Get blocks from previous adjustment period
+            start_height = max(0, height - self.difficulty_adjustment_blocks)
+            blocks = self._get_blocks_range(start_height, height - 1)
+            
+            if len(blocks) < 2:
+                return self.genesis_difficulty
+            
+            # Calculate actual time taken
+            actual_time = blocks[-1].header.timestamp - blocks[0].header.timestamp
+            target_time = self.block_time_target * len(blocks)
+            
+            # Adjust difficulty (simplified version)
+            difficulty_ratio = actual_time / target_time
+            previous_difficulty = blocks[-1].header.difficulty
+            
+            # Limit adjustment to ±4x
+            new_difficulty = previous_difficulty * min(4, max(0.25, difficulty_ratio))
+            
+            return int(new_difficulty)
+            
+        except Exception as e:
+            logger.error(f"Difficulty adjustment error: {e}")
+            return self.genesis_difficulty
+    
+    def validate_block_signature(self, block: Block) -> bool:
+        """Production-ready block signature validation"""
+        try:
+            if not block.header.signature or not block.header.validator:
+                return False
+            
+            validator = self.get_validator(block.header.validator)
+            if not validator:
+                logger.warning(f"Unknown validator: {block.header.validator}")
+                return False
+            
+            # Get signing data (exclude signature itself)
+            signing_data = self._get_block_signing_data(block)
+            
+            # Verify signature using validator's public key
+            return self._verify_signature(
+                validator.public_key,
+                signing_data,
+                block.header.signature
+            )
+            
+        except Exception as e:
+            logger.error(f"Block signature validation error: {e}")
+            return False
+    
+    def _get_block_signing_data(self, block: Block) -> bytes:
+        """Get data that should be signed for a block"""
+        header_data = {
+            'version': block.header.version,
+            'height': block.header.height,
+            'previous_hash': block.header.previous_hash,
+            'merkle_root': block.header.merkle_root,
+            'timestamp': block.header.timestamp,
+            'difficulty': block.header.difficulty,
+            'nonce': block.header.nonce,
+            'validator': block.header.validator
+        }
+        return json.dumps(header_data, sort_keys=True).encode()
+    
+    def _verify_signature(self, public_key: str, data: bytes, signature: str) -> bool:
+        """Production signature verification"""
+        try:
+            # Convert from hex if needed
+            if isinstance(signature, str):
+                signature_bytes = bytes.fromhex(signature)
+            else:
+                signature_bytes = signature
+            
+            # Use cryptography library for real verification
+            verifying_key = serialization.load_der_public_key(
+                bytes.fromhex(public_key),
+                backend=default_backend()
+            )
+            
+            verifying_key.verify(
+                signature_bytes,
+                data,
                 ec.ECDSA(hashes.SHA256())
             )
             return True
-        except (InvalidSignature, ValueError):
+            
+        except InvalidSignature:
             return False
+        except Exception as e:
+            logger.error(f"Signature verification error: {e}")
+            return False        
     
-    def get_validator_info(self, address: str) -> Optional[Dict]:
-        """Get detailed validator information"""
-        with self.validator_lock:
-            if address not in self.validators:
-                return None
-            
-            validator = self.validators[address]
-            return validator.to_dict()
-
-    def get_validator_performance(self, validator_address: str) -> Optional[Dict]:
-    	
-    	with self.validator_lock:
-    		if validator_address not in self.validators:
-    			return None
-    			
-    		validator = self.validators[validator_address]
-    		return {
-    		    'address': validator.address,
-    		    'status': validator.status.name,
-    		    'staked_amount': validator.staked_amount,
-    		    'total_delegated': validator.total_delegated,
-    		    'effective_stake': validator.effective_stake,
-    		    'uptime': validator.uptime,
-    		    'slashing_count': validator.slashing_count,
-    		    'voting_power': validator.voting_power,
-    		    'commission_rate': validator.commission_rate,
-    		    'delegator_count': len(validator.delegators),
-    		    'jail_status': {
-    		        'jailed': validator.jail_until is not None,
-    		        'until': validator.jail_until,
-    		        'remaining': max(0, validator.jail_until - time.time()) if validator.jail_until else 0
-    		    } if validator.jail_until else None
-    		    
-    		}                        
-    
-    def get_consensus_health(self) -> Dict:
-        """Get current consensus state"""
-        with self.lock:
-                        	
-        	with self.validator_lock:      		
-        		active_count = len([v for v in self.validators.values() if v.status == ValidatorStatus.ACTIVE])
-        		jailed_count = len([v for v in self.validators.values() if v.status == ValidatorStatus.JAILED])
-        		slashed_count = len([v for v in self.validators.values() if v.status == ValidatorStatus.SLASHED])
-        		total_voting_power = sum(v.voting_power for v in self.validators.values())
-        		active_voting_power = sum(v.voting_power for v in self.validators.values() if v.status == ValidatorStatus.ACTIVE)
-        		return {
-        		    'state': self.state.name,
-        		    'epoch': self.current_epoch,
-        		    'view': self.current_view,
-        		    'round': self.current_round,
-        		    'validators_total': len(self.validators),
-        		    'validators_active': active_count,
-        		    'validators_jailed': jailed_count,
-        		    'validators_slashed': slashed_count,
-        		    'total_stake': self.total_stake,
-        		    'total_voting_power': total_voting_power,
-        		    'active_voting_power': active_voting_power,
-        		    'bft_threshold': (2 * active_voting_power) / 3 if active_voting_power > 0 else 0,
-        		    'proposals_pending': len(self.block_proposals),
-        		    'votes_pending': sum(len(votes) for votes in self.votes.values()),
-        		    'blocks_executed': len(self.executed_blocks),
-        		    'blocks_locked': len(self.locked_blocks),
-        		    'health_score': self._calculate_health_score(active_count, active_voting_power)
-        		}
-        		        		
-    def validate_validator_signature(self, validator_address: str, message: bytes, 
-                               signature: str) -> bool:
-        with self.validator_lock:
-        	if not self.is_validator(validator_address):
-        		return False
-        		
-        	validator = self.validators[validator_address]  
-        	
-        	# Additional security checks
-        	if (validator.jail_until and validator.jail_until > time.time() or
-            validator.status != ValidatorStatus.ACTIVE):
-                 return False
+    def shutdown(self):
+        """Shutdown the consensus engine"""
+        self._running = False
         
-        try:
-            # Convert message to string if it's bytes
-            if isinstance(message, bytes):
-                message_str = message.decode('utf-8')
-            else:
-                message_str = str(message)
-            
-            return self.verify_signature(message_str, signature, validator.public_key)
-        except (UnicodeDecodeError, ValueError, InvalidSignature):
-            return False
-            
-    def check_byzantine_behavior(self, validator_address: str, evidence: Dict) -> bool:
-        with self.validator_lock:
-            if not self.is_validator(validator_address):
-               return False  
-               
-           # Comprehensive evidence validation
-            if not self._validate_byzantine_evidence(evidence, validator_address):
-               return False
-               
-            validator = self.validators[validator_address]
-            
-            # Check for double-signing
-            if evidence.get('type') == 'double_sign':
-            	return self._check_double_signing(evidence, validator)
-            	
-            # Check for equivocation
-            elif evidence.get('type') == 'equivocation':
-            	return self._check_equivocation(evidence, validator)
-            	
-            # Check for censorship
-            elif evidence.get('type') == 'censorship':
-            	return self._check_censorship(evidence, validator)
-            return False 
-
-    def _validate_byzantine_evidence(self, evidence: Dict, validator_address: str) -> bool:
-    	"""Comprehensive evidence validation"""
-    	required_fields = {
-    	    'double_sign': ['block_hash_1', 'block_hash_2', 'signature_1', 'signature_2', 'timestamp'],
-    	    'equivocation': ['conflicting_messages', 'signatures', 'timestamps'],
-    	    'censorship': ['censored_transactions', 'time_period', 'proof']
-    	}
-    	evidence_type = evidence.get('type')
-    	if evidence_type not in required_fields:
-    		return False
-    		
-    	for field in required_fields[evidence_type]:
-    		if field not in evidence:
-    			return False
-    
-    def _check_double_signing(self, evidence: Dict, validator: Validator) -> bool:
-           	               	            	      	          
-        """Check for double signing evidence"""
-        try:
-        	block_hash_1 = evidence['block_hash_1']
-        	block_hash_2 = evidence['block_hash_2']
-        	signature_1 = evidence['signature_1']
-        	signature_2 = evidence['signature_2']
-        	
-        	# Verify both signatures are valid for their respective blocks
-        	valid_sig_1 = self.verify_signature(block_hash_1, signature_1, validator.public_key)
-        	valid_sig_2 = self.verify_signature(block_hash_2, signature_2, validator.public_key)
-        	
-        	# If both signatures are valid but for different blocks, it's double signing
-        	return valid_sig_1 and valid_sig_2 and block_hash_1 != block_hash_2
-        	
-        except (KeyError, ValueError):
-        	return False
-
-    def _check_equivocation(self, evidence: Dict, validator: Validator) -> bool:
-        """Check for equivocation evidence"""
-        try:
-            conflicting_messages = evidence['conflicting_messages']
-            signatures = evidence['signatures']
-            timestamps = evidence['timestamps']
-            
-            if len(conflicting_messages) != 2 or len(signatures) != 2:
-                return False
-                
-            # Verify both signatures are valid
-            valid_sig_1 = self.verify_signature(
-                conflicting_messages[0], signatures[0], validator.public_key
-            )
-            valid_sig_2 = self.verify_signature(
-                conflicting_messages[1], signatures[1], validator.public_key
-             
-            )
-            # Check if messages are conflicting (same context but different content)
-            messages_are_conflicting = self._are_messages_conflicting(
-                conflicting_messages[0], conflicting_messages[1]
-            )
-            
-            return valid_sig_1 and valid_sig_2 and messages_are_conflicting
-            
-        except (KeyError, ValueError, IndexError):		           	                   	                     return False
-          
-    def _check_censorship(self, evidence: Dict, validator: Validator) -> bool:
-    	"""Check for censorship evidence"""
-    	try:
-    		censored_transactions = evidence['censored_transactions']
-    		time_period = evidence['time_period']
-    		proof = evidence['proof']
-    		# This would require complex validation logic
-    		# For now, return True if basic structure is valid
-    		return (isinstance(censored_transactions, list) and isinstance(time_period, (int, float)) and isinstance(proof, dict))
-    	except (KeyError, ValueError):
-    	       return False
+        # Cancel all timeouts
+        for timer in self._timeout_handlers.values():
+            timer.cancel()
         
-            
-    def _are_messages_conflicting(self, message1: str, message2: str) -> bool: 	
-        try:
-        	# Try to parse as JSON for structured messages
-        	msg1_data = json.loads(message1)
-        	msg2_data = json.loads(message2)
-        	# Check if they have the same context (e.g., same block height, view number)
-        	# but different content
-        	if ('block_height' in msg1_data and 'block_height' in msg2_data and msg1_data['block_height'] == msg2_data['block_height']):
-        		return message1 != message2
-        except json.JSONDecodeError:
-        	# For non-JSON messages, use simple comparison
-        	return message1 != message2                                  	        	           	                   	        
-    def _calculate_health_score(self, active_count: int, active_voting_power: int) -> float:
-         """Calculate consensus health score (0-100)"""
-         if active_count == 0:
-         	return 0.0
-         
-         # Factors for health calculation
-         validator_health = min(active_count / self.max_validators, 1.0) * 40
-         voting_power_health = min(active_voting_power / (self.min_stake * active_count * 10), 1.0) * 30
-         activity_health = min(len(self.executed_blocks) / 100, 1.0) * 30
-         
-         return validator_health + voting_power_health + activity_health
-         
-    def process_view_change(self):
-        """Process view change when consensus stalls"""
-        with self.lock:
-            if self.state in [ConsensusState.VIEW_CHANGE, ConsensusState.RECOVERY]:
-                return
-            
-            self.state = ConsensusState.VIEW_CHANGE
-            self.current_view += 1
-            self.current_round = 0
-            
-            # Clear old proposals and votes
-            self.block_proposals.clear()
-            self.votes.clear()
-            
-            self._save_state()
-    
-    def recover_from_fork(self, new_chain: List[str]):
-        """Recover from chain fork"""
-        with self.lock:
-            self.state = ConsensusState.RECOVERY
-            
-            # Reset consensus state based on new chain
-            self.block_proposals.clear()
-            self.votes.clear()
-            self.locked_blocks.clear()
-            self.executed_blocks.clear()
-            
-            # Reinitialize from new chain state
-            # This would involve complex recovery logic in real implementation
-            
-            self.state = ConsensusState.IDLE
-            self._save_state()
-
-# Advanced BFT Consensus with pipelining
-class BFTConsensus(ProofOfStake):
-    """Byzantine Fault Tolerant consensus with pipelining"""
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.pipeline_depth = 3
-        self.pending_blocks: Dict[int, List[str]] = {}  # height -> block_hashes
-        self.finalized_blocks: Set[str] = set()
-    
-    def pipeline_propose(self, block_hashes: List[str], validator_address: str,
-                        private_key: ec.EllipticCurvePrivateKey) -> List[BlockProposal]:
-        """Propose multiple blocks in pipeline"""
-        proposals = []
-        current_height = self.current_epoch * self.epoch_blocks
+        # Save final state
+        self._save_state()
         
-        for i, block_hash in enumerate(block_hashes):
-            if i >= self.pipeline_depth:
-                break
-            
-            height = current_height + i
-            proposal = self.propose_block(
-                block_hash, validator_address, f"parent_{height}", private_key
-            )
-            if proposal:
-                proposals.append(proposal)
-                if height not in self.pending_blocks:
-                    self.pending_blocks[height] = []
-                self.pending_blocks[height].append(block_hash)
+        # Close database
+        self.db.close()
         
-        return proposals
-    
-    def pipeline_vote(self, block_hashes: List[str], validator_address: str,
-                     private_key: ec.EllipticCurvePrivateKey) -> List[Vote]:
-        """Vote for multiple blocks in pipeline"""
-        votes = []
+        logger.info("Consensus engine shutdown complete")
         
-        for block_hash in block_hashes:
-            vote = self.vote_for_proposal(
-                block_hash, validator_address, 'pre-commit', private_key
-            )
-            if vote:
-                votes.append(vote)
-        
-        return votes
-
-# Utility functions
-def create_validator_keypair() -> Tuple[str, str]:
-    """Create validator key pair"""
-    private_key = ec.generate_private_key(ec.SECP256K1(), default_backend())
-    public_key = private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.X962,
-        format=serialization.PublicFormat.UncompressedPoint
-    ).hex()
-    private_key_hex = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption()
-    ).hex()
-    return private_key_hex, public_key
-
-def _calculate_voting_power(self, stake: int, age: int, uptime: float) -> int:
-    """Calculate voting power considering stake, age, and uptime"""
-    # Weight factors
-    stake_weight = 0.6
-    age_weight = 0.25
-    uptime_weight = 0.15
-    
-    # Normalize factors with caps
-    normalized_stake = min(stake / (self.min_stake * 10), 1.0)  # Cap at 1M tokens
-    normalized_age = min(age / 10000, 1.0)  # Cap at 10K blocks
-    normalized_uptime = uptime / 100.0
-    
-    
-    # Calculate weighted power
-    voting_power = int((
-        normalized_stake * stake_weight +
-        normalized_age * age_weight +
-        normalized_uptime * uptime_weight
-    ) * 10000)  # Scale to integer
-    
-    return max(100, voting_power)  # Minimum voting power
-
-# Example usage
-if __name__ == "__main__":
-    # Test consensus system
-    consensus = ProofOfStake(min_stake=1000, max_validators=5)
-    
-    # Create validator key pairs
-    priv1, pub1 = create_validator_keypair()
-    priv2, pub2 = create_validator_keypair()
-    
-    # Register validators
-    consensus.register_validator("val1", pub1, 5000, 0.1)
-    consensus.register_validator("val2", pub2, 8000, 0.15)
-    
-    # Update validator set
-    consensus._update_validator_set()
-    
-    # Get consensus state
-    state = consensus.get_consensus_state()
-    print(f"Consensus State: {state}")
-    
-    # Test block proposal
-    block_hash = "test_block_hash_123"
-    proposal = consensus.propose_block(block_hash, "val1", "parent_hash", 
-                                     ec.derive_private_key(int(priv1, 16), ec.SECP256K1()))
-    
-    if proposal:
-        print(f"Block proposed: {proposal.block_hash}")
-    
-    # Test voting
-    vote = consensus.vote_for_proposal(block_hash, "val2", "pre-commit",
-                                     ec.derive_private_key(int(priv2, 16), ec.SECP256K1()))
-    
-    if vote:
-        print(f"Vote cast: {vote.block_hash}")
