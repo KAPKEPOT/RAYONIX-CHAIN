@@ -2,10 +2,10 @@ import asyncio
 import logging
 import time
 from typing import Dict, List, Optional, Any
-from ..interfaces.connection_interface import IConnectionManager
-from ..exceptions import ConnectionError
-from ..models.peer_info import PeerInfo
-from ..config.network_types import ConnectionState, ProtocolType
+from network.interfaces.connection_interface import IConnectionManager
+from network.exceptions import ConnectionError
+from network.models.peer_info import PeerInfo
+from network.config.network_types import ConnectionState, ProtocolType
 
 logger = logging.getLogger("ConnectionManager")
 

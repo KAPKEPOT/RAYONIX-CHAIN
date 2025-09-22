@@ -3,23 +3,23 @@ import logging
 import ssl
 import time
 from typing import Dict, List, Optional, Any
-from ..config.node_config import NodeConfig
-from ..config.network_types import NetworkType, ProtocolType, ConnectionState, MessageType
-from ..models.peer_info import PeerInfo
-from ..models.network_message import NetworkMessage
-from ..exceptions import NetworkError, ConnectionError
-from .connection_manager import ConnectionManager
-from .peer_discovery import PeerDiscovery
-from .message_processor import MessageProcessor
-from .security_manager import SecurityManager
-from ..utils.rate_limiter import RateLimiter
-from ..utils.ban_manager import BanManager
-from ..utils.metrics_collector import MetricsCollector
-from ..protocols.tcp_handler import TCPHandler
-from ..protocols.udp_handler import UDPHandler
-from ..protocols.websocket_handler import WebSocketHandler
-from ..protocols.http_handler import HTTPHandler
-from ..protocols.udp_protocol import UDPProtocol
+from network.config.node_config import NodeConfig
+from network.config.network_types import NetworkType, ProtocolType, ConnectionState, MessageType
+from network.models.peer_info import PeerInfo
+from network.models.network_message import NetworkMessage
+from networm.exceptions import NetworkError, ConnectionError
+from network.core.connection_manager import ConnectionManager
+from network.core.peer_discovery import PeerDiscovery
+from network.core.message_processor import MessageProcessor
+from network.core.security_manager import SecurityManager
+from network.utils.rate_limiter import RateLimiter
+from network.utils.ban_manager import BanManager
+from network.utils.metrics_collector import MetricsCollector
+from network.protocols.tcp_handler import TCPHandler
+from network.protocols.udp_handler import UDPHandler
+from network.protocols.websocket_handler import WebSocketHandler
+from network.protocols.http_handler import HTTPHandler
+from network.protocols.udp_protocol import UDPProtocol
 
 logger = logging.getLogger("AdvancedP2PNetwork")
 

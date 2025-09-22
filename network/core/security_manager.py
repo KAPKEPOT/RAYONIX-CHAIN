@@ -3,9 +3,9 @@ import logging
 import ssl
 import time
 from typing import Dict, Optional
-from ..exceptions import HandshakeError
-from ..models.network_message import NetworkMessage
-from ..config.network_types import MessageType
+from network.exceptions import HandshakeError
+from network.models.network_message import NetworkMessage
+from network.config.network_types import MessageType
 
 logger = logging.getLogger("SecurityManager")
 

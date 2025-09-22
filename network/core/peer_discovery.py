@@ -3,11 +3,11 @@ import logging
 import random
 import time
 from typing import List, Dict, Any
-from ..interfaces.discovery_interface import IPeerDiscovery
-from ..exceptions import NetworkError
-from ..models.peer_info import PeerInfo
-from ..models.network_message import NetworkMessage
-from ..config.network_types import MessageType, ProtocolType
+from network.interfaces.discovery_interface import IPeerDiscovery
+from network.exceptions import NetworkError
+from network.models.peer_info import PeerInfo
+from network.models.network_message import NetworkMessage
+from network.config.network_types import MessageType, ProtocolType
 
 logger = logging.getLogger("PeerDiscovery")
 

@@ -2,10 +2,10 @@ import asyncio
 import logging
 import time
 from typing import Callable, Any, Dict, List
-from ..interfaces.processor_interface import IMessageProcessor
-from ..exceptions import MessageError
-from ..models.network_message import NetworkMessage
-from ..config.network_types import MessageType
+from network.interfaces.processor_interface import IMessageProcessor
+from network.exceptions import MessageError
+from network.models.network_message import NetworkMessage
+from network.config.network_types import MessageType
 
 logger = logging.getLogger("MessageProcessor")
 
