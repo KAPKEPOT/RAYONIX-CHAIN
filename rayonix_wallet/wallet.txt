@@ -1,0 +1,52 @@
+rayonix-wallet/
+├── src/
+│   └── rayonix_wallet/
+│       ├── __init__.py
+│       ├── core/
+│       │   ├── __init__.py
+│       │   ├── wallet.py              # Main Wallet class
+│       │   ├── config.py              # Configuration classes
+│       │   ├── types.py               # Data classes and enums
+│       │   └── exceptions.py          # Custom exceptions
+│       ├── crypto/
+│       │   ├── __init__.py
+│       │   ├── key_management.py      # Key generation and derivation
+│       │   ├── address.py             # Address derivation and validation
+│       │   ├── signing.py             # Transaction signing
+│       │   └── encryption.py          # Encryption utilities
+│       ├── storage/
+│       │   ├── __init__.py
+│       │   ├── database.py            # Database layer
+│       │   ├── backup.py              # Backup and restore
+│       │   └── cache.py               # Caching layer
+│       ├── services/
+│       │   ├── __init__.py
+│       │   ├── synchronizer.py        # Blockchain synchronization
+│       │   ├── transaction.py         # Transaction handling
+│       │   ├── balance.py             # Balance calculation
+│       │   └── multisig.py            # Multi-signature support
+│       ├── utils/
+│       │   ├── __init__.py
+│       │   ├── validation.py          # Input validation
+│       │   ├── qr_code.py             # QR code generation
+│       │   ├── logging.py             # Logging configuration
+│       │   └── helpers.py             # Utility functions
+│       └── interfaces/
+│           ├── __init__.py
+│           ├── blockchain.py          # Blockchain interface
+│           └── hardware.py            # Hardware wallet interface
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_core/
+│   ├── test_crypto/
+│   ├── test_storage/
+│   ├── test_services/
+│   └── test_utils/
+├── docs/
+│   ├── api.md
+│   └── usage.md
+├── requirements.txt
+├── setup.py
+├── pyproject.toml
+└── README.md
