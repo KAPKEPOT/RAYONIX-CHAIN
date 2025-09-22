@@ -2,7 +2,7 @@ import time
 import logging
 from typing import Dict, Deque
 from collections import deque
-from ..models.connection_metrics import ConnectionMetrics
+from network.models.connection_metrics import ConnectionMetrics
 
 logger = logging.getLogger("MetricsCollector")
 

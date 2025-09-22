@@ -1,8 +1,8 @@
 import msgpack
 import json
 from typing import Any
-from ..models.network_message import NetworkMessage
-from ..config.network_types import MessageType
+from network.models.network_message import NetworkMessage
+from network.config.network_types import MessageType
 
 def serialize_message(message: NetworkMessage) -> bytes:
     """Serialize message to bytes"""
