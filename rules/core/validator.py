@@ -9,11 +9,15 @@ from dataclasses import dataclass, field
 import logging
 import hashlib
 
-from ..storage import BlockStore
-from ..crypto import CryptoService
-from ..config import ConsensusConfig
-from ..utils import synchronized
-from ..exceptions import ValidatorError
+from rules.storage.block_store import BlockStore
+from rules.storage.vote_store import VoteStore
+from rules.crypto.keys import KeyManager
+from rules.crypto.signatures import KeyManager
+from rules.config.validation import ConfigValidator
+from rules.config.settings import Environment
+from rules.utils.error_handling import ErrorReporter, ErrorHandler
+from rules.utils.logging import JSONFormatter, ContextFilter, LogManager, RequestLogger
+from rules.exceptions import ValidatorError
 
 logger = logging.getLogger('consensus.validator')
 

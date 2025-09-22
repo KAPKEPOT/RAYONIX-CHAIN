@@ -1,21 +1,23 @@
-"""
-Consensus engine implementation - BFT Proof-of-Stake consensus
-"""
-
 import time
 import threading
 from typing import Dict, List, Optional, Set, Tuple, Callable, Any
 from dataclasses import dataclass, field
 import logging
-
-from ..storage import BlockStore, VoteStore
-from ..validator import ValidatorManager
-from ..crypto import CryptoService
-from ..network import NetworkLayer
-from ..metrics import MetricsCollector
-from ..config import ConsensusConfig
-from ..utils import synchronized, RateLimiter, Backoff
-from ..exceptions import ConsensusError, ValidationError, TimeoutError
+from rules.storage.block_store import BlockStore
+from rules.storage.vote_store import VoteStore
+from rules.storage.db import DBManager
+from rules.validator import ValidatorManager
+from rules.crypto.keys import KeyManager
+from rules.crypto.signatures import KeyManager
+from rules.network.transport import NetworkTransport
+from rules.network.serialization import MessageSerializer
+from rules.metrics.collector import MetricsCollector
+from rules.metrics.exporter import MetricsExporter
+from rules.config.validation import ConfigValidator
+from rules.config.settings import Environment
+from rules.utils.error_handling import ErrorReporter, ErrorHandler
+from rules.utils.logging import JSONFormatter, ContextFilter, LogManager, RequestLogger
+from rules.exceptions import ConsensusError, ValidationError, TimeoutError
 
 logger = logging.getLogger('consensus.engine')
 
