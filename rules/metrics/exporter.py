@@ -10,8 +10,8 @@ from dataclasses import dataclass
 import requests
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
-from .collector import MetricsCollector
-from ..exceptions import ConsensusError
+from rules.metrics.collector import MetricsCollector
+from rules.exceptions import ConsensusError
 
 logger = logging.getLogger('consensus.metrics')
 

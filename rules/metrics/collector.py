@@ -1,7 +1,3 @@
-"""
-Metrics collection for consensus system monitoring
-"""
-
 import time
 from typing import Dict, List, Optional, Callable
 from dataclasses import dataclass, field
@@ -12,7 +8,7 @@ import threading
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from prometheus_client.core import REGISTRY
 
-from ..exceptions import ConsensusError
+from rules.exceptions import ConsensusError
 
 logger = logging.getLogger('consensus.metrics')
 
