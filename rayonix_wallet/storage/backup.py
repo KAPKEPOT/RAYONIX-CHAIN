@@ -5,9 +5,9 @@ import tempfile
 from datetime import datetime
 from typing import Optional
 
-from ..core.exceptions import BackupError
-from ...crypto.encryption import EncryptionManager
-from ...utils.secure import SecureString
+from rayonix_wallet.core.exceptions import BackupError
+from rayonix_wallet.crypto.encryption import EncryptionManager
+from rayonix_wallet.utils.secure import SecureString
 
 class BackupManager:
     """Backup and restore functionality"""

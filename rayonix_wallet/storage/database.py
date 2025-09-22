@@ -4,8 +4,8 @@ import threading
 from typing import List, Dict, Optional, Any
 from contextlib import contextmanager
 
-from ..core.types import AddressInfo, Transaction, WalletState
-from ..core.exceptions import DatabaseError
+from rayonix_wallet.core.types import AddressInfo, Transaction, WalletState
+from rayonix_wallet.core.exceptions import DatabaseError
 
 class WalletDatabase:
     """SQLite database layer for wallet storage"""
