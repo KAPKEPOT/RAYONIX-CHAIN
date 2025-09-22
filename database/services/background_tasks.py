@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 import logging
 from dataclasses import dataclass
 
-from ..utils.exceptions import DatabaseError
+from database.utils.exceptions import DatabaseError
 
 logger = logging.getLogger(__name__)
 
