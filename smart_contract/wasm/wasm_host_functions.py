@@ -5,8 +5,8 @@ import wasmtime
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
-from ..core.gas_system.gas_meter import GasMeter
-from ..core.storage.contract_storage import ContractStorage
+from smart_contract.core.gas_system.gas_meter import GasMeter
+from smart_contract.core.storage.contract_storage import ContractStorage
 
 logger = logging.getLogger("SmartContract.WASMHost")
 

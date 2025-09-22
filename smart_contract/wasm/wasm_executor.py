@@ -5,11 +5,11 @@ import wasmtime
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
-from ..core.gas_system.gas_meter import GasMeter
-from ..core.storage.contract_storage import ContractStorage
-from ..core.execution_result import ExecutionResult
-from .wasm_host_functions import WASMHostFunctions
-from .bytecode_validator import WASMBytecodeValidator
+from smart_contract.core.gas_system.gas_meter import GasMeter
+from smart_contract.core.storage.contract_storage import ContractStorage
+from smart_contract.core.execution_result import ExecutionResult
+from smart_contract.wasm.wasm_host_functions import WASMHostFunctions
+from smart_contract.wasm.bytecode_validator import WASMBytecodeValidator
 
 logger = logging.getLogger("SmartContract.WASMExecutor")
 
