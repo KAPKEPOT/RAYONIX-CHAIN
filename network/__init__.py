@@ -1,4 +1,4 @@
-from network.core.advanced_p2p_network import AdvancedP2PNetwork
+from network.core.p2p_network import AdvancedP2PNetwork
 from network.config.node_config import NodeConfig
 from network.config.network_types import NetworkType, ProtocolType, ConnectionState, MessageType
 from network.models.peer_info import PeerInfo
