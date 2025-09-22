@@ -4,8 +4,10 @@ import hashlib
 import json
 import time
 import threading
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass, field
+import asyncio
+import statistics
+from typing import Dict, List, Optional, Any, Tuple, Set, Callable, Union
+from dataclasses import dataclass, field, asdict
 from enum import Enum, auto
 import ecdsa
 from ecdsa import SECP256k1, SigningKey, VerifyingKey
@@ -14,215 +16,1395 @@ import bech32
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from sortedcontainers import SortedDict, SortedList
+from collections import defaultdict, deque
+import heapq
+import msgpack
+import zlib
+import lmdb
+from contextlib import contextmanager
+from functools import lru_cache
+import cachetools
+import aiohttp
+from aioprocessing import AioQueue, AioProcess
+import uvloop
 import plyvel
-from merkle import MerkleTree, CompactMerkleTree
-from utxo import UTXOSet, Transaction, UTXO
-from consensus import ProofOfStake, Validator
-from smart_contract import ContractManager, SmartContract
-from database import AdvancedDatabase
-from wallet import RayonixWallet, WalletConfig, WalletType, AddressType, create_new_wallet
-from p2p_network import AdvancedP2PNetwork, NodeConfig
-import logging
+
+# Configure uvloop for better async performance
+asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class RayonixCoin:
+# Import internal modules
+from merkle import MerkleTree, CompactMerkleTree, MerkleTreeConfig, HashAlgorithm, ProofFormat, MerkleTreeFactory, MerkleTreeStats, global_stats, create_merkle_tree_from_file, create_merkle_tree_from_large_file, batch_verify_proofs, batch_verify_proofs_async, create_merkle_mountain_range
+
+from utxo import UTXOSet, Transaction, UTXO
+from consensus import ProofOfStake, Validator, ConsensusState, ValidatorStatus, VoteType, BlockProposal, Vote, RoundState
+# Remove the Block and BlockHeader classes from here
+from models import Block, BlockHeader
+
+from smart_contract import ContractManager, SmartContract, ContractState, ExecutionResult
+
+from database import (
+    AdvancedDatabase, 
+    DatabaseConfig, 
+    DatabaseType, 
+    CompressionType, 
+    EncryptionType, 
+    KeyNotFoundError,  
+    DatabaseError,     
+    SerializationError 
+)
+from wallet import RayonixWallet, WalletConfig, WalletType, AddressType
+from p2p_network import (
+    AdvancedP2PNetwork,
+    NodeConfig,
+    NetworkType,
+    ProtocolType,
+    MessageType,
+    ConnectionState,
+    PeerInfo,
+    NetworkMessage,
+    ConnectionMetrics
+)
+
+# Example usage:
+config = NodeConfig(
+    network_type=NetworkType.TESTNET,
+    listen_ip="0.0.0.0", 
+    listen_port=30303,
+    max_connections=10
+)
+
+network = AdvancedP2PNetwork(config)
+
+# You can then use the network instance
+#from crypto import CryptoUtils, SignatureVerifier, KeyDerivation, HashFunctions
+
+class BlockchainState(Enum):
+    SYNCING = auto()
+    SYNCED = auto()
+    FORKED = auto()
+    RECOVERING = auto()
+    STOPPED = auto()
+
+class ValidationLevel(Enum):
+    BASIC = auto()
+    STANDARD = auto()
+    FULL = auto()
+    CONSENSUS = auto()
+
+@dataclass
+class BlockHeader:
+    version: int
+    height: int
+    previous_hash: str
+    merkle_root: str
+    timestamp: int
+    difficulty: int
+    nonce: int
+    validator: str
+    signature: Optional[str] = None
+    extra_data: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class Block:
+    header: BlockHeader
+    transactions: List[Transaction]
+    hash: str
+    chainwork: int
+    size: int
+    received_time: float = field(default_factory=time.time)
+
+@dataclass
+class ChainState:
+    total_supply: int
+    circulating_supply: int
+    staking_rewards_distributed: int
+    foundation_funds: int
+    active_validators: int
+    total_stake: int
+    average_block_time: float
+    current_difficulty: int
+    last_block_time: float
+
+@dataclass
+class ForkResolution:
+    common_ancestor: int
+    old_chain_length: int
+    new_chain_length: int
+    chainwork_difference: int
+    resolution_time: float
+    blocks_rolled_back: int
+    blocks_applied: int
+
+@dataclass
+class ValidationResult:
+    is_valid: bool
+    errors: List[str]
+    warnings: List[str]
+    execution_time: float
+    validation_level: ValidationLevel
+
+@dataclass
+class TransactionCreationResult:
+    success: bool
+    transaction: Optional[Transaction]
+    fee_estimate: int
+    selected_utxos: List[UTXO]
+    change_amount: int
+    error_message: Optional[str] = None
+
+@dataclass
+class FeeEstimate:
+    low: int
+    medium: int
+    high: int
+    urgent: int
+    timestamp: float
+    confidence: float
+    mempool_size: int
     
-    def __init__(self, network_type: str = "mainnet", data_dir: str = "./rayonix_data"):
+@dataclass
+class TransactionOutput:
+    address: str
+    amount: int
+    locktime: int = 0
+    script_pubkey: Optional[str] = None
+    
+    def to_dict(self) -> Dict:
+        return {
+            'address': self.address,
+            'amount': self.amount,
+            'locktime': self.locktime,
+            'script_pubkey': self.script_pubkey
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict) -> 'TransactionOutput':
+        return cls(
+            address=data['address'],
+            amount=data['amount'],
+            locktime=data.get('locktime', 0),
+            script_pubkey=data.get('script_pubkey')
+        )    
+
+class StateManager:
+    """Manages blockchain state transitions atomically"""
+    
+    def __init__(self, database: AdvancedDatabase, utxo_set: UTXOSet, consensus: ProofOfStake, 
+                 contract_manager: ContractManager):
+        self.database = database
+        self.utxo_set = utxo_set
+        self.consensus = consensus
+        self.contract_manager = contract_manager
+        self.lock = threading.RLock()
+        self.state_transition_log = deque(maxlen=10000)
+        self.last_checkpoint = None
+        
+    @contextmanager
+    def atomic_state_transition(self):
+        """Context manager for atomic state transitions"""
+        transaction_id = self._start_transaction()
+        try:
+            yield transaction_id
+            self._commit_transaction(transaction_id)
+        except Exception as e:
+            self._rollback_transaction(transaction_id)
+            raise
+    
+    def _start_transaction(self) -> str:
+        """Start a new state transaction"""
+        transaction_id = hashlib.sha256(os.urandom(32)).hexdigest()[:16]
+        with self.lock:
+            # Create transaction snapshot
+            snapshot = {
+                'utxo_set': self.utxo_set.snapshot(),
+                'consensus_state': self.consensus.snapshot(),
+                'contract_states': self.contract_manager.snapshot(),
+                'timestamp': time.time()
+            }
+            self.state_transition_log.append((transaction_id, 'start', snapshot))
+        return transaction_id
+    
+    def _commit_transaction(self, transaction_id: str):
+        """Commit a state transaction"""
+        with self.lock:
+            self.state_transition_log.append((transaction_id, 'commit', None))
+            # Persist state to database
+            self._persist_state()
+    
+    def _rollback_transaction(self, transaction_id: str):
+        """Rollback a state transaction"""
+        with self.lock:
+            # Find the transaction start and restore state
+            for i, (tid, action, snapshot) in enumerate(reversed(self.state_transition_log)):
+                if tid == transaction_id and action == 'start':
+                    self.utxo_set.restore(snapshot['utxo_set'])
+                    self.consensus.restore(snapshot['consensus_state'])
+                    self.contract_manager.restore(snapshot['contract_states'])
+                    break
+            self.state_transition_log.append((transaction_id, 'rollback', None))
+    
+    def apply_block(self, block: Block) -> bool:
+        """Apply a block to the state atomically"""
+        with self.atomic_state_transition() as transaction_id:
+            # Update UTXO set
+            for tx in block.transactions:
+                if not self.utxo_set.process_transaction(tx):
+                    raise ValueError(f"Failed to process transaction {tx.hash}")
+            
+            # Update consensus state
+            if not self.consensus.process_block(block):
+                raise ValueError("Failed to process block in consensus")
+            
+            # Execute smart contracts
+            for tx in block.transactions:
+                if tx.is_contract_call():
+                    result = self.contract_manager.execute_transaction(tx)
+                    if not result.success:
+                        raise ValueError(f"Contract execution failed: {result.error}")
+            
+            return True
+    
+    def revert_block(self, block: Block) -> bool:
+        """Revert a block from the state"""
+        with self.atomic_state_transition() as transaction_id:
+            # Revert transactions in reverse order
+            for tx in reversed(block.transactions):
+                if not self.utxo_set.revert_transaction(tx):
+                    raise ValueError(f"Failed to revert transaction {tx.hash}")
+            
+            # Revert consensus state
+            if not self.consensus.revert_block(block):
+                raise ValueError("Failed to revert block in consensus")
+            
+            # Revert contract states
+            for tx in reversed(block.transactions):
+                if tx.is_contract_call():
+                    if not self.contract_manager.revert_transaction(tx):
+                        raise ValueError(f"Failed to revert contract transaction {tx.hash}")
+            
+            return True
+    
+    def _persist_state(self):
+        """Persist current state to database"""
+        try:
+            # Save UTXO set
+            self.database.put('utxo_set_state', self.utxo_set.to_bytes())
+            
+            # Save consensus state
+            self.database.put('consensus_state', self.consensus.to_bytes())
+            
+            # Save contract states
+            self.database.put('contract_states', self.contract_manager.to_bytes())
+            
+            # Update state checksum
+            state_hash = self._calculate_state_hash()
+            self.database.put('state_checksum', state_hash)
+            
+        except Exception as e:
+            logger.error(f"Failed to persist state: {e}")
+            raise
+    
+    def _calculate_state_hash(self) -> str:
+        """Calculate hash of current state for integrity checking"""
+        state_data = {
+            'utxo_set_hash': self.utxo_set.calculate_hash(),
+            'consensus_hash': self.consensus.calculate_hash(),
+            'contracts_hash': self.contract_manager.calculate_hash(),
+            'timestamp': time.time()
+        }
+        return hashlib.sha256(json.dumps(state_data, sort_keys=True).encode()).hexdigest()
+    
+    def create_checkpoint(self) -> str:
+        """Create a state checkpoint"""
+        checkpoint_id = f"checkpoint_{int(time.time())}"
+        checkpoint_data = {
+            'utxo_set': self.utxo_set.snapshot(),
+            'consensus': self.consensus.snapshot(),
+            'contracts': self.contract_manager.snapshot(),
+            'timestamp': time.time(),
+            'block_height': self.get_current_height()
+        }
+        self.database.put(f"checkpoint_{checkpoint_id}", checkpoint_data)
+        self.last_checkpoint = checkpoint_id
+        return checkpoint_id
+    
+    def restore_checkpoint(self, checkpoint_id: str) -> bool:
+        """Restore state from checkpoint"""
+        try:
+            checkpoint_data = self.database.get(f"checkpoint_{checkpoint_id}")
+            if not checkpoint_data:
+                return False
+            
+            self.utxo_set.restore(checkpoint_data['utxo_set'])
+            self.consensus.restore(checkpoint_data['consensus'])
+            self.contract_manager.restore(checkpoint_data['contracts'])
+            
+            logger.info(f"Restored state from checkpoint {checkpoint_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to restore checkpoint: {e}")
+            return False
+
+class ValidationManager:
+    """Modular validation system with validation pipelines"""
+    
+    def __init__(self, state_manager: StateManager, config: Dict[str, Any]):
+        self.state_manager = state_manager
+        self.config = config
+        self.validation_pipelines = {
+            ValidationLevel.BASIC: self._create_basic_pipeline(),
+            ValidationLevel.STANDARD: self._create_standard_pipeline(),
+            ValidationLevel.FULL: self._create_full_pipeline(),
+            ValidationLevel.CONSENSUS: self._create_consensus_pipeline()
+        }
+        self.cache = cachetools.LRUCache(maxsize=10000)
+        self.validation_stats = defaultdict(int)
+    
+    def validate_block(self, block: Block, level: ValidationLevel = ValidationLevel.FULL) -> ValidationResult:
+        """Production-ready block validation"""
+        if block.header.height == 0:
+            return self._validate_genesis_block(block)
+        
+        result = ValidationResult(
+            is_valid=False,
+            errors=[],
+            warnings=[],
+            execution_time=0,
+            validation_level=level
+        )
+        
+        start_time = time.time()
+        
+        try:
+            pipeline = self.validation_pipelines[level]
+            
+            for validator_name, validator_func in pipeline:
+                validator_result = validator_func(block)
+                
+                if not validator_result['valid']:
+                    result.errors.extend(validator_result['errors'])
+                
+                if validator_result['warnings']:
+                    result.warnings.extend(validator_result['warnings'])
+                
+                # Stop on critical errors for non-consensus levels
+                if result.errors and level != ValidationLevel.CONSENSUS:
+                    break
+            
+            result.is_valid = len(result.errors) == 0
+            
+        except Exception as e:
+            logger.error(f"Validation pipeline failed: {e}")
+            result.errors.append(f"Validation system error: {str(e)}")
+            result.is_valid = False
+        
+        result.execution_time = time.time() - start_time
+        return result
+    
+    def _validate_genesis_block(self, block: Block) -> ValidationResult:
+        """Fast-track genesis validation"""
+        result = ValidationResult(
+            is_valid=True,
+            errors=[],
+            warnings=[],
+            execution_time=0.001,  # Fast
+            validation_level=ValidationLevel.BASIC
+        )
+        
+        # Basic genesis checks
+        checks = [
+            (block.header.height == 0, "Genesis must have height 0"),
+            (block.header.previous_hash == '0' * 64, "Genesis previous hash must be all zeros"),
+            (len(block.transactions) >= 1, "Genesis must have at least one transaction"),
+            (block.header.validator == 'genesis', "Genesis validator must be 'genesis'")
+        ]
+        
+        for condition, error_msg in checks:
+            if not condition:
+                result.is_valid = False
+                result.errors.append(error_msg)
+        
+        return result
+    
+    def validate_transaction(self, transaction: Transaction, level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationResult:
+        """Validate a transaction with specified validation level"""
+        # Similar implementation to validate_block but for transactions
+        pass
+    
+    def _create_basic_pipeline(self) -> List[Tuple[str, Callable]]:
+        """Create basic validation pipeline"""
+        return [
+            ('block_structure', self._validate_block_structure),
+            ('block_hash', self._validate_block_hash),
+            ('previous_block', self._validate_previous_block)
+        ]
+    
+    def _create_standard_pipeline(self) -> List[Tuple[str, Callable]]:
+        """Create standard validation pipeline"""
+        pipeline = self._create_basic_pipeline()
+        pipeline.extend([
+            ('merkle_root', self._validate_merkle_root),
+            ('timestamp', self._validate_timestamp),
+            ('difficulty', self._validate_difficulty),
+            ('signature', self._validate_signature)
+        ])
+        return pipeline
+    
+    def _create_full_pipeline(self) -> List[Tuple[str, Callable]]:
+        """Create full validation pipeline"""
+        pipeline = self._create_standard_pipeline()
+        pipeline.extend([
+            ('transactions_basic', self._validate_transactions_basic),
+            ('gas_limit', self._validate_gas_limit),
+            ('block_size', self._validate_block_size)
+        ])
+        return pipeline
+    
+    def _create_consensus_pipeline(self) -> List[Tuple[str, Callable]]:
+        """Create consensus-level validation pipeline"""
+        pipeline = self._create_full_pipeline()
+        pipeline.extend([
+            ('transactions_full', self._validate_transactions_full),
+            ('state_transition', self._validate_state_transition),
+            ('consensus_rules', self._validate_consensus_rules)
+        ])
+        return pipeline
+    
+    def _validate_block_structure(self, block: Block) -> Dict[str, Any]:
+        """Validate block structure"""
+        errors = []
+        warnings = []
+        
+        # Check required fields
+        required_fields = ['version', 'height', 'previous_hash', 'merkle_root', 
+                          'timestamp', 'difficulty', 'nonce', 'validator']
+        
+        for field in required_fields:
+            if not hasattr(block.header, field) or getattr(block.header, field) is None:
+                errors.append(f"Missing required field: {field}")
+        
+        # Check block size
+        if block.size > self.config['max_block_size']:
+            errors.append(f"Block size {block.size} exceeds maximum {self.config['max_block_size']}")
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': warnings}
+    
+    def _validate_block_hash(self, block: Block) -> Dict[str, Any]:
+        """Validate block hash"""
+        errors = []
+        calculated_hash = self._calculate_block_hash(block)
+        
+        if calculated_hash != block.hash:
+            errors.append(f"Invalid block hash. Calculated: {calculated_hash}, Expected: {block.hash}")
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}
+    
+    def _validate_previous_block(self, block: Block) -> Dict[str, Any]:
+        """Validate previous block reference"""
+        errors = []
+        
+        try:
+            previous_block = self.state_manager.database.get_block(block.header.previous_hash)
+            if not previous_block:
+                errors.append(f"Previous block not found: {block.header.previous_hash}")
+            elif previous_block.header.height != block.header.height - 1:
+                errors.append(f"Height mismatch with previous block")
+                
+        except Exception as e:
+            errors.append(f"Error validating previous block: {str(e)}")
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}
+    
+    def _validate_merkle_root(self, block: Block) -> Dict[str, Any]:
+        """Validate merkle root"""
+        errors = []
+        
+        try:
+            tx_hashes = [tx.hash for tx in block.transactions]
+            calculated_root = MerkleTree(tx_hashes).get_root_hash()
+            
+            if calculated_root != block.header.merkle_root:
+                errors.append(f"Invalid merkle root. Calculated: {calculated_root}, Expected: {block.header.merkle_root}")
+                
+        except Exception as e:
+            errors.append(f"Error calculating merkle root: {str(e)}")
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}
+    
+    def _validate_timestamp(self, block: Block) -> Dict[str, Any]:
+        """Validate block timestamp"""
+        errors = []
+        warnings = []
+        
+        current_time = time.time()
+        max_future_time = current_time + self.config['max_future_block_time']
+        
+        if block.header.timestamp > max_future_time:
+            errors.append(f"Block timestamp is too far in the future")
+        elif block.header.timestamp < current_time - self.config['max_past_block_time']:
+            warnings.append("Block timestamp is very old")
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': warnings}
+    
+    def _validate_difficulty(self, block: Block) -> Dict[str, Any]:
+        """Validate block difficulty"""
+        errors = []
+        
+        try:
+            expected_difficulty = self.state_manager.consensus.calculate_difficulty(block.header.height)
+            if block.header.difficulty != expected_difficulty:
+                errors.append(f"Invalid difficulty. Expected: {expected_difficulty}, Got: {block.header.difficulty}")
+                
+        except Exception as e:
+            errors.append(f"Error calculating difficulty: {str(e)}")
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}
+    
+    def _validate_signature(self, block: Block) -> Dict[str, Any]:
+        """Validate block signature"""
+        errors = []
+        
+        try:
+            if not self.state_manager.consensus.validate_block_signature(block):
+                errors.append("Invalid block signature")
+                
+        except Exception as e:
+            errors.append(f"Error validating signature: {str(e)}")
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}
+    
+    def _validate_transactions_basic(self, block: Block) -> Dict[str, Any]:
+        """Basic transaction validation"""
+        errors = []
+        warnings = []
+        
+        for tx in block.transactions:
+            result = self.validate_transaction(tx, ValidationLevel.BASIC)
+            if not result.is_valid:
+                errors.extend([f"Transaction {tx.hash}: {e}" for e in result.errors])
+            if result.warnings:
+                warnings.extend([f"Transaction {tx.hash}: {w}" for w in result.warnings])
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': warnings}
+    
+    def _validate_transactions_full(self, block: Block) -> Dict[str, Any]:
+        """Full transaction validation including state checks"""
+        errors = []
+        warnings = []
+        
+        for tx in block.transactions:
+            
+            result = self.validate_transaction(tx, ValidationLevel.FULL)
+            if not result.is_valid:
+                errors.extend([f"Transaction {tx.hash}: {e}" for e in result.errors])
+            if result.warnings:
+                warnings.extend([f"Transaction {tx.hash}: {w}" for w in result.warnings])
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': warnings}
+    
+    def _validate_state_transition(self, block: Block) -> Dict[str, Any]:
+        """Validate state transition caused by block"""
+        errors = []
+        
+        try:
+            # Create temporary state manager for validation
+            temp_state = self.state_manager.__class__(
+                self.state_manager.database,
+                self.state_manager.utxo_set.__class__(),
+                self.state_manager.consensus.__class__(),
+                self.state_manager.contract_manager.__class__()
+            )
+            
+            # Copy current state
+            temp_state.utxo_set.restore(self.state_manager.utxo_set.snapshot())
+            temp_state.consensus.restore(self.state_manager.consensus.snapshot())
+            temp_state.contract_manager.restore(self.state_manager.contract_manager.snapshot())
+            
+            # Try to apply block
+            if not temp_state.apply_block(block):
+                errors.append("State transition validation failed")
+                
+        except Exception as e:
+            errors.append(f"State transition error: {str(e)}")
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}
+    
+    def _validate_consensus_rules(self, block: Block) -> Dict[str, Any]:
+        """Validate consensus-specific rules"""
+        errors = []
+        
+        try:
+            if not self.state_manager.consensus.validate_block_consensus(block):
+                errors.append("Block violates consensus rules")
+                
+        except Exception as e:
+            errors.append(f"Consensus validation error: {str(e)}")
+        
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}
+    
+    def _calculate_block_hash(self, block: Block) -> str:
+        """Calculate block hash for validation"""
+        header_data = json.dumps(asdict(block.header), sort_keys=True).encode()
+        return hashlib.sha256(header_data).hexdigest()
+        
+    def _validate_gas_limit(self, block: Block) -> Dict[str, Any]:
+    	"""Validate block gas limit"""
+    	errors = []
+    	warnings = []
+    	
+    	try:
+    		# Calculate total gas used by transactions
+    		total_gas_used = sum(tx.gas_used for tx in block.transactions if hasattr(tx, 'gas_used'))
+    		
+    		# Check if gas used exceeds gas limit
+    		if total_gas_used > self.config['max_gas_per_block']:
+    			errors.append(f"Block gas usage {total_gas_used} exceeds limit {self.config['max_gas_per_block']}")
+    			
+    	except Exception as e:
+    		errors.append(f"Error validating gas limit: {str(e)}")
+    	return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}
+    		
+    def _validate_block_size(self, block: Block) -> Dict[str, Any]:
+        """Validate block size"""
+        errors = []
+        try:
+        	if block.size > self.config['max_block_size']:
+        		errors.append(f"Block size {block.size} exceeds maximum {self.config['max_block_size']}")
+        		
+        except Exception as e:
+        	errors.append(f"Error validating block size: {str(e)}")
+        return {'valid': len(errors) == 0, 'errors': errors, 'warnings': []}	
+        
+    def _validate_transaction(self, transaction: Transaction, level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationResult:
+        """Validate a transaction with specified validation level"""
+        start_time = time.time()
+        errors = []
+        warnings = []
+        try:
+        	# Basic transaction validation
+        	if not transaction.inputs:
+        		errors.append("Transaction has no inputs")
+        		
+        	if not transaction.outputs:
+        		errors.append("Transaction has no outputs")
+        		
+        	# Check transaction size
+        	tx_size = len(transaction.to_bytes())
+        	if tx_size > self.config['max_transaction_size']:
+        		errors.append(f"Transaction size {tx_size} exceeds maximum {self.config['max_transaction_size']}")
+        	# Check signature if present
+        	if level in [ValidationLevel.STANDARD, ValidationLevel.FULL, ValidationLevel.CONSENSUS]:
+        		if not self._validate_transaction_signature(transaction):
+        			errors.append("Invalid transaction signature")
+        	# Check inputs and outputs for FULL and CONSENSUS levels
+        	if level in [ValidationLevel.FULL, ValidationLevel.CONSENSUS]:
+        		input_sum = sum(inp.amount for inp in transaction.inputs)
+        		output_sum = sum(out.amount for out in transaction.outputs)
+        		if output_sum > input_sum:
+        			errors.append("Output amount exceeds input amount")
+        		# Check for double spends
+        		if self._check_double_spend(transaction):
+        			errors.append("Transaction contains double spend")
+        except Exception as e:
+        	errors.append(f"Transaction validation error: {str(e)}")
+        execution_time = time.time() - start_time
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            execution_time=execution_time,
+            validation_level=level
+        )
+        
+    def _validate_transaction_signature(self, transaction: Transaction) -> bool:
+    	"""Validate transaction signature"""
+    	# This would implement proper signature verification
+    	return True
+    	
+    def _check_double_spend(self, transaction: Transaction) -> bool:
+    	"""Check for double spends in transaction"""
+    	# This would check if any inputs are already spent
+    	# For now, return False as placeholder
+    	return False        
+ 
+class TransactionManager:
+    """Advanced transaction creation and fee estimation"""
+    
+    def __init__(self, state_manager: StateManager, wallet: RayonixWallet, config: Dict[str, Any]):
+        self.state_manager = state_manager
+        self.wallet = wallet
+        self.config = config
+        self.fee_estimator = FeeEstimator(state_manager, config)
+        self.coin_selection_strategies = {
+            'default': self._default_coin_selection,
+            'privacy': self._privacy_coin_selection,
+            'efficiency': self._efficiency_coin_selection,
+            'consolidation': self._consolidation_coin_selection
+        }
+        self.mempool = SortedDict()  # tx_hash -> (transaction, timestamp, fee_rate)
+    
+    def create_transaction(self, from_address: str, to_address: str, amount: int,
+                         fee_strategy: str = 'default', coin_selection: str = 'default',
+                         memo: Optional[str] = None, locktime: int = 0) -> TransactionCreationResult:
+        """Create a transaction with advanced options"""
+        try:
+            # Get UTXOs for sender
+            utxos = self.state_manager.utxo_set.get_utxos_for_address(from_address)
+            if not utxos:
+                return TransactionCreationResult(
+                    success=False,
+                    transaction=None,
+                    fee_estimate=0,
+                    selected_utxos=[],
+                    change_amount=0,
+                    error_message="No spendable funds"
+                )
+            
+            # Estimate fee
+            fee_estimate = self.fee_estimator.estimate_fee(fee_strategy)
+            
+            # Select coins based on strategy
+            coin_selector = self.coin_selection_strategies.get(coin_selection, self._default_coin_selection)
+            selected_utxos, total_input, change_amount = coin_selector(utxos, amount, fee_estimate)
+            
+            if total_input < amount + fee_estimate:
+                return TransactionCreationResult(
+                    success=False,
+                    transaction=None,
+                    fee_estimate=fee_estimate,
+                    selected_utxos=selected_utxos,
+                    change_amount=change_amount,
+                    error_message="Insufficient funds"
+                )
+            
+            # Create transaction inputs
+            inputs = []
+            for utxo in selected_utxos:
+                inputs.append(TransactionInput(
+                    tx_hash=utxo.tx_hash,
+                    output_index=utxo.output_index,
+                    signature=None,  # Will be signed later
+                    public_key=None  # Will be set during signing
+                ))
+            
+            # Create transaction outputs
+            outputs = [
+                TransactionOutput(
+                    address=to_address,
+                    amount=amount,
+                    locktime=locktime
+                )
+            ]
+            
+            # Add change output if needed
+            if change_amount > 0:
+                change_address = self.wallet.get_change_address()
+                outputs.append(TransactionOutput(
+                    address=change_address,
+                    amount=change_amount,
+                    locktime=0
+                ))
+            
+            # Create transaction
+            transaction = Transaction(
+                inputs=inputs,
+                outputs=outputs,
+                locktime=locktime,
+                version=2,
+                memo=memo
+            )
+            
+            # Sign transaction
+            signed_transaction = self.wallet.sign_transaction(transaction)
+            
+            return TransactionCreationResult(
+                success=True,
+                transaction=signed_transaction,
+                fee_estimate=fee_estimate,
+                selected_utxos=selected_utxos,
+                change_amount=change_amount,
+                error_message=None
+            )
+            
+        except Exception as e:
+            return TransactionCreationResult(
+                success=False,
+                transaction=None,
+                fee_estimate=0,
+                selected_utxos=[],
+                change_amount=0,
+                error_message=str(e)
+            )
+    
+    def _default_coin_selection(self, utxos: List[UTXO], amount: int, fee: int) -> Tuple[List[UTXO], int, int]:
+        """Default coin selection strategy (largest first)"""
+        sorted_utxos = sorted(utxos, key=lambda x: x.amount, reverse=True)
+        selected = []
+        total = 0
+        
+        for utxo in sorted_utxos:
+            if total >= amount + fee:
+                break
+            selected.append(utxo)
+            total += utxo.amount
+        
+        change = total - amount - fee
+        return selected, total, change
+    
+    def _privacy_coin_selection(self, utxos: List[UTXO], amount: int, fee: int) -> Tuple[List[UTXO], int, int]:
+        """Privacy-focused coin selection (minimize address reuse)"""
+        # Prefer UTXOs that haven't been spent from recently
+        sorted_utxos = sorted(utxos, key=lambda x: x.age, reverse=True)
+        selected = []
+        total = 0
+        
+        for utxo in sorted_utxos:
+            if total >= amount + fee:
+                break
+            selected.append(utxo)
+            total += utxo.amount
+        
+        change = total - amount - fee
+        return selected, total, change
+    
+    def _efficiency_coin_selection(self, utxos: List[UTXO], amount: int, fee: int) -> Tuple[List[UTXO], int, int]:
+        """Efficiency-focused coin selection (minimize UTXO count)"""
+        # Try to find a single UTXO that covers the amount
+        for utxo in sorted(utxos, key=lambda x: x.amount, reverse=True):
+            if utxo.amount >= amount + fee:
+                change = utxo.amount - amount - fee
+                return [utxo], utxo.amount, change
+        
+        # Fall back to default strategy
+        return self._default_coin_selection(utxos, amount, fee)
+    
+    def _consolidation_coin_selection(self, utxos: List[UTXO], amount: int, fee: int) -> Tuple[List[UTXO], int, int]:
+        """Consolidation strategy (spend many small UTXOs)"""
+        sorted_utxos = sorted(utxos, key=lambda x: x.amount)
+        selected = []
+        total = 0
+        
+        for utxo in sorted_utxos:
+            selected.append(utxo)
+            total += utxo.amount
+            if total >= amount + fee:
+                break
+        
+        change = total - amount - fee
+        return selected, total, change
+    
+    def add_to_mempool(self, transaction: Transaction) -> bool:
+        """Add transaction to mempool"""
+        try:
+            # Validate transaction
+            validation_result = self.validate_transaction(transaction)
+            if not validation_result.is_valid:
+                return False
+            
+            # Calculate fee rate
+            fee = sum(inp.amount for inp in transaction.inputs) - sum(out.amount for out in transaction.outputs)
+            size = len(transaction.to_bytes())
+            fee_rate = fee / size if size > 0 else 0
+            
+            # Add to mempool sorted by fee rate
+            self.mempool[transaction.hash] = (transaction, time.time(), fee_rate)
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to add transaction to mempool: {e}")
+            return False
+    
+    def get_mempool_transactions(self, limit: int = 1000) -> List[Transaction]:
+        """Get transactions from mempool sorted by fee rate"""
+        transactions = []
+        for tx_hash, (tx, timestamp, fee_rate) in self.mempool.items():
+            transactions.append(tx)
+            if len(transactions) >= limit:
+                break
+        return transactions
+    
+    def remove_from_mempool(self, transaction_hashes: List[str]):
+        """Remove transactions from mempool"""
+        for tx_hash in transaction_hashes:
+            if tx_hash in self.mempool:
+                del self.mempool[tx_hash]
+
+class FeeEstimator:
+    """Dynamic fee estimation based on network conditions"""
+    
+    def __init__(self, state_manager: StateManager, config: Dict[str, Any]):
+        self.state_manager = state_manager
+        self.config = config
+        self.fee_history = deque(maxlen=1000)
+        self.mempool_stats = deque(maxlen=100)
+        self.last_estimate = FeeEstimate(0, 0, 0, 0, time.time(), 0.0, 0)
+    
+    def estimate_fee(self, strategy: str = 'medium') -> int:
+        """Estimate transaction fee based on strategy"""
+        current_stats = self._get_current_mempool_stats()
+        historical_stats = self._get_historical_stats()
+        
+        if strategy == 'low':
+            return self._calculate_low_fee(current_stats, historical_stats)
+        elif strategy == 'medium':
+            return self._calculate_medium_fee(current_stats, historical_stats)
+        elif strategy == 'high':
+            return self._calculate_high_fee(current_stats, historical_stats)
+        elif strategy == 'urgent':
+            return self._calculate_urgent_fee(current_stats, historical_stats)
+        else:
+            return self.config['min_transaction_fee']
+    
+    def _get_current_mempool_stats(self) -> Dict[str, Any]:
+        """Get current mempool statistics"""
+        # This would query the actual mempool state
+        return {
+            'size': 0,  # Placeholder
+            'average_fee_rate': 0,
+            'capacity_usage': 0,
+            'priority_count': 0
+        }
+    
+    def _get_historical_stats(self) -> Dict[str, Any]:
+        """Get historical fee statistics"""
+        # This would analyze historical fee data
+        return {
+            'average_fees': [],
+            'congestion_patterns': {},
+            'seasonal_trends': {}
+        }
+    
+    def _calculate_low_fee(self, current_stats: Dict, historical_stats: Dict) -> int:
+        """Calculate low priority fee"""
+        base_fee = self.config['min_transaction_fee']
+        # Add congestion adjustment
+        congestion_factor = max(1.0, current_stats['capacity_usage'] / 0.5)
+        return int(base_fee * congestion_factor)
+    
+    def _calculate_medium_fee(self, current_stats: Dict, historical_stats: Dict) -> int:
+        """Calculate medium priority fee"""
+        base_fee = self.config['min_transaction_fee'] * 2
+        congestion_factor = max(1.0, current_stats['capacity_usage'] / 0.3)
+        return int(base_fee * congestion_factor)
+    
+    def _calculate_high_fee(self, current_stats: Dict, historical_stats: Dict) -> int:
+        """Calculate high priority fee"""
+        base_fee = self.config['min_transaction_fee'] * 5
+        congestion_factor = max(1.0, current_stats['capacity_usage'] / 0.1)
+        return int(base_fee * congestion_factor)
+    
+    def _calculate_urgent_fee(self, current_stats: Dict, historical_stats: Dict) -> int:
+        """Calculate urgent priority fee"""
+        base_fee = self.config['min_transaction_fee'] * 10
+        congestion_factor = max(1.0, current_stats['capacity_usage'] / 0.05)
+        return int(base_fee * congestion_factor)
+    
+    def update_fee_history(self, block: Block):
+        """Update fee history with new block data"""
+        block_fees = sum(tx.fee for tx in block.transactions if tx.fee > 0)
+        average_fee = block_fees / len(block.transactions) if block.transactions else 0
+        
+        self.fee_history.append({
+            'height': block.header.height,
+            'timestamp': block.header.timestamp,
+            'average_fee': average_fee,
+            'total_fees': block_fees,
+            'transaction_count': len(block.transactions)
+        })
+
+class ForkManager:
+    """Manages blockchain forks and reconciliation"""
+    
+    def __init__(self, state_manager: StateManager, validation_manager: ValidationManager, config: Dict[str, Any]):
+        self.state_manager = state_manager
+        self.validation_manager = validation_manager
+        self.config = config
+        self.fork_history = deque(maxlen=100)
+        self.reorganization_count = 0
+        self.last_reorganization = 0
+        self.fork_detection_threshold = config.get('fork_detection_threshold', 6)
+    
+    async def handle_possible_fork(self, new_block: Block) -> Optional[ForkResolution]:
+        """Handle a potential fork caused by a new block"""
+        current_head = self.state_manager.get_chain_head()
+        
+        # Check if this block causes a fork
+        if new_block.header.previous_hash != current_head.hash:
+            logger.warning(f"Potential fork detected at height {new_block.header.height}")
+            return await self._resolve_fork(new_block, current_head)
+        
+        return None
+    
+    async def _resolve_fork(self, new_block: Block, current_head: Block) -> ForkResolution:
+        """Resolve a fork between two chains"""
+        start_time = time.time()
+        
+        try:
+            # Find common ancestor
+            common_ancestor = await self._find_common_ancestor(new_block, current_head)
+            if not common_ancestor:
+                logger.error("Could not find common ancestor for fork resolution")
+                return None
+            
+            # Get both chains from common ancestor
+            old_chain = await self._get_chain_segment(common_ancestor.hash, current_head.hash)
+            new_chain = await self._get_chain_segment(common_ancestor.hash, new_block.hash)
+            
+            # Calculate chainwork for both chains
+            old_chainwork = sum(block.chainwork for block in old_chain)
+            new_chainwork = sum(block.chainwork for block in new_chain)
+            
+            # Decide which chain to keep
+            if new_chainwork > old_chainwork:
+                # New chain has more work, reorganize
+                resolution = await self._reorganize_to_new_chain(old_chain, new_chain, common_ancestor)
+                self.reorganization_count += 1
+                self.last_reorganization = time.time()
+                return resolution
+            else:
+                # Old chain has more or equal work, keep it
+                logger.info("Keeping existing chain (equal or more chainwork)")
+                return ForkResolution(
+                    common_ancestor=common_ancestor.height,
+                    old_chain_length=len(old_chain),
+                    new_chain_length=len(new_chain),
+                    chainwork_difference=old_chainwork - new_chainwork,
+                    resolution_time=time.time() - start_time,
+                    blocks_rolled_back=0,
+                    blocks_applied=0
+                )
+                
+        except Exception as e:
+            logger.error(f"Fork resolution failed: {e}")
+            raise
+    
+    async def _find_common_ancestor(self, block1: Block, block2: Block) -> Optional[Block]:
+        """Find common ancestor of two blocks"""
+        # If blocks are at different heights, walk back the longer chain
+        height_diff = abs(block1.header.height - block2.header.height)
+        
+        if block1.header.height > block2.header.height:
+            walk_block = block1
+            for _ in range(height_diff):
+                walk_block = self.state_manager.database.get_block(walk_block.header.previous_hash)
+                if not walk_block:
+                	                    return None
+        else:
+            walk_block = block2
+            for _ in range(height_diff):
+                walk_block = self.state_manager.database.get_block(walk_block.header.previous_hash)
+                if not walk_block:
+                    return None
+        
+        # Now both blocks are at same height, walk back until we find common hash
+        block_a = block1 if block1.header.height <= block2.header.height else walk_block
+        block_b = block2 if block2.header.height <= block1.header.height else walk_block
+        
+        while block_a and block_b:
+            if block_a.hash == block_b.hash:
+                return block_a
+            
+            block_a = self.state_manager.database.get_block(block_a.header.previous_hash)
+            block_b = self.state_manager.database.get_block(block_b.header.previous_hash)
+        
+        return None
+    
+    async def _get_chain_segment(self, from_hash: str, to_hash: str) -> List[Block]:
+        """Get chain segment between two blocks"""
+        segment = []
+        current_block = self.state_manager.database.get_block(to_hash)
+        
+        while current_block and current_block.hash != from_hash:
+            segment.append(current_block)
+            current_block = self.state_manager.database.get_block(current_block.header.previous_hash)
+        
+        segment.reverse()  # Return from ancestor to tip
+        return segment
+    
+    async def _reorganize_to_new_chain(self, old_chain: List[Block], new_chain: List[Block], 
+                                     common_ancestor: Block) -> ForkResolution:
+        """Reorganize to new chain by rolling back old blocks and applying new ones"""
+        rolled_back_blocks = 0
+        applied_blocks = 0
+        
+        try:
+            # Roll back old chain blocks
+            for block in reversed(old_chain):
+                if block.header.height > common_ancestor.height:
+                    if not self.state_manager.revert_block(block):
+                        raise ValueError(f"Failed to revert block {block.hash}")
+                    rolled_back_blocks += 1
+            
+            # Apply new chain blocks
+            for block in new_chain:
+                if block.header.height > common_ancestor.height:
+                    validation_result = self.validation_manager.validate_block(block, ValidationLevel.CONSENSUS)
+                    if not validation_result.is_valid:
+                        raise ValueError(f"New chain block validation failed: {validation_result.errors}")
+                    
+                    if not self.state_manager.apply_block(block):
+                        raise ValueError(f"Failed to apply block {block.hash}")
+                    applied_blocks += 1
+            
+            resolution = ForkResolution(
+                common_ancestor=common_ancestor.height,
+                old_chain_length=len(old_chain),
+                new_chain_length=len(new_chain),
+                chainwork_difference=sum(b.chainwork for b in new_chain) - sum(b.chainwork for b in old_chain),
+                resolution_time=time.time() - start_time,
+                blocks_rolled_back=rolled_back_blocks,
+                blocks_applied=applied_blocks
+            )
+            
+            logger.info(f"Chain reorganization completed: {rolled_back_blocks} blocks rolled back, {applied_blocks} blocks applied")
+            return resolution
+            
+        except Exception as e:
+            # Emergency recovery: restore from checkpoint
+            logger.critical(f"Reorganization failed, restoring from checkpoint: {e}")
+            if not self.state_manager.restore_checkpoint(self.state_manager.last_checkpoint):
+                logger.critical("Checkpoint restoration failed! Node state may be inconsistent")
+            raise
+    
+    def monitor_fork_risk(self) -> Dict[str, Any]:
+        """Monitor and report fork risk metrics"""
+        current_height = self.state_manager.get_current_height()
+        fork_risk = {
+            'current_height': current_height,
+            'reorganization_count': self.reorganization_count,
+            'time_since_last_reorg': time.time() - self.last_reorganization,
+            'fork_probability': self._calculate_fork_probability(),
+            'network_health': self._assess_network_health(),
+            'recommended_actions': self._get_fork_prevention_actions()
+        }
+        return fork_risk
+    
+    def _calculate_fork_probability(self) -> float:
+        """Calculate probability of fork based on network conditions"""
+        # This would use statistical models based on:
+        # - Network latency
+        # - Validator distribution
+        # - Block time variance
+        # - Historical fork data
+        return 0.05  # Placeholder
+    
+    def _assess_network_health(self) -> str:
+        """Assess overall network health regarding forks"""
+        if self.reorganization_count > self.config['max_reorganizations_per_hour']:
+            return 'critical'
+        elif time.time() - self.last_reorganization < 3600:
+            return 'degraded'
+        else:
+            return 'healthy'
+    
+    def _get_fork_prevention_actions(self) -> List[str]:
+        """Get recommended actions to prevent forks"""
+        actions = []
+        if self.reorganization_count > 0:
+            actions.append("Increase network connectivity")
+            actions.append("Monitor validator performance")
+            actions.append("Consider increasing block time")
+        return actions
+        
+    def get_network_risk_assessment(self) -> Dict[str, Any]:
+        """Comprehensive network-level risk assessment"""
+        return {
+            'fork_probability': self._calculate_fork_probability(),
+            'slashing_risk_index': self._calculate_network_slashing_risk(),
+            'network_health_score': self._calculate_network_health(),
+            'recommended_actions': self._get_risk_mitigation_strategies()
+        }        
+
+class RayonixCoin:
+    """Production-ready RAYONIX blockchain engine"""
+    
+    def __init__(self, network_type: str = "mainnet", data_dir: str = "./rayonix_data", gas_price_config=None):
         self.network_type = network_type
         self.data_dir = data_dir
-        self.genesis_block = None
-        self.blockchain = []
-        self.mempool = []
-        self.utxo_set = UTXOSet()
-        self.consensus = ProofOfStake()
-        self.contract_manager = ContractManager()
-        self.wallet = None
-        self.network = None
+        self.state = BlockchainState.STOPPED
+        self.config = self._load_configuration()
         
-        # Initialize database with plyvel
-        self.database = AdvancedDatabase(f"{data_dir}/blockchain_db")
-
-        # Configuration
-        self.config = {
-            'block_reward': 50,
-            'halving_interval': 210000,
-            'difficulty_adjustment_blocks': 2016,
-            'max_block_size': 4000000,
-            'max_transaction_size': 100000,
-            'min_transaction_fee': 1,
-            'stake_minimum': 1000,
-            'block_time_target': 30,
-            'max_supply': 21000000,
-            'premine_amount': 1000000,
-            'foundation_address': 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX',
-            'developer_fee_percent': 0.05,
-            'network_id': self._get_network_id(network_type)
+        # Initialize gas price configuration
+        self.gas_price_config = gas_price_config or {
+            'base_gas_price': 1000000000,
+            'min_gas_price': 500000000,
+            'max_gas_price': 10000000000,
+            'adjustment_factor': 1.125,
+            'target_utilization': 0.5
         }
-        
-        # State
-        self.current_difficulty = 4
-        self.total_supply = 0
-        self.circulating_supply = 0
-        self.staking_rewards_distributed = 0
-        self.foundation_funds = 0
-        self.last_block_time = time.time()
+        self.gas_price = self.gas_price_config.get('base_gas_price', 1000000000)
+        self.gas_price_history = deque(maxlen=1000)
+        self.update_errors = 0
         
         # Initialize components
+        self.database = self._initialize_database()
+        self.utxo_set = UTXOSet()
+        self.consensus = ProofOfStake(self.config['consensus'])
+        self.contract_manager = ContractManager()
+        self.wallet = self._initialize_wallet()
+        self.network = self._initialize_network()
+        
+        
+        # Initialize core managers
+        self.state_manager = StateManager(self.database, self.utxo_set, self.consensus, self.contract_manager)
+        self.validation_manager = ValidationManager(self.state_manager, self.config['validation'])
+        self.transaction_manager = TransactionManager(self.state_manager, self.wallet, self.config['transactions'])
+        self.fork_manager = ForkManager(self.state_manager, self.validation_manager, self.config['forks'])
+        
+        # State variables
+        self.chain_head = None
+        self.mempool_size = 0
+        self.sync_progress = 0
+        self.performance_metrics = defaultdict(list)
+        
+        # Background tasks
+        self.background_tasks = []
+        self.running = False
+        
+        # Initialize blockchain
         self._initialize_blockchain()
-        self._initialize_wallet()
-        self._initialize_network()
         
-        # Start background tasks
-        self._start_background_tasks()
+        logger.info(f"RAYONIX node initialized for {network_type} network")
     
-    def _get_network_id(self, network_type: str) -> int:
-        """Get network ID based on network type"""
-        network_ids = {
-            "mainnet": 1,
-            "testnet": 2,
-            "devnet": 3,
-            "regtest": 4
+    def _load_configuration(self) -> Dict[str, Any]:
+        """Load node configuration"""
+        config_path = os.path.join(self.data_dir, 'rayonix.yaml')
+        default_config = {
+            'network': {
+                'type': self.network_type,
+                'port': 30303,
+                'max_connections': 50,
+                'bootstrap_nodes': self._get_bootstrap_nodes()
+            },
+            'consensus': {
+                'foundation_address': 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX',
+                'block_reward': 50,
+                'premine_amount': 1000000,
+                'halving_interval': 210000,
+                'difficulty_adjustment_blocks': 2016,
+                'stake_minimum': 1000,
+                'block_time_target': 30,
+                'max_supply': 21000000,
+                'developer_fee_percent': 0.05
+            },
+            'validation': {
+                'max_block_size': 4000000,
+                'max_transaction_size': 100000,
+                'min_transaction_fee': 1,
+                'max_future_block_time': 7200,
+                'max_past_block_time': 86400,
+                'max_gas_per_block': 8000000,  # Add this
+                'max_gas_per_transaction': 1000000  # Add this
+            },
+            'transactions': {
+                'max_mempool_size': 10000,
+                'mempool_expiry_time': 3600,
+                'fee_estimation_window': 100
+            },
+            'forks': {
+                'fork_detection_threshold': 6,
+                'max_reorganizations_per_hour': 3,
+                'reorganization_depth_limit': 100
+            },
+            'database': {
+                'type': 'plyvel',
+                'cache_size': 128 * 1024 * 1024,
+                'compression': 'snappy',
+                'max_open_files': 1000
+            }
         }
-        return network_ids.get(network_type, 1)
-    
-    def _initialize_blockchain(self):
-        """Initialize or load blockchain"""
-        # Try to load from database
-        if self.database.get('genesis_block'):
-            self._load_blockchain()
-        else:
-            self._create_genesis_block()
-    
-    def _create_genesis_block(self):
-        """Create genesis block with premine"""
-        genesis_transactions = []
         
-        # Premine transaction
-        premine_tx = Transaction(
-            inputs=[],
-            outputs=[{
-                'address': self.config['foundation_address'],
-                'amount': self.config['premine_amount'],
-                'locktime': 0
-            }],
-            locktime=0
+        try:
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    loaded_config = json.load(f)
+                    default_config.update(loaded_config)
+        except Exception as e:
+            logger.warning(f"Failed to load config file: {e}")
+        
+        return default_config
+        
+    def update_gas_price(self, mempool_size: int, block_utilization: float) -> int:
+    	try:
+    		# Calculate new gas price based on utilization
+    		utilization = min(1.0, max(0.0, block_utilization))
+    		if utilization > self.gas_price_config.get('target_utilization', 0.5):
+    			# Increase gas price when utilization is high
+    			adjustment = self.gas_price_config.get('adjustment_factor', 1.125)
+    			new_price = int(self.gas_price * adjustment)
+    			
+    		else:
+    			# Decrease gas price when utilization is low
+    			adjustment = 1.0 / self.gas_price_config.get('adjustment_factor', 1.125)
+    			new_price = int(self.gas_price * adjustment)
+    			
+    		# Apply min/max bounds
+    		min_price = self.gas_price_config.get('min_gas_price', 500000000)
+    		max_price = self.gas_price_config.get('max_gas_price', 10000000000)
+    		new_price = max(min_price, min(new_price, max_price))
+    		
+    		# Update with smoothing to avoid drastic changes
+    		smoothing = 0.8  # 80% old price, 20% new price
+    		self.gas_price = int(smoothing * self.gas_price + (1 - smoothing) * new_price)
+    		
+    		# Record in history
+    		self.gas_price_history.append({
+    		    'timestamp': time.time(),
+    		    'gas_price': self.gas_price,
+    		    'mempool_size': mempool_size,
+    		    'utilization': utilization
+    		})
+    		
+    		return self.gas_price
+    		
+    	except Exception as e:
+    		logger.error(f"Error updating gas price: {e}")
+    		self.update_errors += 1
+    		return self.gas_price        
+    
+    def _initialize_database(self) -> AdvancedDatabase:
+        """Initialize database with proper configuration"""
+        db_config = DatabaseConfig(
+            db_type=DatabaseType.PLYVEL,
+            compression=CompressionType.SNAPPY,
+            cache_size=self.config['database']['cache_size'],
+            max_open_files=self.config['database']['max_open_files']
         )
-        genesis_transactions.append(premine_tx.to_dict())  # Convert to dict here
         
-        # Create genesis block
-        self.genesis_block = {
-            'height': 0,
-            'hash': '0' * 64,
-            'previous_hash': '0' * 64,
-            'merkle_root': self._calculate_merkle_root(genesis_transactions),
-            'timestamp': int(time.time()),
-            'difficulty': 1,
-            'nonce': 0,
-            'validator': 'genesis',
-            'transactions': genesis_transactions,
-            'version': 1,
-            'chainwork': 1
-        }
-        
-        # Calculate actual hash
-        self.genesis_block['hash'] = self._calculate_block_hash(self.genesis_block)
-        
-        # Add to blockchain
-        self.blockchain.append(self.genesis_block)
-        
-        # Update UTXO set
-        self._update_utxo_set(self.genesis_block)
-        
-        # Update supply
-        self.total_supply += self.config['premine_amount']
-        self.circulating_supply += self.config['premine_amount']
-        self.foundation_funds += self.config['premine_amount']
-        
-        # Save to database
-        self._save_blockchain()
+        db_path = os.path.join(self.data_dir, 'blockchain_db')
+        return AdvancedDatabase(db_path, db_config)
     
-    def _load_blockchain(self):
-        """Load blockchain from database"""
-        try:
-            self.genesis_block = self.database.get('genesis_block')
-            chain_data = self.database.get('blockchain')
-            
-            if chain_data:
-                self.blockchain = chain_data
-                # Rebuild UTXO set by processing all blocks
-                for block in self.blockchain:
-                    self._update_utxo_set(block)
-                
-                # Calculate current supply
-                self._calculate_supply()
-                
-            logger.info(f"Blockchain loaded with {len(self.blockchain)} blocks")
-            
-        except Exception as e:
-            logger.error(f"Failed to load blockchain: {e}")
-            self._create_genesis_block()
-    
-    def _save_blockchain(self):
-        """Save blockchain to database"""
-        try:
-            self.database.put('genesis_block', self.genesis_block)
-            self.database.put('blockchain', self.blockchain)
-            self.database.put('utxo_set', self.utxo_set.to_dict())
-            self.database.put('supply_info', {
-                'total_supply': self.total_supply,
-                'circulating_supply': self.circulating_supply,
-                'staking_rewards': self.staking_rewards_distributed,
-                'foundation_funds': self.foundation_funds
-            })
-        except Exception as e:
-            logger.error(f"Failed to save blockchain: {e}")
-    
-    def _initialize_wallet(self):
+    def _initialize_wallet(self) -> RayonixWallet:
         """Initialize wallet system"""
         wallet_config = WalletConfig(
-        network=self.network_type,
-        address_type=AddressType.RAYONIX,  # Use the enum directly
-        encryption=True
-    )
-        self.wallet = RayonixWallet(wallet_config)
+            network=self.network_type,
+            address_type=AddressType.RAYONIX,
+            encryption=True,
+            wallet_type=WalletType.HD
+        )
         
-        # Check if wallet needs to be initialized (no master key)
-        if not self.wallet.master_key:
-        	# Create a new HD wallet
-        	try:
-        		mnemonic_phrase, xpub = self.wallet.create_hd_wallet()
-        		logger.info(f"New HD wallet created with mnemonic: {mnemonic_phrase[:10]}...")
-        	except Exception as e:
-        	    logger.error(f"Failed to create HD wallet: {e}")
-        	    
-        	    # Fallback: create from random private key
-        	    private_key = os.urandom(32).hex()
-        	    self.wallet.create_from_private_key(private_key, WalletType.NON_HD)
-        	    logger.info("Non-HD wallet created from random private key")
-        	    
-        # Generate initial addresses
-        if self.wallet.master_key:
-            for i in range(5):
-                self.wallet.derive_address(i, False) 	    
-      			
+        wallet_path = os.path.join(self.data_dir, 'wallets')
+        return RayonixWallet(wallet_config, wallet_path)
     
-    def _initialize_network(self):
+    def _initialize_network(self) -> AdvancedP2PNetwork:
         """Initialize P2P network"""
         network_config = NodeConfig(
             network_type=self.network_type.upper(),
-            listen_port=30303,
-            max_connections=50,
-            bootstrap_nodes=self._get_bootstrap_nodes()
+            listen_port=self.config['network']['port'],
+            max_connections=self.config['network']['max_connections'],
+            bootstrap_nodes=self.config['network']['bootstrap_nodes']
         )
-        self.network = AdvancedP2PNetwork(network_config)
         
-        # Register message handlers
-        self.network.register_message_handler('block', self._handle_block_message)
-        self.network.register_message_handler('transaction', self._handle_transaction_message)
-        self.network.register_message_handler('consensus', self._handle_consensus_message)
+        return AdvancedP2PNetwork(network_config)
     
     def _get_bootstrap_nodes(self) -> List[str]:
         """Get bootstrap nodes for network"""
@@ -230,544 +1412,1147 @@ class RayonixCoin:
             return [
                 "node1.rayonix.site:30303",
                 "node2.rayonix.site:30303",
-                "node3.rayonix.site:30303"
+                "node3.rayonix.site:30303",
+                "node4.rayonix.site:30303"
             ]
         elif self.network_type == "testnet":
             return [
                 "testnet-node1.rayonix.site:30304",
-                "testnet-node2.rayonix.site:30304"
+                "testnet-node2.rayonix.site:30304",
+                "testnet-node3.rayonix.site:30304"
             ]
         else:
             return []
     
-    def _start_background_tasks(self):
-        """Start background maintenance tasks"""
-        # Mining/staking thread
-        self.mining_thread = threading.Thread(target=self._mining_loop, daemon=True)
-        self.mining_thread.start()
-        
-        # Network sync thread
-        self.sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
-        self.sync_thread.start()
-        
-        # Mempool management thread
-        self.mempool_thread = threading.Thread(target=self._mempool_loop, daemon=True)
-        self.mempool_thread.start()
-    
-    def _mining_loop(self):
-        """Proof-of-Stake mining loop"""
-        while True:
-            try:
-                if self._should_mine_block():
-                    new_block = self._create_new_block()
-                    if new_block:
-                        self._add_block(new_block)
-                        self._broadcast_block(new_block)
+    def _initialize_blockchain(self):
+        """Production-ready blockchain initialization"""
+        try:
+            # Try to load existing chain
+            self.chain_head = self.database.get_chain_head()
+            
+            if not self.chain_head:
+                logger.info("Initializing new blockchain with genesis block")
+                genesis_block = self._create_production_genesis_block()
                 
-                time.sleep(1)  # Check every second
+                # Special handling for genesis - skip full validation
+                if not self._validate_genesis_block(genesis_block):
+                    raise IntegrityError("Genesis block validation failed")
+                
+                # Initialize state with genesis
+                self._initialize_state_with_genesis(genesis_block)
+                
+                logger.info("Genesis block initialized successfully")
+            else:
+                logger.info(f"Loaded existing blockchain, head: {self.chain_head.hash[:16]}...")
+                self._verify_blockchain_integrity()
+                
+        except Exception as e:
+            logger.critical(f"Blockchain initialization failed: {e}")
+            raise InitializationError(f"Failed to initialize blockchain: {e}")
+    
+    def _create_production_genesis_block(self) -> Block:
+        """Create production-ready genesis block"""
+        # Create foundation transaction
+        foundation_tx = Transaction(
+            inputs=[],
+            outputs=[TransactionOutput(
+                address=self.config['consensus']['foundation_address'],
+                amount=self.config['consensus']['premine_amount'],
+                locktime=0
+            )],
+            locktime=0,
+            version=1
+        )
+        
+        # Create block header
+        header = BlockHeader(
+            version=1,
+            height=0,
+            previous_hash='0' * 64,
+            merkle_root=self._calculate_merkle_root([foundation_tx.hash]),
+            timestamp=int(time.time()),
+            difficulty=self.consensus.genesis_difficulty,
+            nonce=0,
+            validator='genesis',
+            signature=None  # Genesis doesn't need signature
+        )
+        
+        block = Block(
+            header=header,
+            transactions=[foundation_tx],
+            hash=self._calculate_block_hash(header),
+            chainwork=1,
+            size=0  # Will be calculated
+        )
+        
+        # Calculate actual size
+        block.size = self._calculate_block_size(header, [foundation_tx])
+        return block
+        
+    def _validate_genesis_block(self, genesis_block: Block) -> bool:
+        """Special validation for genesis block"""
+        validation_checks = [
+            lambda: genesis_block.header.height == 0,
+            lambda: genesis_block.header.previous_hash == '0' * 64,
+            lambda: len(genesis_block.transactions) > 0,
+            lambda: self._validate_genesis_transactions(genesis_block.transactions),
+            lambda: self._verify_genesis_merkle_root(genesis_block),
+            lambda: genesis_block.header.difficulty == self.consensus.genesis_difficulty
+        ]
+        
+        for check in validation_checks:
+            if not check():
+                return False
+        
+        return True
+        
+    def _initialize_state_with_genesis(self, genesis_block: Block):
+        """Initialize all state components with genesis block"""
+        with self.state_manager.atomic_state_transition() as tx_id:
+            try:
+                # Process genesis transactions
+                for tx in genesis_block.transactions:
+                    if not self.utxo_set.process_transaction(tx, 0):
+                        raise StateError(f"Failed to process genesis transaction: {tx.hash}")
+                
+                # Initialize consensus state
+                self.consensus.initialize_from_genesis(genesis_block)
+                
+                # Store block
+                self.database.put_block(genesis_block)
+                self.database.put_chain_head(genesis_block.hash)
+                
+                # Create initial checkpoint
+                self.state_manager.create_checkpoint()
                 
             except Exception as e:
-                logger.error(f"Mining error: {e}")
-                time.sleep(5)
+                logger.error(f"Genesis state initialization failed: {e}")
+                raise                        
     
-    def _should_mine_block(self) -> bool:
-        """Check if we should mine a new block"""
-        # Check if we're a validator with sufficient stake
-        if self.wallet and self.wallet.addresses:
-            validator_address = list(self.wallet.addresses.keys())[0]
-            if self.consensus.is_validator(validator_address):
-            	current_time = time.time()
-            	# Check if it's our turn to validate
-            	return self.consensus.should_validate(validator_address, current_time)
-            return False
+    def _process_genesis_block(self, genesis_block: Block):
+        """Process genesis block and initialize state"""
+        # Validate genesis block
+        validation_result = self.validation_manager.validate_block(genesis_block, ValidationLevel.CONSENSUS)
+        if not validation_result.is_valid:
+            raise ValueError(f"Genesis block validation failed: {validation_result.errors}")
+        
+        # Apply to state
+        if not self.state_manager.apply_block(genesis_block):
+            raise ValueError("Failed to apply genesis block")
+        
+        # Save to database
+        self.database.put_block(genesis_block.hash, genesis_block)
+        self.database.put('chain_head', genesis_block.hash)
+        self.chain_head = genesis_block.hash
+        
+        logger.info("Genesis block created and processed")
+        
+        
+    
+    def _load_blockchain_state(self):
+        """Load full blockchain state from database"""
+        logger.info("Loading blockchain state from database...")
+        try:
+        	# Load chain head
+        	try:
+        		chain_head_hash = self.database.get('chain_head')
+        		if chain_head_hash:
+        			self.chain_head = chain_head_hash
+        			logger.info(f"Chain head loaded: {self.chain_head[:16]}...")
+        		else:
+        			logger.warning("No chain head found in database")
+        	except KeyNotFoundError:
+        		logger.warning("Chain head not found in database")
+        		
+        	# Load UTXO set state
+        	try:
+        		utxo_state_data = self.database.get('utxo_set_state')
+        		if utxo_state_data:
+        			self.state_manager.utxo_set.from_bytes(utxo_state_data)
+        			logger.info("UTXO set state loaded successfully")
+        	except KeyNotFoundError:
+        		logger.warning("UTXO set state not found in database")
+        	except Exception as e:
+        		logger.error(f"Failed to load UTXO set state: {e}")
+        		raise
+        		
+        	# Load consensus state
+        	try:
+        		consensus_state_data = self.database.get('consensus_state')
+        		if consensus_state_data:
+        			self.state_manager.consensus.from_bytes(consensus_state_data)
+        			logger.info("Consensus state loaded successfully")
+        	except KeyNotFoundError:
+        		logger.warning("Consensus state not found in database")
+        	except Exception as e:
+        		logger.error(f"Failed to load consensus state: {e}")
+        		raise
+        		
+        	# Load contract states
+        	try:
+        		contract_states_data = self.database.get('contract_states')
+        		if contract_states_data:
+        			self.state_manager.contract_manager.from_bytes(contract_states_data)
+        			logger.info("Contract states loaded successfully")
+        	except KeyNotFoundError:
+        		logger.warning("Contract states not found in database")
+        	except Exception as e:
+        		logger.error(f"Failed to load contract states: {e}")
+        		raise
+        		
+        	# Verify state integrity
+        	try:
+        		stored_checksum = self.database.get('state_checksum')
+        		if stored_checksum:
+        			current_checksum = self.state_manager._calculate_state_hash()
+        			if stored_checksum != current_checksum:
+        				logger.warning("State checksum mismatch! State may be corrupted")
+        				# Attempt to restore from latest checkpoint
+        				if not self._restore_from_latest_checkpoint():
+        					logger.error("State integrity check failed and could not restore from checkpoint")
+        					raise IntegrityError("State integrity check failed")
+        				else:
+        					logger.info("State integrity verified successfully")
+        	except KeyNotFoundError:
             
-    def _create_new_block(self) -> Optional[Dict]:
+        		logger.warning("State checksum not found in database")
+        	except Exception as e:
+        		logger.error(f"State integrity check failed: {e}")
+        		raise
+        		
+        	# Load block index and reconstruct chain if needed
+        	self._reconstruct_block_chain()
+        	
+        	# Load mempool transactions if any
+        	self._load_mempool()
+        	logger.info("Blockchain state loaded successfully from database")
+        	
+        except Exception as e:
+        	logger.error(f"Failed to load blockchain state: {e}")
+        	
+        	# Attempt emergency recovery
+        	if not self._emergency_recovery():
+        		logger.critical("Failed to load blockchain state and emergency recovery also failed!")
+        		raise DatabaseError(f"Failed to load blockchain state: {e}")
+    
+    def _reconstruct_block_chain(self):
+    	"""Reconstruct the block chain from stored blocks"""
+    	logger.info("Reconstructing block chain...")
+    	try:
+    		# If we have a chain head, walk back to genesis
+    		if self.chain_head:
+    			current_hash = self.chain_head
+    			blocks = []
+    			# Walk the chain backwards
+    			while current_hash and current_hash != '0' * 64:
+    				
+    				try:
+    					block = self.database.get_block(current_hash)
+    					if block:
+    						blocks.append(block)
+    						current_hash = block.header.previous_hash
+    					else:
+    						logger.warning(f"Block {current_hash[:16]}... not found in database")
+    						break
+    				except Exception as e:
+    					logger.error(f"Error loading block {current_hash[:16]}...: {e}")
+    					break
+    				# Reverse to get from genesis to tip
+    				blocks.reverse()
+    				logger.info(f"Reconstructed chain with {len(blocks)} blocks")
+    				
+    				# Verify the reconstructed chain
+    				if not self._verify_reconstructed_chain(blocks):
+    					logger.warning("Reconstructed chain verification failed")
+    					# Try to repair the chain
+    					if not self._repair_block_chain():
+    						logger.error("Chain repair failed")
+    						raise IntegrityError("Block chain reconstruction failed")
+    				else:
+    					logger.info("No chain head found, starting with genesis only")
+    	except Exception as e:
+    		logger.error(f"Block chain reconstruction failed: {e}")
+    		raise
+    		
+    def _verify_reconstructed_chain(self, blocks: List[Block]) -> bool:
+    	"""Verify the integrity of a reconstructed block chain"""
+    	if not blocks:
+    		return True
+    	# Check genesis block
+    	if blocks[0].header.height != 0 or blocks[0].header.previous_hash != '0' * 64:
+    		logger.error("Invalid genesis block in reconstructed chain")
+    		return False
+    	# Verify each block links to the previous
+    	for i in range(1, len(blocks)):
+    		for i in range(1, len(blocks)):
+    			previous_block = blocks[i-1]
+    			
+    			if current_block.header.previous_hash != previous_block.hash:
+    				logger.error(f"Block {current_block.header.height} does not link to previous block")
+    				
+    				return False
+    			if current_block.header.height != previous_block.header.height + 1:
+    				logger.error(f"Height mismatch at block {current_block.header.height}")
+    				return False
+    		return True 
+    		
+    def _repair_block_chain(self) -> bool:
+    	"""Attempt to repair a corrupted block chain"""
+    	logger.warning("Attempting to repair corrupted block chain...")
+    	
+    	try:
+    		# Find the highest valid block we can trust
+    		best_block_hash = None
+    		best_height = -1
+    		
+    		# Iterate through all blocks to find the best candidate
+    		for key, value in self.database.iterate(prefix=b'block_'):
+    			try:
+    				block_hash = key.decode().replace('block_', '')
+    				block = self.database.get_block(block_hash)
+    				if block and block.header.height > best_height:
+    					# Basic validation
+    					if self._validate_block_basic(block):
+    						best_block_hash = block_hash
+    						best_height = block.header.height
+    			except Exception as e:
+    				logger.debug(f"Skipping invalid block during repair: {e}")
+    				continue
+    		if best_block_hash and best_height >= 0:
+    			logger.info(f"Found best valid block at height {best_height}: {best_block_hash[:16]}...")
+    			self.chain_head = best_block_hash
+    			self.database.put('chain_head', best_block_hash)
+    			# Reconstruct from this point
+    			self._reconstruct_block_chain()
+    			return True
+    		else:
+    			logger.error("No valid blocks found for chain repair")
+    			return False
+    	except Exception as e:
+    		logger.error(f"Chain repair failed: {e}")
+    		return False
+    		
+    def _validate_block_basic(self, block: Block) -> bool:
+    	"""Basic block validation for repair purposes"""
+    	try:
+    		# Check block structure
+    		if not block.header or not block.transactions:
+    			return False
+    		# Check block hash
+    		calculated_hash = self._calculate_block_hash(block.header)
+    		if calculated_hash != block.hash:
+    			return False
+    		# Check merkle root
+    		tx_hashes = [tx.hash for tx in block.transactions]
+    		calculated_root = MerkleTree(tx_hashes).get_root_hash()
+    		if calculated_root != block.header.merkle_root:
+    			return False
+    		return True
+    	except Exception:
+    		return False    
+
+    def _load_mempool(self):
+    	"""Load mempool transactions from database"""
+    	logger.info("Loading mempool transactions...")
+    	try:
+    		mempool_data = self.database.get('mempool')
+    		if mempool_data:
+    			# Deserialize mempool data
+    			mempool_transactions = msgpack.unpackb(mempool_data)
+    			
+    			# Add to transaction manager's mempool
+    			for tx_data in mempool_transactions:
+    				try:
+    					transaction = Transaction.from_dict(tx_data)
+    					if self.transaction_manager.validate_transaction(transaction).is_valid:
+    						self.transaction_manager.add_to_mempool(transaction)
+    				except Exception as e:
+    					logger.warning(f"Failed to load mempool transaction: {e}")
+    			logger.info(f"Loaded {len(mempool_transactions)} mempool transactions")
+    		else:
+    			logger.info("No mempool data found in database")
+    	except KeyNotFoundError:
+    		logger.info("Mempool not found in database")
+    	except Exception as e:
+    		logger.error(f"Failed to load mempool: {e}") 
+    		
+    def _restore_from_latest_checkpoint(self) -> bool:
+    	"""Restore state from the latest checkpoint"""
+    	logger.warning("Attempting to restore from latest checkpoint...")
+    	try:
+    		# Find all checkpoints
+    		checkpoints = []
+    		for key, value in self.database.iterate(prefix=b'checkpoint_'):
+    			try:
+    				checkpoint_id = key.decode().replace('checkpoint_', '')
+    				checkpoint_data = self.database.get(f"checkpoint_{checkpoint_id}")
+    				if checkpoint_data and 'timestamp' in checkpoint_data:
+    					checkpoints.append((checkpoint_id, checkpoint_data['timestamp']))
+    			except Exception as e:
+    				logger.debug(f"Skipping invalid checkpoint: {e}")
+    				continue
+    		# Sort checkpoints by timestamp (newest first)
+    		checkpoints.sort(key=lambda x: x[1], reverse=True)
+    		if checkpoints:
+    			latest_checkpoint_id = checkpoints[0][0]
+    			logger.info(f"Restoring from checkpoint: {latest_checkpoint_id}")
+    			return self.state_manager.restore_checkpoint(latest_checkpoint_id)
+    		else:
+    			logger.error("No checkpoints found for restoration")
+    			return False
+    	except Exception as e:
+    		logger.error(f"Checkpoint restoration failed: {e}")
+    		return False
+    		
+    def _emergency_recovery(self) -> bool:
+    	"""Attempt emergency recovery when normal loading fails"""
+    	logger.critical("Attempting emergency recovery...")
+    	try:
+    		# Try to restore from any available checkpoint
+    		if self._restore_from_latest_checkpoint():
+    			return True
+    		# If no checkpoints, try to rebuild from genesis
+    		logger.warning("No checkpoints available, attempting to rebuild from genesis")
+    		# Find genesis block
+    		genesis_block = None
+    		for key, value in self.database.iterate(prefix=b'block_'):
+    			try:
+    				block_hash = key.decode().replace('block_', '')
+    				block = self.database.get_block(block_hash)
+    				if block and block.header.height == 0:
+    					genesis_block = block
+    					break
+    			except Exception:
+    				continue
+    		if genesis_block:
+    			logger.info("Genesis block found, rebuilding state from genesis")
+    			# Reset state managers
+    			self.state_manager.utxo_set = UTXOSet()
+    			self.state_manager.consensus = ProofOfStake(self.config['consensus'])
+    			self.state_manager.contract_manager = ContractManager()
+    			# Process genesis block
+    			if self.state_manager.apply_block(genesis_block):
+    				self.chain_head = genesis_block.hash
+    				self.database.put('chain_head', genesis_block.hash)
+    				logger.info("Successfully rebuilt state from genesis")
+    				return True
+    			else:
+    				logger.error("Failed to apply genesis block during recovery")
+    				return False
+    		else:
+    			logger.error("Genesis block not found for emergency recovery")
+    			return False
+    	except Exception as e:
+    		logger.error(f"Emergency recovery failed: {e}")
+    		return False    		    		    		
+
+    def start(self):
+        """Start the blockchain node"""
+        if self.running:
+            logger.warning("Node is already running")
+            return
+        
+        self.running = True
+        self.state = BlockchainState.SYNCING
+        
+        # Start background tasks
+        self._start_background_tasks()
+        
+        # Connect to network
+        self.network.start()
+        
+        # Start syncing
+        asyncio.create_task(self._sync_with_network())
+        
+        logger.info("RAYONIX node started")
+    
+    def stop(self):
+        """Stop the blockchain node"""
+        if not self.running:
+            return
+        
+        self.running = False
+        self.state = BlockchainState.STOPPED
+        
+        # Stop background tasks
+        for task in self.background_tasks:
+            task.cancel()
+        
+        # Disconnect from network
+        self.network.stop()
+        
+        # Save state
+        self._save_state()
+        
+        logger.info("RAYONIX node stopped")
+    
+    def _start_background_tasks(self):
+        """Start background maintenance tasks"""
+        tasks = [
+            self._block_production_loop,
+            self._mempool_management_loop,
+            self._state_pruning_loop,
+            self._performance_monitoring_loop,
+            self._fork_monitoring_loop,
+            self.start_gas_price_updater,  # Add gas price updater,
+            self._gas_price_update_loop  # Add this
+        ]
+        
+        for task_func in tasks:
+            task = asyncio.create_task(task_func())
+            self.background_tasks.append(task)
+            
+        for task_func in tasks:
+            if task_func == self.start_gas_price_updater:
+                # Start gas price updater directly
+                task_func()
+            else:
+                task = asyncio.create_task(task_func())
+                self.background_tasks.append(task)
+    
+    async def _block_production_loop(self):
+        """Proof-of-Stake block production loop"""
+        while self.running:
+            try:
+                if self.state == BlockchainState.SYNCED and self._should_produce_block():
+                    block = await self._create_new_block()
+                    if block:
+                        await self._process_new_block(block)
+                        await self._broadcast_block(block)
+                
+                await asyncio.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"Block production error: {e}")
+                await asyncio.sleep(5)
+    
+    async def _mempool_management_loop(self):
+        """Mempool management loop"""
+        while self.running:
+            try:
+                # Clean expired transactions
+                self._clean_mempool()
+                
+                # Validate mempool transactions
+                await self._validate_mempool()
+                
+                # Broadcast transactions
+                await self._broadcast_mempool()
+                
+                await asyncio.sleep(60)
+                
+            except Exception as e:
+                logger.error(f"Mempool management error: {e}")
+                await asyncio.sleep(30)
+    
+    async def _state_pruning_loop(self):
+        """State pruning and compaction loop"""
+        while self.running:
+            try:
+                if self.state == BlockchainState.SYNCED:
+                    # Prune old state data
+                    await self._prune_old_state()
+                    
+                    # Compact database
+                    if self._should_compact_database():
+                        await self._compact_database()
+                
+                await asyncio.sleep(3600)  # Run hourly
+                
+            except Exception as e:
+                logger.error(f"State pruning error: {e}")
+                await asyncio.sleep(3600)
+    
+    async def _performance_monitoring_loop(self):
+        """Performance monitoring loop"""
+        while self.running:
+            try:
+                metrics = await self._collect_performance_metrics()
+                self.performance_metrics[time.time()] = metrics
+                
+                # Keep only last 24 hours of metrics
+                cutoff = time.time() - 86400
+                self.performance_metrics = {k: v for k, v in self.performance_metrics.items() if k > cutoff}
+                
+                await asyncio.sleep(300)  # Run every 5 minutes
+                
+            except Exception as e:
+                logger.error(f"Performance monitoring error: {e}")
+                await asyncio.sleep(300)
+    
+    async def _fork_monitoring_loop(self):
+        """Fork monitoring loop"""
+        while self.running:
+            try:
+                if self.state == BlockchainState.SYNCED:
+                    fork_risk = self.fork_manager.monitor_fork_risk()
+                    if fork_risk['fork_probability'] > 0.1:
+                        logger.warning(f"High fork risk detected: {fork_risk}")
+                
+                await asyncio.sleep(30)
+                
+            except Exception as e:
+                logger.error(f"Fork monitoring error: {e}")
+                await asyncio.sleep(30)
+    
+    async def _sync_with_network(self):
+        """Synchronize with network peers"""
+        try:
+            logger.info("Starting blockchain synchronization")
+            
+            # Get best block from peers
+            best_block = await self._get_best_block_from_peers()
+            if not best_block:
+                logger.warning("No peers available for synchronization")
+                return
+            
+            current_height = self.state_manager.get_current_height()
+            
+            if best_block.header.height > current_height:
+                # We need to sync
+                logger.info(f"Synchronizing from height {current_height} to {best_block.header.height}")
+                await self._download_blocks(current_height + 1, best_block.header.height)
+            
+            self.state = BlockchainState.SYNCED
+            logger.info("Blockchain synchronization completed")
+            
+        except Exception as e:
+            logger.error(f"Synchronization failed: {e}")
+            self.state = BlockchainState.SYNCING
+    
+    async def _download_blocks(self, start_height: int, end_height: int):
+        """Download blocks in parallel"""
+        batch_size = 100
+        semaphore = asyncio.Semaphore(10)  # Limit concurrent downloads
+        
+        async def download_batch(heights: List[int]):
+            async with semaphore:
+                blocks = await self._request_blocks_from_peers(heights)
+                for block in blocks:
+                    if block:
+                        await self._process_block(block)
+        
+        tasks = []
+        for batch_start in range(start_height, end_height + 1, batch_size):
+            batch_end = min(batch_start + batch_size, end_height + 1)
+            batch_heights = list(range(batch_start, batch_end))
+            tasks.append(download_batch(batch_heights))
+        
+        await asyncio.gather(*tasks)
+    
+    async def _process_block(self, block: Block):
+        """Process a downloaded block"""
+        try:
+            # Validate block
+            validation_result = self.validation_manager.validate_block(block, ValidationLevel.FULL)
+            if not validation_result.is_valid:
+                logger.warning(f"Invalid block received: {validation_result.errors}")
+                return False
+            
+            # Check for forks
+            fork_resolution = await self.fork_manager.handle_possible_fork(block)
+            if fork_resolution:
+                logger.info(f"Fork resolved: {fork_resolution}")
+            
+            # Apply to state
+            if not self.state_manager.apply_block(block):
+                logger.error(f"Failed to apply block {block.hash}")
+                return False
+            
+            # Update chain head
+            self.chain_head = block.hash
+            self.database.put('chain_head', block.hash)
+            
+            # Update sync progress
+            self.sync_progress = (block.header.height / self.state_manager.get_current_height()) * 100
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Block processing failed: {e}")
+            return False
+    
+    def _should_produce_block(self) -> bool:
+        """Check if we should produce a block"""
+        if not self.wallet or not self.wallet.addresses:
+            return False
+        
+        validator_address = list(self.wallet.addresses.keys())[0]
+        return self.consensus.should_produce_block(validator_address, time.time())
+    
+    async def _create_new_block(self) -> Optional[Block]:
         """Create a new block"""
         try:
-            # Select transactions from mempool
-            transactions = self._select_transactions_for_block()
-            # Get current validator address
-            if not self.wallet or not self.wallet.addresses:
-            	return None
+            # Get transactions from mempool
+            transactions = self.transaction_manager.get_mempool_transactions(
+                self.config['validation']['max_block_size'] // 1000  # Approximate count
+            )
             
             # Get current validator
             validator_address = list(self.wallet.addresses.keys())[0]
+            current_head = self.database.get_block(self.chain_head)
             
             # Create block header
-            previous_block = self.blockchain[-1]
-            new_block = {
-                'height': previous_block['height'] + 1,
-                'previous_hash': previous_block['hash'],
-                'timestamp': int(time.time()),
-                'difficulty': self.current_difficulty,
-                'validator': validator_address,
-                'transactions': transactions,
-                'version': 2,
-                'nonce': 0
-            }
+            header = BlockHeader(
+                version=2,
+                height=current_head.header.height + 1,
+                previous_hash=current_head.hash,
+                merkle_root=self._calculate_merkle_root([tx.hash for tx in transactions]),
+                timestamp=int(time.time()),
+                difficulty=self.consensus.calculate_difficulty(current_head.header.height + 1),
+                nonce=0,
+                validator=validator_address
+            )
             
-            # Calculate merkle root
-            new_block['merkle_root'] = self._calculate_merkle_root(transactions)
+            # Create block
+            block = Block(
+                header=header,
+                transactions=transactions,
+                hash=self._calculate_block_hash(header),
+                chainwork=current_head.chainwork + self._calculate_block_work(header.difficulty),
+                size=self._calculate_block_size(header, transactions)
+            )
             
-            # Sign the block (Proof-of-Stake)
-            block_hash = self._calculate_block_hash(new_block)
-            signature = self.wallet.sign_data(block_hash.encode())
-            new_block['signature'] = signature
-            new_block['hash'] = block_hash
+            # Sign block
+            block = await self._sign_block(block)
             
-            # Add block reward transaction
-            reward_tx = self._create_block_reward_transaction(validator_address)
-            new_block['transactions'].insert(0, reward_tx)
-            
-            return new_block
+            return block
             
         except Exception as e:
             logger.error(f"Block creation failed: {e}")
             return None
     
-    def _select_transactions_for_block(self) -> List[Dict]:
-        """Select transactions for new block"""
-        # Sort by fee rate (higher fees first)
-        sorted_txs = sorted(self.mempool, key=lambda tx: tx.get('fee_rate', 0), reverse=True)
-        
-        selected_txs = []
-        current_size = 0
-        
-        for tx in sorted_txs:
-            tx_size = self._calculate_transaction_size(tx)
-            if current_size + tx_size <= self.config['max_block_size']:
-                if self._validate_transaction(tx):
-                    selected_txs.append(tx)
-                    current_size += tx_size
-            
-            if current_size >= self.config['max_block_size']:
-                break
-        
-        return selected_txs
+    async def _sign_block(self, block: Block) -> Block:
+        """Sign a block"""
+        try:
+            signature = self.wallet.sign_data(block.hash.encode())
+            block.header.signature = signature
+            return block
+        except Exception as e:
+            logger.error(f"Block signing failed: {e}")
+            raise
     
-    def _create_block_reward_transaction(self, validator_address: str) -> Dict:
-        """Create block reward transaction"""
-        block_reward = self._get_block_reward()
+    async def _process_new_block(self, block: Block):
+        """Process a newly created block"""
+        try:
+            # Validate block
+            validation_result = self.validation_manager.validate_block(block, ValidationLevel.CONSENSUS)
+            if not validation_result.is_valid:
+                logger.error(f"Self-created block validation failed: {validation_result.errors}")
+                return False
+            
+            # Apply to state
+            if not self.state_manager.apply_block(block):
+                logger.error("Failed to apply self-created block")
+                return False
+            
+            # Update chain head
+            self.chain_head = block.hash
+            self.database.put('chain_head', block.hash)
+            self.database.put_block(block.hash, block)
+            
+            # Remove transactions from mempool
+            self.transaction_manager.remove_from_mempool([tx.hash for tx in block.transactions])
+            
+            logger.info(f"New block created: #{block.header.height} - {block.hash[:16]}...")
+            return True
+            
+        except Exception as e:
+            logger.error(f"New block processing failed: {e}")
+            return False
+    
+    async def _broadcast_block(self, block: Block):
+        """Broadcast block to network"""
+        try:
+            await self.network.broadcast_message('block', block.to_dict())
+        except Exception as e:
+            logger.error(f"Block broadcast failed: {e}")
+    
+    def _clean_mempool(self):
+        """Clean expired transactions from mempool"""
+        current_time = time.time()
+        expired_hashes = []
         
-        # Calculate foundation fee
-        foundation_fee = int(block_reward * self.config['developer_fee_percent'])
-        validator_reward = block_reward - foundation_fee
+        for tx_hash, (tx, timestamp, fee_rate) in self.transaction_manager.mempool.items():
+            if current_time - timestamp > self.config['transactions']['mempool_expiry_time']:
+                expired_hashes.append(tx_hash)
         
-        # Create reward transaction
-        reward_tx = Transaction(
-            inputs=[],
-            outputs=[
-                {
-                    'address': validator_address,
-                    'amount': validator_reward,
-                    'locktime': 0
-                },
-                {
-                    'address': self.config['foundation_address'],
-                    'amount': foundation_fee,
-                    'locktime': 0
-                }
-            ],
-            locktime=0
+        self.transaction_manager.remove_from_mempool(expired_hashes)
+    
+    async def _validate_mempool(self):
+        """Validate all transactions in mempool"""
+        invalid_hashes = []
+        
+        for tx_hash, (tx, timestamp, fee_rate) in self.transaction_manager.mempool.items():
+            validation_result = self.validation_manager.validate_transaction(tx, ValidationLevel.STANDARD)
+            if not validation_result.is_valid:
+                invalid_hashes.append(tx_hash)
+        
+        self.transaction_manager.remove_from_mempool(invalid_hashes)
+    
+    async def _broadcast_mempool(self):
+        """Broadcast mempool transactions to network"""
+        transactions = self.transaction_manager.get_mempool_transactions(100)  # Broadcast top 100
+        
+        for tx in transactions:
+            try:
+                await self.network.broadcast_message('transaction', tx.to_dict())
+            except Exception as e:
+                logger.error(f"Transaction broadcast failed: {e}")
+    
+    async def _prune_old_state(self):
+        """Prune old state data to save space"""
+        current_height = self.state_manager.get_current_height()
+        prune_height = current_height - self.config['forks']['reorganization_depth_limit']
+        
+        if prune_height > 0:
+            # Prune old blocks and state data
+            await self.database.prune_blocks_before(prune_height)
+            logger.info(f"Pruned state data before height {prune_height}")
+    
+    async def _compact_database(self):
+        """Compact database"""
+        try:
+            await self.database.compact()
+            logger.info("Database compaction completed")
+        except Exception as e:
+            logger.error(f"Database compaction failed: {e}")
+    
+    def _should_compact_database(self) -> bool:
+        """Check if database should be compacted"""
+        # Check database size and fragmentation
+        stats = self.database.get_stats()
+        fragmentation = stats.get('fragmentation_ratio', 0)
+        return fragmentation > 0.7  # Compact if fragmentation > 70%
+    
+    async def _collect_performance_metrics(self) -> Dict[str, Any]:
+        """Collect performance metrics"""
+        return {
+            'block_height': self.state_manager.get_current_height(),
+            'mempool_size': len(self.transaction_manager.mempool),
+            'active_connections': self.network.get_connection_count(),
+            'memory_usage': self._get_memory_usage(),
+            'cpu_usage': self._get_cpu_usage(),
+            'disk_usage': self._get_disk_usage(),
+            'validation_stats': dict(self.validation_manager.validation_stats),
+            'fork_count': self.fork_manager.reorganization_count
+        }
+    
+    def _get_memory_usage(self) -> float:
+        """Get memory usage in MB"""
+        import psutil
+        process = psutil.Process()
+        return process.memory_info().rss / 1024 / 1024
+    
+    def _get_cpu_usage(self) -> float:
+        """Get CPU usage percentage"""
+        import psutil
+        return psutil.cpu_percent()
+    
+    def _get_disk_usage(self) -> float:
+        """Get disk usage in GB"""
+        import psutil
+        usage = psutil.disk_usage(self.data_dir)
+        return usage.used / 1024 / 1024 / 1024
+    
+    def _save_state(self):
+        """Save current state to disk"""
+        try:
+            self.state_manager.create_checkpoint()
+            self.database.sync()
+            logger.info("Node state saved successfully")
+        except Exception as e:
+            logger.error(f"Failed to save node state: {e}")
+    
+    def _calculate_block_hash(self, header: BlockHeader) -> str:
+        """Calculate block hash"""
+        header_data = json.dumps(asdict(header), sort_keys=True).encode()
+        return hashlib.sha256(header_data).hexdigest()
+    
+    def _calculate_merkle_root(self, tx_hashes: List[str]) -> str:
+        """Calculate merkle root"""
+        if not tx_hashes:
+            return '0' * 64
+        return MerkleTree(tx_hashes).get_root_hash()
+    
+    def _calculate_block_work(self, difficulty: int) -> int:
+        """Calculate block work"""
+        return 2 ** 256 // (difficulty + 1)
+    
+    def _calculate_block_size(self, header: BlockHeader, transactions: List[Transaction]) -> int:
+        """Calculate block size in bytes"""
+        header_size = len(json.dumps(asdict(header)).encode())
+        transactions_size = sum(len(tx.to_bytes()) for tx in transactions)
+        return header_size + transactions_size
+    
+    async def _get_best_block_from_peers(self) -> Optional[Block]:
+        """Get best block information from peers"""
+        try:
+            # Query multiple peers and return the block with most chainwork
+            peers = self.network.get_peers()
+            if not peers:
+                return None
+            
+            best_block = None
+            best_chainwork = 0
+            
+            for peer in peers:
+                try:
+                    block_info = await peer.get_best_block()
+                    if block_info and block_info.chainwork > best_chainwork:
+                        best_block = block_info
+                        best_chainwork = block_info.chainwork
+                except Exception as e:
+                    continue
+            
+            return best_block
+            
+        except Exception as e:
+            logger.error(f"Failed to get best block from peers: {e}")
+            return None
+    
+    async def _request_blocks_from_peers(self, heights: List[int]) -> List[Block]:
+        """Request blocks from peers in parallel"""
+        tasks = []
+        for height in heights:
+            tasks.append(self._request_block_from_peers(height))
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return [result for result in results if result and not isinstance(result, Exception)]
+    
+    async def _request_block_from_peers(self, height: int) -> Optional[Block]:
+        """Request a specific block from peers"""
+        try:
+            peers = self.network.get_peers()
+            for peer in peers:
+                try:
+                    block = await peer.get_block(height)
+                    if block:
+                        return block
+                except Exception as e:
+                    continue
+            return None
+        except Exception as e:
+            logger.error(f"Failed to request block {height}: {e}")
+            return None
+
+    # Public API methods
+    def get_balance(self, address: str) -> int:
+        """Get balance for address"""
+        return self.state_manager.utxo_set.get_balance(address)
+    
+    def get_transaction(self, tx_hash: str) -> Optional[Transaction]:
+        """Get transaction by hash"""
+        # Check mempool first
+        if tx_hash in self.transaction_manager.mempool:
+            return self.transaction_manager.mempool[tx_hash][0]
+        
+        # Check blockchain
+        return self.database.get_transaction(tx_hash)
+    
+    def get_block(self, height_or_hash: Union[int, str]) -> Optional[Block]:
+        """Get block by height or hash"""
+        if isinstance(height_or_hash, int):
+            return self.database.get_block_by_height(height_or_hash)
+        else:
+            return self.database.get_block(height_or_hash)
+    
+    def send_transaction(self, from_address: str, to_address: str, amount: int,
+                       fee_strategy: str = 'medium', **kwargs) -> TransactionCreationResult:
+        """Send a transaction"""
+        return self.transaction_manager.create_transaction(
+            from_address, to_address, amount, fee_strategy, **kwargs
+        )
+    
+    def get_blockchain_info(self) -> Dict[str, Any]:
+        """Get blockchain information"""
+        current_height = self.state_manager.get_current_height()
+        return {
+            'height': current_height,
+            'chain_head': self.chain_head,
+            'total_supply': self.state_manager.consensus.total_supply,
+            'circulating_supply': self.state_manager.consensus.circulating_supply,
+            'difficulty': self.consensus.calculate_difficulty(current_height),
+            'block_reward': self.consensus.get_block_reward(current_height),
+            'mempool_size': len(self.transaction_manager.mempool),
+            'network_state': self.state.name,
+            'sync_progress': self.sync_progress
+        }
+    
+    def get_validator_info(self, address: Optional[str] = None) -> Dict[str, Any]:
+        """Get validator information"""
+        if not address and self.wallet.addresses:
+            address = list(self.wallet.addresses.keys())[0]
+        
+        if not address:
+            return {'error': 'No validator address provided'}
+        
+        return self.consensus.get_validator_info(address)
+    
+    def register_validator(self, stake_amount: int) -> bool:
+        """Register as validator"""
+        if not self.wallet.addresses:
+            return False
+        
+        validator_address = list(self.wallet.addresses.keys())[0]
+        return self.consensus.register_validator(validator_address, stake_amount)
+    
+    def deploy_contract(self, contract_code: str, initial_balance: int = 0) -> Optional[str]:
+        """Deploy smart contract"""
+        if not self.wallet.addresses:
+            return None
+        
+        deployer_address = list(self.wallet.addresses.keys())[0]
+        return self.contract_manager.deploy_contract(deployer_address, contract_code, initial_balance)
+    
+    def call_contract(self, contract_address: str, function_name: str,
+                     args: List[Any], value: int = 0) -> Any:
+        """Call smart contract function"""
+        if not self.wallet.addresses:
+            return None
+        
+        caller_address = list(self.wallet.addresses.keys())[0]
+        return self.contract_manager.execute_contract(
+            contract_address, function_name, args, caller_address, value
         )
         
-        # Update supply tracking
-        self.total_supply += block_reward
-        self.circulating_supply += validator_reward
-        self.foundation_funds += foundation_fee
-        self.staking_rewards_distributed += validator_reward
-        
-        return reward_tx
-    
-    def _get_block_reward(self) -> int:
-        """Calculate current block reward with halving"""
-        height = len(self.blockchain)
-        halvings = height // self.config['halving_interval']
-        
-        # Base reward divided by 2^halvings
-        reward = self.config['block_reward'] >> halvings
-        
-        # Ensure reward doesn't go below minimum
-        return max(reward, 1)
-    
-    def _add_block(self, block: Dict):
-        """Add block to blockchain"""
-        # Validate block
-        if not self._validate_block(block):
-            raise ValueError("Invalid block")
-        
-        # Add to blockchain
-        self.blockchain.append(block)
-        
-        # Update UTXO set
-        self._update_utxo_set(block)
-        
-        # Remove transactions from mempool
-        self._remove_transactions_from_mempool(block['transactions'])
-        
-        # Adjust difficulty if needed
-        self._adjust_difficulty()
-        
-        # Save to database
-        self._save_blockchain()
-        
-        logger.info(f"New block added: #{block['height']} - {block['hash'][:16]}...")
-    
-    def _validate_block(self, block: Dict) -> bool:
-        """Validate block"""
-        try:
-            # Check block structure
-            required_fields = ['height', 'previous_hash', 'timestamp', 'difficulty', 
-                             'validator', 'transactions', 'merkle_root', 'hash', 'signature']
-            for field in required_fields:
-                if field not in block:
-                    return False
-            
-            # Check block hash
-            calculated_hash = self._calculate_block_hash(block)
-            if calculated_hash != block['hash']:
-                return False
-            
-            # Check previous block
-            if block['previous_hash'] != self.blockchain[-1]['hash']:
-                return False
-            
-            # Check merkle root
-            calculated_merkle = self._calculate_merkle_root(block['transactions'])
-            if calculated_merkle != block['merkle_root']:
-                return False
-            
-            # Check validator signature
-            if not self._validate_block_signature(block):
-                return False
-            
-            # Validate all transactions
-            for tx in block['transactions']:
-                if not self._validate_transaction(tx):
-                    return False
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Block validation failed: {e}")
-            return False
-    
-    def _validate_block_signature(self, block: Dict) -> bool:
-        """Validate block signature"""
-        try:
-            # Get validator public key
-            validator_address = block['validator']
-            if self.wallet:
-            	public_key = self.wallet.get_public_key_for_address(validator_address)
-            	if not public_key:
-            		return False
-            	
-            else:
-            	# Fallback: get from consensus (if implemented)
-            	public_key = self.consensus.get_validator_public_key(validator_address)
-            	if not public_key:
-            		return False
-            
-            
-            # Verify signature
-            block_data = self._get_block_signing_data(block)
-            return self.wallet.verify_signature(block_data, block['signature'], public_key)
-            
-        except Exception as e:
-            logger.error(f"Signature validation failed: {e}")
-            return False
-    
-    def _get_block_signing_data(self, block: Dict) -> bytes:
-        """Get data used for block signing"""
-        # Exclude signature from signing data
-        signing_block = block.copy()
-        if 'signature' in signing_block:
-            del signing_block['signature']
-        
-        return json.dumps(signing_block, sort_keys=True).encode()
-    
-    def _calculate_block_hash(self, block: Dict) -> str:
-        """Calculate block hash"""
-        block_data = self._get_block_signing_data(block)
-        return hashlib.sha256(block_data).hexdigest()
-    
-    def _calculate_merkle_root(self, transactions: List[Dict]) -> str:
-        """Calculate merkle root of transactions"""
-        if not transactions:
-            return '0' * 64
-            
-        # Convert Transaction objects to dicts if needed
-        tx_dicts = []
-        for tx in transactions:
-        	if hasattr(tx, 'to_dict'):
-        		tx_dicts.append(tx.to_dict())
-        	else:
-        		tx_dicts.append(tx)  
-        
-        tx_hashes = [self._calculate_transaction_hash(tx) for tx in tx_dicts]
-        merkle_tree = MerkleTree(tx_hashes)
-        return merkle_tree.get_root_hash()
-    
-    def _calculate_transaction_hash(self, transaction: Dict) -> str:
-        """Calculate transaction hash"""
-        if hasattr(transaction, 'to_dict'):
-        	tx_data = transaction.to_dict()
-        else:
-        	tx_data = transaction
-        	
-        sorted_data = json.dumps(tx_data, sort_keys=True).encode()
-        return hashlib.sha256(sorted_data).hexdigest()
-    
-    def _calculate_transaction_size(self, transaction: Dict) -> int:
-        """Calculate transaction size in bytes"""
-        return len(json.dumps(transaction).encode())
-    
-    def _update_utxo_set(self, block: Dict):
-        """Update UTXO set with block transactions"""
-        for tx_data in block['transactions']:
-            # Convert dict to Transaction object if needed
-            if isinstance(tx_data, dict):
-            	transaction = Transaction.from_dict(tx_data)
-            	
-            else:
-            	transaction = tx_data
-            
-            self.utxo_set.process_transaction(transaction)
-    
-    def _remove_transactions_from_mempool(self, transactions: List[Dict]):
-        """Remove transactions from mempool"""
-        tx_hashes = [self._calculate_transaction_hash(tx) for tx in transactions]
-        self.mempool = [tx for tx in self.mempool 
-                       if self._calculate_transaction_hash(tx) not in tx_hashes]
-    
-    def _adjust_difficulty(self):
-        """Adjust mining difficulty"""
-        if len(self.blockchain) % self.config['difficulty_adjustment_blocks'] == 0:
-            self._recalculate_difficulty()
-    
-    def _recalculate_difficulty(self):
-        """Recalculate current difficulty"""
-        # Get blocks from previous difficulty period
-        start_height = max(0, len(self.blockchain) - self.config['difficulty_adjustment_blocks'])
-        adjustment_blocks = self.blockchain[start_height:]
-        
-        if len(adjustment_blocks) < 2:
-            return
-        
-        # Calculate actual time taken
-        actual_time = adjustment_blocks[-1]['timestamp'] - adjustment_blocks[0]['timestamp']
-        target_time = self.config['block_time_target'] * len(adjustment_blocks)
-        
-        # Adjust difficulty
-        ratio = actual_time / target_time
-        if ratio < 0.5:
-            ratio = 0.5
-        elif ratio > 2.0:
-            ratio = 2.0
-        
-        new_difficulty = self.current_difficulty * ratio
-        self.current_difficulty = max(1, int(new_difficulty))
-        
-        logger.info(f"Difficulty adjusted: {self.current_difficulty}")
-    
-    def _validate_transaction(self, transaction: Dict) -> bool:
-        """Validate transaction"""
-        try:
-            tx = Transaction.from_dict(transaction)
-            
-            # Check basic structure
-            if not tx.inputs or not tx.outputs:
-                return False
-            
-            # Check transaction size
-            if self._calculate_transaction_size(transaction) > self.config['max_transaction_size']:
-                return False
-            
-            # Check fees
-            total_input = 0
-            total_output = 0
-            
-            # Validate inputs
-            for tx_input in tx.inputs:
-                # Check if UTXO exists and is unspent
-                utxo = self.utxo_set.get_utxo(tx_input['tx_hash'], tx_input['output_index'])
-                if not utxo or utxo.spent:
-                    return False
+    async def _gas_price_update_loop(self):
+        while self.running:
+        	try:
+        		if self.state == BlockchainState.SYNCED:
+        			# Calculate network utilization metrics
+        			mempool_size = len(self.transaction_manager.mempool)
+        			recent_blocks = self._get_recent_blocks(10)
+        			
+        			if recent_blocks:
+        				# Calculate average block utilization
+        				total_capacity = sum(block.get('gas_limit', 8000000) for block in recent_blocks)
+        				total_used = sum(block.get('gas_used', 0) for block in recent_blocks)
+        				utilization = total_used / total_capacity if total_capacity > 0 else 0
+        				
+        				# Update gas price
+        				new_gas_price = self.update_gas_price(mempool_size, utilization)
+        				if self.config.get('logging.debug_gas_price', False):
+        					logger.debug(
+        					    f"Gas price updated: {new_gas_price}, "
+        					    f"mempool: {mempool_size}, utilization: {utilization:.2f}"
+        					)
+        		await asyncio.sleep(30)  # Update every 30 seconds
+        	except Exception as e:
+        	    logger.error(f"Gas price update error: {e}")
+        	    await asyncio.sleep(60)          
                 
-                # Check input signature
-                if not self._validate_input_signature(tx_input, utxo):
-                    return False
-                
-                total_input += utxo.amount
             
-            # Calculate outputs
-            for output in tx.outputs:
-                total_output += output['amount']
-            
-            # Check if outputs don't exceed inputs
-            if total_output > total_input:
-                return False
-            
-            # Check minimum fee
-            fee = total_input - total_output
-            if fee < self.config['min_transaction_fee']:
-                return False
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Transaction validation failed: {e}")
-            return False
-    
-    def _validate_input_signature(self, tx_input: Dict, utxo: UTXO) -> bool:
-        """Validate transaction input signature"""
-        # This would verify the cryptographic signature
-        # For now, we'll simulate validation
-        return True
-        
-    def get_validator_info(self, validator_address: Optional[str] = None) -> Dict:
-    	start_time = time.time()
-    	metrics = {
-    	    'method_calls': {},
-    	    'timings': {},
-    	    'errors': []
+            	                                                              
+ 
+@classmethod
+def generate_genesis_block(cls, config_manager: Any = None, custom_config: Optional[Dict] = None) -> Dict:
+    """Generate genesis block with custom configuration"""
+    try:
+    	# Use the global config manager if available, otherwise create a minimal one
+    	if config_manager is None:
+    		try:
+    			from config import get_config
+    			config_manager = get_config()
+    		except ImportError:
+    			config_manager = None
+    	# Get configuration values from config manager
+    	premine_amount = config_manager.get('consensus.block_reward', 50) * 20000 # 20,000 blocks worth
+    	foundation_address = config_manager.get('wallet.foundation_address', 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX')
+    	block_reward = config_manager.get('consensus.block_reward', 50)
+    	network_id = config_manager.get('network.network_id', 1)
+    	block_time = config_manager.get('consensus.block_time', 30)
+    	max_supply = config_manager.get('consensus.max_supply', 21000000)
+    	developer_fee_percent = config_manager.get('consensus.developer_fee_percent', 0.05)
+    	
+    	# Merge with custom configuration if provided
+    	genesis_config = {
+    	    'premine_amount': premine_amount,
+    	    'foundation_address': foundation_address,
+    	    'block_reward': block_reward,
+    	    'timestamp': int(time.time()),
+    	    'network_id': network_id,
+    	    'validator': 'genesis',
+    	    'version': 1,
+    	    'difficulty': 1,
+    	    'nonce': 0,
+    	    'block_time_target': block_time,
+    	    'max_supply': max_supply,
+    	    'developer_fee_percent': developer_fee_percent
     	}
-    	try:
-    		# Input validation and sanitization
-    		if validator_address:
-    			if not self._validate_address_format(validator_address):
-    				return self._create_error_response(
-    				    'invalid_address_format',
-    				    f"Invalid validator address format: {validator_address}",
-    				    metrics
-    				)
-    			validator_address = validator_address.strip().lower()
-    		# Address resolution with fallbacks
-    		resolved_address = self._resolve_validator_address(validator_address)
-    		if not resolved_address:
-    			return self._create_error_response(
-    			    'address_resolution_failed',
-    			    'No validator address could be resolved',
-    			    metrics
-    			)
-    		validator_address = resolved_address
+    	if custom_config:
+    		genesis_config.update(custom_config)
     		
-    		# Check if validator exists in consensus
-    		if not self.consensus.validator_exists(validator_address):
-    			return self._create_error_response(
-    			    'validator_not_found',
-    			    f'Validator {validator_address} not found in consensus',
-    			    metrics,
-    			    {'validator_address': validator_address}
-    			)
-    		# Parallel data collection for performance
-    		with ThreadPoolExecutor(max_workers=4) as executor:
-    			# Submit all data collection tasks
-    			basic_info_future = executor.submit(
-    			self._get_basic_validator_info, validator_address
-    			)
-    			staking_info_future = executor.submit(
-    			self._get_staking_info, validator_address
-    			)
-    			performance_future = executor.submit(
-    			self._calculate_validator_performance, validator_address
-    			)
-    			economics_future = executor.submit(
-    			self._get_validator_economics, validator_address
-    			)
-    			# Wait for completion with timeout
-    			basic_info = self._get_with_timeout(basic_info_future, 5, 'basic_info')
-    			staking_info = self._get_with_timeout(staking_info_future, 5, 'staking_info')
-    			performance = self._get_with_timeout(performance_future, 10, 'performance')
-    			economics = self._get_with_timeout(economics_future, 8, 'economics')
-    		# Get additional info sequentially
-    		schedule = self._get_validation_schedule(validator_address)
-    		network_status = self._get_network_validator_status()
-    		slashing_risk = self._assess_slashing_risk(validator_address)
-    		# Compile comprehensive response
-    		response = {
-    		    'validator_address': validator_address,
-    		    'basic_info': basic_info,
-    		    'staking_info': staking_info,
-    		    'performance_metrics': performance,
-    		    'economics': economics,
-    		    'validation_schedule': schedule,
-    		    'network_status': network_status,
-    		    'slashing_risk': slashing_risk,
-    		    'system_info': {
-    		        'wallet_connected': self.wallet is not None,
-    		        'network_connected': self.network is not None and self.network.is_connected(),
-    		        'current_height': len(self.blockchain) - 1,
-    		        'timestamp': int(time.time()),
-    		        'response_time_ms': int((time.time() - start_time) * 1000)
-    		    },
-    		    'metadata': {
-    		        'version': '2.0',
-    		        'format': 'standardized',
-    		        'cache_status': 'live',
-    		        'data_freshness': self._get_data_freshness()
-    		    }
-    		}
-    		# Add signatures for data integrity
-    		response['signature'] = self._sign_validator_info(response)
-    		
-    		# Update metrics
-    		metrics['timings']['total'] = time.time() - start_time
-    		response['_metrics'] = metrics
-    		
-    		# Cache the response
-    		self._cache_validator_info(validator_address, response)
-    		
-    		return response
-    		
-    	except Exception as e:
-    	    logger.error(f"Critical error in get_validator_info: {e}", exc_info=True)
-    	    metrics['errors'].append({
-    	        'type': 'critical',
-    	        'message': str(e),
-    	        'timestamp': time.time()
-    	    })
-    	    return self._create_error_response(
-    	        'internal_error',
-    	        f'Internal server error: {str(e)}',
-    	        metrics,
-    	        {'validator_address': validator_address}
-    	    )		
-    			
-    def _resolve_validator_address(self, validator_address: Optional[str]) -> Optional[str]:
-    	"""Resolve validator address with multiple fallback strategies."""
-            	
-    	try:
-    		# If address provided, validate and return
-    		if validator_address:
-    			if self._validate_address_format(validator_address):
-    				return validator_address.lower()
-    			return None
-    			
-    		# Fallback 1: Use wallet's primary address
-    		if self.wallet and self.wallet.addresses:
-    			primary_address = list(self.wallet.addresses.keys())[0]
-    			if self._validate_address_format(primary_address):
-    				return primary_address.lower()
-    				
-    		# Fallback 2: Check if we're a validator in consensus
-    		if hasattr(self.consensus, 'get_local_validator_address'):
-    	         local_address = self.consensus.get_local_validator_address()
-    	         if local_address and self._validate_address_format(local_address):
-    	         	
-    	         	return local_address.lower()
-    	         	# Fallback 3: Check database for recently used validator
-    	         	cached_validator = self.database.get('last_used_validator')
-    	         	if cached_validator and self._validate_address_format(cached_validator):
-    	         		return cached_validator.lower()
-    	         	return None
-    	         	
-    	except Exception as e:
-    	    logger.warning(f"Address resolution failed: {e}")
-    	    return None   
-    	 
-                 
-        	
+    	# Create premine transaction
+    	premine_tx = Transaction(
+    	    inputs=[],
+    	    outputs=[{
+    	        'address': genesis_config['foundation_address'],
+    	        'amount': genesis_config['premine_amount'],
+    	        'locktime': 0
+    	    }],
+    	    locktime=0
+    	)
+    	
+    	genesis_transactions = [premine_tx.to_dict()]
+    	
+    	# Create genesis block
+    	genesis_block = {
+    	    'height': 0,
+    	    'hash': '0' * 64,  # Temporary placeholder
+    	    'previous_hash': '0' * 64,
+    	    'merkle_root': '',
+    	    'timestamp': genesis_config['timestamp'],
+    	    'difficulty': genesis_config['difficulty'],
+    	    'nonce': genesis_config['nonce'],
+    	    'validator': genesis_config['validator'],
+    	    'transactions': genesis_transactions,
+    	    'version': genesis_config['version'],
+    	    'chainwork': 1,
+    	    'network_id': genesis_config['network_id'],
+    	    'config_hash': hashlib.sha256(json.dumps(genesis_config, sort_keys=True).encode()).hexdigest()
+    	}
+    	
+    	# Calculate merkle root using the instance method
+    	temp_instance = cls.__new__(cls)
+    	temp_instance.config = {'block_time_target': genesis_config['block_time_target']}
+    	genesis_block['merkle_root'] = temp_instance._calculate_merkle_root(genesis_transactions)
+    	# Calculate block hash
+    	block_data = temp_instance._get_block_signing_data(genesis_block)
+    	genesis_block['hash'] = hashlib.sha256(block_data).hexdigest()
+    	
+    	# Add signature if private key is provided in custom config
+    	if custom_config and 'private_key' in custom_config:
+    		try:
+    			signing_key = SigningKey.from_string(bytes.fromhex(custom_config['private_key']), curve=SECP256k1)
+    			signature = signing_key.sign(block_data)
+    			genesis_block['signature'] = signature.hex()
+    			genesis_block['public_key'] = signing_key.get_verifying_key().to_string().hex()
+    		except Exception as e:
+    			logger.warning(f"Could not sign genesis block: {e}")
+    	
+    	logger.info(f"Generated genesis block for network {genesis_config['network_id']}")
+    	logger.info(f"Premine: {genesis_config['premine_amount']} to {genesis_config['foundation_address']}")
+    	
+    	return genesis_block
+    	
+    except ImportError as e:
+    	logger.error(f"Config module not available: {e}")
+    	raise RuntimeError("Configuration module is required for genesis block generation")
+    	
+    except Exception as e:
+    	logger.error(f"Error generating genesis block: {e}")
+    	raise        
+        
+        
+# Add to rayonix_coin.py
+class ValidatorAnalyticsManager:
+    def __init__(self, state_manager: StateManager, consensus: ProofOfStake, database: AdvancedDatabase):
+        self.state_manager = state_manager
+        self.consensus = consensus
+        self.database = database
+        self.cache = cachetools.TTLCache(maxsize=1000, ttl=300)
+        
     def _get_basic_validator_info(self, validator_address: str) -> Dict:
     	try:
     		info = self.consensus.get_validator_info(validator_address)
@@ -1021,444 +2806,6 @@ class RayonixCoin:
     			return False
     			
     def _create_error_response(self, error_code: str, message: str, metrics: Dict, extra: Dict = None) -> Dict:
-    	"""Create comprehensive standardized error response"""    			        		        	                 		        	         
-    def _sync_loop(self):
-        """Blockchain synchronization loop"""
-        while True:
-            try:
-                if self.network and self.network.is_connected():
-                    self._synchronize_with_network()
-                
-                time.sleep(30)  # Sync every 30 seconds
-                
-            except Exception as e:
-                logger.error(f"Sync error: {e}")
-                time.sleep(60)
-    
-    def _synchronize_with_network(self):
-        """Synchronize with network peers"""
-        # Get best block from peers
-        best_block = self._get_best_block_from_peers()
-        
-        if best_block and best_block['height'] > len(self.blockchain) - 1:
-            # We need to sync
-            self._download_missing_blocks(best_block['height'])
-    
-    def _get_best_block_from_peers(self) -> Optional[Dict]:
-        """Get best block information from network peers"""
-        # This would query multiple peers and return consensus best block
-        # For now, return None (simulation)
-        return None
-    
-    def _download_missing_blocks(self, target_height: int):
-        """Download missing blocks from network"""
-        current_height = len(self.blockchain) - 1
-        
-        while current_height < target_height:
-            try:
-                next_height = current_height + 1
-                block = self._request_block_from_peers(next_height)
-                
-                if block and self._validate_block(block):
-                    self._add_block(block)
-                    current_height += 1
-                else:
-                    break
-                    
-            except Exception as e:
-                logger.error(f"Failed to download block {next_height}: {e}")
-                break
-    
-    def _request_block_from_peers(self, height: int) -> Optional[Dict]:
-        """Request block from network peers"""
-        # This would send network requests for specific block
-        # For now, return None (simulation)
-        return None
-    
-    def _mempool_loop(self):
-        """Mempool management loop"""
-        while True:
-            try:
-                # Clean old transactions
-                self._clean_mempool()
-                
-                # Validate all transactions
-                self._validate_mempool()
-                
-                # Broadcast transactions
-                self._broadcast_mempool()
-                
-                time.sleep(60)  # Run every minute
-                
-            except Exception as e:
-                logger.error(f"Mempool error: {e}")
-                time.sleep(30)
-    
-    def _clean_mempool(self):
-        """Clean old transactions from mempool"""
-        current_time = time.time()
-        self.mempool = [tx for tx in self.mempool 
-                       if current_time - tx.get('timestamp', 0) < 3600]  # 1 hour
-    
-    def _validate_mempool(self):
-        """Validate all transactions in mempool"""
-        valid_transactions = []
-        
-        for tx in self.mempool:
-            if self._validate_transaction(tx):
-                valid_transactions.append(tx)
-        
-        self.mempool = valid_transactions
-    
-    def _broadcast_mempool(self):
-        """Broadcast mempool transactions to network"""
-        if self.network and self.mempool:
-            for tx in self.mempool[:10]:  # Broadcast first 10
-                self._broadcast_transaction(tx)
-    
-    def _broadcast_block(self, block: Dict):
-        """Broadcast block to network"""
-        if self.network:
-            self.network.broadcast_message('block', block)
-    
-    def _broadcast_transaction(self, transaction: Dict):
-        """Broadcast transaction to network"""
-        if self.network:
-            self.network.broadcast_message('transaction', transaction)
-    
-    def _handle_block_message(self, message: Dict):
-        """Handle incoming block message"""
-        try:
-            block = message.payload
-            if self._validate_block(block):
-                self._add_block(block)
-        except Exception as e:
-            logger.error(f"Block message handling failed: {e}")
-    
-    def _handle_transaction_message(self, message: Dict):
-        """Handle incoming transaction message"""
-        try:
-            transaction = message.payload
-            if self._validate_transaction(transaction):
-                self._add_to_mempool(transaction)
-        except Exception as e:
-            logger.error(f"Transaction message handling failed: {e}")
-    
-    def _handle_consensus_message(self, message: Dict):
-        """Handle consensus message"""
-        try:
-            # Process consensus messages (votes, proposals, etc.)
-            # This would be implemented based on specific consensus protocol
-            pass
-        except Exception as e:
-            logger.error(f"Consensus message handling failed: {e}")
-    
-    def _add_to_mempool(self, transaction: Dict):
-        """Add transaction to mempool"""
-        # Check if already in mempool
-        tx_hash = self._calculate_transaction_hash(transaction)
-        existing_tx = next((tx for tx in self.mempool 
-                          if self._calculate_transaction_hash(tx) == tx_hash), None)
-        
-        if not existing_tx:
-            transaction['timestamp'] = time.time()
-            transaction['fee_rate'] = self._calculate_fee_rate(transaction)
-            self.mempool.append(transaction)
-    
-    def _calculate_fee_rate(self, transaction: Dict) -> float:
-        """Calculate fee rate (fee per byte)"""
-        tx_size = self._calculate_transaction_size(transaction)
-        
-        # Calculate total fee
-        total_input = sum(inp.get('amount', 0) for inp in transaction.get('inputs', []))
-        total_output = sum(out.get('amount', 0) for out in transaction.get('outputs', []))
-        fee = total_input - total_output
-        
-        return fee / tx_size if tx_size > 0 else 0
-    
-    def _calculate_supply(self):
-        """Calculate current supply from blockchain"""
-        self.total_supply = 0
-        self.circulating_supply = 0
-        self.staking_rewards_distributed = 0
-        self.foundation_funds = 0
-        
-        for block in self.blockchain:
-            for tx in block['transactions']:
-                # Skip coinbase transactions for input calculation
-                if not tx.get('inputs'):
-                    # This is a coinbase transaction
-                    total_output = sum(out.get('amount', 0) for out in tx.get('outputs', []))
-                    self.total_supply += total_output
-                    
-                    # Track foundation funds
-                    for output in tx.get('outputs', []):
-                        if output.get('address') == self.config['foundation_address']:
-                            self.foundation_funds += output.get('amount', 0)
-                        else:
-                            self.circulating_supply += output.get('amount', 0)
-                            self.staking_rewards_distributed += output.get('amount', 0)
-    
-    def create_transaction(self, from_address: str, to_address: str, amount: int, 
-                          fee: Optional[int] = None, memo: Optional[str] = None) -> Optional[Dict]:
-        """Create and sign a transaction"""
-        try:
-            # Get UTXOs for sender
-            utxos = self.utxo_set.get_utxos_for_address(from_address)
-            if not utxos:
-                raise ValueError("No spendable funds")
-            
-            # Calculate total available
-            total_available = sum(utxo.amount for utxo in utxos)
-            
-            # Set default fee if not provided
-            if fee is None:
-                fee = self.config['min_transaction_fee']
-            
-            # Check if sufficient funds
-            if total_available < amount + fee:
-                raise ValueError("Insufficient funds")
-            
-            # Select UTXOs to spend
-            selected_utxos = []
-            selected_amount = 0
-            
-            for utxo in sorted(utxos, key=lambda x: x.amount, reverse=True):
-                if selected_amount >= amount + fee:
-                    break
-                selected_utxos.append(utxo)
-                selected_amount += utxo.amount
-            
-            # Create transaction inputs
-            inputs = []
-            for utxo in selected_utxos:
-                inputs.append({
-                    'tx_hash': utxo.tx_hash,
-                    'output_index': utxo.output_index,
-                    'address': from_address,
-                    'amount': utxo.amount
-                })
-            
-            # Create transaction outputs
-            outputs = [
-                {
-                    'address': to_address,
-                    'amount': amount,
-                    'locktime': 0
-                }
-            ]
-            
-            # Add change output if needed
-            change_amount = selected_amount - amount - fee
-            if change_amount > 0:
-                # Generate a new change address from the wallet
-                if self.wallet:
-             
-                	change_address_info = self.wallet.derive_address(len(self.wallet.addresses), True)
-                	change_address = change_address_info.address
-            else:
-                # Fallback: use from_address for change
-                change_address = from_address
-                
-                outputs.append({
-                    'address': change_address,
-                    'amount': change_amount,
-                    'locktime': 0
-                })
-            
-            # Create transaction
-            transaction = Transaction(
-                inputs=inputs,
-                outputs=outputs,
-                locktime=0
-            )
-            
-            # Sign transaction - use the wallet's sign_transaction method
-            transaction_dict = transaction.to_dict()
-            if self.wallet:
-            	signature = self.wallet.sign_transaction(transaction_dict)
-            	transaction_dict['signature'] = signature
-            
-            # Add to mempool
-            self._add_to_mempool(transaction_dict)
-            
-            return transaction_dict
-            
-        except Exception as e:
-            logger.error(f"Transaction creation failed: {e}")
-            return None
-    
-    def get_balance(self, address: str) -> int:
-        """Get balance for address"""
-        utxos = self.utxo_set.get_utxos_for_address(address)
-        return sum(utxo.amount for utxo in utxos)
-    
-    def get_blockchain_info(self) -> Dict:
-        """Get blockchain information"""
-        return {
-            'height': len(self.blockchain) - 1,
-            'difficulty': self.current_difficulty,
-            'total_supply': self.total_supply,
-            'circulating_supply': self.circulating_supply,
-            'block_reward': self._get_block_reward(),
-            'mempool_size': len(self.mempool),
-            'foundation_funds': self.foundation_funds,
-            'staking_rewards': self.staking_rewards_distributed,
-            'network': self.network_type,
-            'version': 1
-        }
-    
-    def get_block(self, height: int) -> Optional[Dict]:
-        """Get block by height"""
-        if 0 <= height < len(self.blockchain):
-            return self.blockchain[height]
-        return None
-    
-    def get_transaction(self, tx_hash: str) -> Optional[Dict]:
-        """Get transaction by hash"""
-        # Check mempool first
-        for tx in self.mempool:
-            if self._calculate_transaction_hash(tx) == tx_hash:
-                return tx
-        
-        # Check blockchain
-        for block in self.blockchain:
-            for tx in block['transactions']:
-                if self._calculate_transaction_hash(tx) == tx_hash:
-                    return tx
-        
-        return None
-    
-    def start_mining(self):
-        """Start mining/staking"""
-        if not self.mining_thread.is_alive():
-            self.mining_thread = threading.Thread(target=self._mining_loop, daemon=True)
-            self.mining_thread.start()
-            logger.info("Mining started")
-    
-    def stop_mining(self):
-        """Stop mining/staking"""
-        # Mining loop checks a flag, so we just need to set it
-        # This would be implemented with proper threading control
-        logger.info("Mining stopped")
-    
-    def connect_to_network(self):
-        """Connect to P2P network"""
-        if self.network:
-            self.network.start()
-            logger.info("Network connection started")
-    
-    def disconnect_from_network(self):
-        """Disconnect from P2P network"""
-        if self.network:
-            self.network.stop()
-            logger.info("Network connection stopped")
-    
-    def deploy_contract(self, contract_code: str, initial_balance: int = 0) -> Optional[str]:
-        """Deploy smart contract"""
-        if not self.wallet:
-            raise ValueError("Wallet not available")
-        
-        return self.contract_manager.deploy_contract(
-            self.wallet.get_address(),
-            contract_code,
-            initial_balance
-        )
-    
-    def call_contract(self, contract_address: str, function_name: str, 
-                     args: List[Any], value: int = 0) -> Any:
-        """Call smart contract function"""
-        if not self.wallet:
-            raise ValueError("Wallet not available")
-        
-        return self.contract_manager.execute_contract(
-            contract_address,
-            function_name,
-            args,
-            self.wallet.get_address(),
-            value
-        )
-        
-    def get_all_contracts(self) -> List[Dict]:
-    	"""Get all deployed contracts with basic information"""
-    	try:
-    		# Check if contract_manager exists and has the method
-    		if hasattr(self, 'contract_manager') and self.contract_manager is not None:
-    			return self.contract_manager.get_all_contracts()
-    			
-    		else:
-    			return []
-    	except Exception as e:
-    		logger.error(f"Error getting contracts: {e}")
-    		return []        
-    		
-    
-    def register_validator(self, stake_amount: int) -> bool:
-        """Register as validator"""
-        if not self.wallet or not self.wallet.addresses:
-            raise ValueError("Wallet not available or no addresses")
-        validator_address = list(self.wallet.addresses.keys())[0]
-        
-        # Check minimum stake
-        if stake_amount < self.config['stake_minimum']:
-            raise ValueError(f"Minimum stake is {self.config['stake_minimum']} RXY")
-        
-        # Check balance
-        balance = self.get_balance(validator_address)
-        if balance < stake_amount:
-            raise ValueError("Insufficient balance")
-        
-        # Create staking transaction
-        staking_tx = self.create_transaction(
-        validator_address,
-        self.config['foundation_address'],  # Staking contract address
-        stake_amount,
-        fee=self.config['min_transaction_fee'],
-        memo="Validator registration"
-    )
-        
-        if staking_tx:
-            # Get public key from wallet
-            public_key = self.wallet.get_public_key_for_address(validator_address)
-            if not public_key:
-            	raise ValueError("Could not retrieve public key")
-            	
-            # Register with consensus	
-            return self.consensus.register_validator(
-            validator_address,
-            public_key.hex(),  # Convert bytes to hex string
-            stake_amount
-        )
-        
-        return False
-
-    def close(self):
-        """Cleanup resources"""
-        if hasattr(self, 'database'):
-            self.database.close()
-        if hasattr(self, 'network') and self.network is not None:
-            self.network.stop()
-
-    def __del__(self):
-        """Destructor"""
-        self.close()
-      
-    def _get_with_timeout(self, future, timeout: int, operation: str) -> Any:
-        """Get future result with timeout and error handling."""
-        try:
-        	return future.result(timeout=timeout)
-        except TimeoutError:
-        	logger.warning(f"Timeout in {operation} operation")
-        	
-        	return {'error': f'timeout_in_{operation}', 'timed_out': True}
-        	
-        except Exception as e:
-        	 logger.error(f"Error in {operation} operation: {e}")
-        	 
-        	 return {'error': f'error_in_{operation}: {str(e)}'}
-    
-        
-    def _create_error_response(self, error_code: str, message: str, metrics: Dict, extra: Dict = None) -> Dict:
     	"""Create standardized error response."""
     	error_data = {
     	    'code': error_code,
@@ -1646,7 +2993,7 @@ class RayonixCoin:
     	    (1.20, 'poor'),
     	    (float('inf'), 'inefficient')
     	]
-    	for threshold, rating, _ in rating_map:
+    	for threshold, rating in efficiency_map:
     		if uptime >= threshold:
     			return rating 
     	return 'inefficient'
@@ -2196,23 +3543,7 @@ class RayonixCoin:
     		self.database.put(cache_key, cache_data)
     	except Exception as e:
     		logger.warning(f"Failed to cache validator info: {e}")
-    		
-# Additional helper methods would be implemented here for:
-# - _calculate_performance_score
-# - _get_reliability_rating
-# - _get_efficiency_rating
-# - _calculate_apy
-# - _calculate_commission_earnings
-# - _calculate_delegator_rewards
-# - _assess_economic_viability
-# - _calculate_break_even
-# - _collect_risk_factors
-# - _calculate_risk_score
-# - _determine_risk_level
-# - _calculate_slashing_impact
-# - _get_risk_trend
-# - _get_insurance_coverage
-# - And many more...    		
+  
     		
     def _get_data_freshness(self) -> str:
     	"""Get data freshness indicator."""
@@ -2225,178 +3556,43 @@ class RayonixCoin:
     		return 'recent'
     	else:
     		return 'established'
-    	
+        
+    # Add all the helper methods: _calculate_apr, _assess_economic_viability, etc.        
+
+# Utility functions
 def create_rayonix_network(network_type: str = "mainnet") -> RayonixCoin:
     """Create RAYONIX network instance"""
     return RayonixCoin(network_type)
-    
-@classmethod
-def generate_genesis_block(cls, config_manager: Any = None, custom_config: Optional[Dict] = None) -> Dict:
-    """Generate genesis block with custom configuration"""
-    try:
-    	# Use the global config manager if available, otherwise create a minimal one
-    	if config_manager is None:
-    		try:
-    			from config import get_config
-    			config_manager = get_config()
-    		except ImportError:
-    			config_manager = None
-    	# Get configuration values from config manager
-    	premine_amount = config_manager.get('consensus.block_reward', 50) * 20000 # 20,000 blocks worth
-    	foundation_address = config_manager.get('wallet.foundation_address', 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX')
-    	block_reward = config_manager.get('consensus.block_reward', 50)
-    	network_id = config_manager.get('network.network_id', 1)
-    	block_time = config_manager.get('consensus.block_time', 30)
-    	max_supply = config_manager.get('consensus.max_supply', 21000000)
-    	developer_fee_percent = config_manager.get('consensus.developer_fee_percent', 0.05)
-    	
-    	# Merge with custom configuration if provided
-    	genesis_config = {
-    	    'premine_amount': premine_amount,
-    	    'foundation_address': foundation_address,
-    	    'block_reward': block_reward,
-    	    'timestamp': int(time.time()),
-    	    'network_id': network_id,
-    	    'validator': 'genesis',
-    	    'version': 1,
-    	    'difficulty': 1,
-    	    'nonce': 0,
-    	    'block_time_target': block_time,
-    	    'max_supply': max_supply,
-    	    'developer_fee_percent': developer_fee_percent
-    	}
-    	if custom_config:
-    		genesis_config.update(custom_config)
-    		
-    	# Create premine transaction
-    	premine_tx = Transaction(
-    	    inputs=[],
-    	    outputs=[{
-    	        'address': genesis_config['foundation_address'],
-    	        'amount': genesis_config['premine_amount'],
-    	        'locktime': 0
-    	    }],
-    	    locktime=0
-    	)
-    	
-    	genesis_transactions = [premine_tx.to_dict()]
-    	
-    	# Create genesis block
-    	genesis_block = {
-    	    'height': 0,
-    	    'hash': '0' * 64,  # Temporary placeholder
-    	    'previous_hash': '0' * 64,
-    	    'merkle_root': '',
-    	    'timestamp': genesis_config['timestamp'],
-    	    'difficulty': genesis_config['difficulty'],
-    	    'nonce': genesis_config['nonce'],
-    	    'validator': genesis_config['validator'],
-    	    'transactions': genesis_transactions,
-    	    'version': genesis_config['version'],
-    	    'chainwork': 1,
-    	    'network_id': genesis_config['network_id'],
-    	    'config_hash': hashlib.sha256(json.dumps(genesis_config, sort_keys=True).encode()).hexdigest()
-    	}
-    	
-    	# Calculate merkle root using the instance method
-    	temp_instance = cls.__new__(cls)
-    	temp_instance.config = {'block_time_target': genesis_config['block_time_target']}
-    	genesis_block['merkle_root'] = temp_instance._calculate_merkle_root(genesis_transactions)
-    	# Calculate block hash
-    	block_data = temp_instance._get_block_signing_data(genesis_block)
-    	genesis_block['hash'] = hashlib.sha256(block_data).hexdigest()
-    	
-    	# Add signature if private key is provided in custom config
-    	if custom_config and 'private_key' in custom_config:
-    		try:
-    			signing_key = SigningKey.from_string(bytes.fromhex(custom_config['private_key']), curve=SECP256k1)
-    			signature = signing_key.sign(block_data)
-    			genesis_block['signature'] = signature.hex()
-    			genesis_block['public_key'] = signing_key.get_verifying_key().to_string().hex()
-    		except Exception as e:
-    			logger.warning(f"Could not sign genesis block: {e}")
-    	
-    	logger.info(f"Generated genesis block for network {genesis_config['network_id']}")
-    	logger.info(f"Premine: {genesis_config['premine_amount']} to {genesis_config['foundation_address']}")
-    	
-    	return genesis_block
-    	
-    except ImportError as e:
-    	logger.error(f"Config module not available: {e}")
-    	raise RuntimeError("Configuration module is required for genesis block generation")
-    	
-    except Exception as e:
-    	logger.error(f"Error generating genesis block: {e}")
-    	raise
-    
 
 def validate_rayonix_address(address: str) -> bool:
-    """Validate RAYONIX address"""
-    # RAYONIX uses Bech32 addresses starting with 'ryx'
+    """Validate RAYONIX address format"""
     if not address or not isinstance(address, str):
         return False
     
-    # Check length and prefix
-    if not address.startswith('ryx1') or len(address) != 42:
+    if not address.startswith('ryx1') or len(address) < 42 or len(address) > 90:
         return False
     
-    # Bech32 validation
     try:
-        hrp, data = bech32.decode(address)
+        hrp, data = bech32.bech32_decode(address)
         return hrp == 'ryx' and data is not None
     except:
-        return False           	
-    	
+        return False
+
 def calculate_mining_reward(height: int, base_reward: int = 50, halving_interval: int = 210000) -> int:
     """Calculate mining reward at given height"""
     halvings = height // halving_interval
     reward = base_reward >> halvings
     return max(reward, 1)
-
-# Example usage
-if __name__ == "__main__":
-    # Create mainnet instance
-    rayonix = RayonixCoin("mainnet")
     
+def _get_recent_blocks(self, count: int) -> List[Dict]:
+    """Get recent blocks for gas price calculation"""
     try:
-        # Start network and mining
-        rayonix.connect_to_network()
-        rayonix.start_mining()
+        if not self.blockchain:
+            return []
         
-        # Display blockchain info
-        info = rayonix.get_blockchain_info()
-        print(f"RAYONIX Blockchain Info:")
-        print(f"  Height: {info['height']}")
-        print(f"  Total Supply: {info['total_supply']} RXY")
-        print(f"  Circulating Supply: {info['circulating_supply']} RXY")
-        print(f"  Current Reward: {info['block_reward']} RXY")
-        print(f"  Difficulty: {info['difficulty']}")
+        start_idx = max(0, len(self.blockchain) - count)
+        return self.blockchain[start_idx:]
         
-        # Create a transaction (example)
-        if rayonix.wallet and rayonix.wallet.addresses:
-            address = list(rayonix.wallet.addresses.keys())[0]
-            balance = rayonix.get_balance(address)
-            print(f"Wallet Balance: {balance} RXY")
-            
-            # Send transaction if we have funds
-            if balance > 10:
-                tx = rayonix.create_transaction(
-                    address,
-                    "rx1recipientaddressxxxxxxxxxxxxxx",
-                    10,
-                    fee=1
-                )
-                if tx:
-                    print(f"Transaction created: {rayonix._calculate_transaction_hash(tx)[:16]}...")
-        
-        # Keep running
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print("\nShutting down...")
-            
-    finally:
-        rayonix.stop_mining()
-        rayonix.disconnect_from_network()
-        rayonix.close()
+    except Exception as e:
+        logger.error(f"Error getting recent blocks: {e}")
+        return []    
