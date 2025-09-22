@@ -6,8 +6,8 @@ from enum import Enum, auto
 import threading
 import logging
 
-from ..utils.types import IndexConfig
-from ..utils.exceptions import IndexError
+from database.utils.types import IndexConfig
+from database.utils.exceptions import IndexError
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ from typing import Any
 from enum import Enum, auto
 import logging
 
-from ..utils.exceptions import SerializationError
+from database.utils.exceptions import SerializationError
 
 logger = logging.getLogger(__name__)
 

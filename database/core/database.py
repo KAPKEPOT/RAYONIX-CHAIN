@@ -34,18 +34,18 @@ import tempfile
 import shutil
 from sortedcontainers import SortedDict, SortedList
 
-from ..utils.types import DatabaseConfig, IndexConfig, BatchOperation
-from ..utils.exceptions import (
+from database.utils.types import DatabaseConfig, IndexConfig, BatchOperation
+from database.utils.exceptions import (
     DatabaseError, KeyNotFoundError, SerializationError, IndexError,
     IntegrityError, CompressionError, EncryptionError
 )
-from ..utils.helpers import AdvancedJSONEncoder
-from ..utils.stats import DatabaseStats
-from .indexing import FunctionalBTreeIndex, FunctionalHashIndex, FunctionalLSMIndex, CompoundIndex
-from .serialization import JSONSerializer, MsgPackSerializer, ProtobufSerializer, AvroSerializer
-from .compression import ZlibCompression, LZ4Compression, SnappyCompression, ZstdCompression
-from .encryption import AES256Encryption, ChaCha20Encryption
-from ...services.background_tasks import BackgroundTaskService
+from database.utils.helpers import AdvancedJSONEncoder
+from database.utils.stats import DatabaseStats
+from database.core.indexing import FunctionalBTreeIndex, FunctionalHashIndex, FunctionalLSMIndex, CompoundIndex
+from database.core.serialization import JSONSerializer, MsgPackSerializer, ProtobufSerializer, AvroSerializer
+from database.core.compression import ZlibCompression, LZ4Compression, SnappyCompression, ZstdCompression
+from database.core.encryption import AES256Encryption, ChaCha20Encryption
+from database.services.background_tasks import BackgroundTaskService
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
