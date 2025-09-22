@@ -4,7 +4,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 
-from ..core.exceptions import CryptoError
+from rayonix_wallet.core.exceptions import CryptoError
 
 class TransactionSigner:
     """Transaction signing utilities"""

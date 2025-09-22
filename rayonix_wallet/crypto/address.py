@@ -3,8 +3,8 @@ import base58
 import bech32
 from typing import Optional
 
-from ..core.types import AddressType
-from ..core.exceptions import CryptoError
+from rayonix_wallet.core.types import AddressType
+from rayonix_wallet.core.exceptions import CryptoError
 
 class AddressDerivation:
     """Address derivation and validation"""

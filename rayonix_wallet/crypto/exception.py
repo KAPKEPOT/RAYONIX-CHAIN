@@ -6,8 +6,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidTag
 
-from ..core.exceptions import CryptoError
-from ...utils.secure import SecureString
+from rayonix_wallet.core.exceptions import CryptoError
+from rayonix_wallet.utils.secure import SecureString
 
 class EncryptionManager:
     """Encryption utilities for wallet data"""

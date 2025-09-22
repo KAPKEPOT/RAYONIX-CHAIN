@@ -8,9 +8,9 @@ from cryptography.hazmat.backends import default_backend
 from bip32 import BIP32
 from mnemonic import Mnemonic
 
-from ..core.types import WalletType, SecureKeyPair
-from ..core.exceptions import CryptoError
-from ...utils.secure import SecureString
+from rayonix_wallet.core.types import WalletType, SecureKeyPair
+from rayonix_wallet.core.exceptions import CryptoError
+from rayonix_wallet.utils.secure import SecureString
 
 class KeyManager:
     """Key management and derivation"""
