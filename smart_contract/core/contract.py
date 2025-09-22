@@ -7,13 +7,13 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 from enum import Enum
 
-from ..types.enums import ContractType, ContractState, ContractSecurityLevel
-from ..core.storage.contract_storage import ContractStorage
-from ..core.execution_result import ExecutionResult
-from ..core.gas_system.gas_meter import GasMeter
-from ..wasm.wasm_executor import WASMExecutor
-from ..utils.validation_utils import validate_contract_id, validate_address
-from ..exceptions.contract_errors import ContractUpgradeError
+from smart_contract.types.enums import ContractType, ContractState, ContractSecurityLevel
+from smart_contract.core.storage.contract_storage import ContractStorage
+from smart_contract.core.execution_result import ExecutionResult
+from smart_contract.core.gas_system.gas_meter import GasMeter
+from smart_contract.wasm.wasm_executor import WASMExecutor
+from smart_contract.utils.validation_utils import validate_contract_id, validate_address
+from smart_contract.exceptions.contract_errors import ContractUpgradeError
 
 logger = logging.getLogger("SmartContract.Core")
 
