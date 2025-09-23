@@ -1,9 +1,13 @@
+# helpers.py - MODIFIED VERSION
 import os
 import secrets
 import hashlib
 from typing import Optional, Tuple
-from rayonix_wallet.core.config import WalletConfig
-from rayonix_wallet.core.types import WalletType
+
+# Remove direct imports that cause circular dependency
+# from rayonix_wallet.core.wallet import RayonixWallet  # REMOVE
+# from rayonix_wallet.core.config import WalletConfig   # REMOVE
+# from rayonix_wallet.core.types import WalletType      # REMOVE
 
 def generate_mnemonic(strength: int = 256) -> str:
     """Generate BIP39 mnemonic phrase"""
@@ -23,8 +27,12 @@ def mnemonic_to_seed(mnemonic_phrase: str, passphrase: str = "") -> bytes:
     mnemo = Mnemonic("english")
     return mnemo.to_seed(mnemonic_phrase, passphrase)
 
-def create_hd_wallet(config: Optional[WalletConfig] = None) -> Tuple[str, RayonixWallet]:
+def create_hd_wallet(config=None) -> Tuple[str, object]:  # Use object instead of RayonixWallet
     """Create new HD wallet with mnemonic"""
+    # Lazy imports to break circular dependency
+    from rayonix_wallet.core.config import WalletConfig
+    from rayonix_wallet.core.wallet import RayonixWallet
+    
     config = config or WalletConfig()
     wallet = RayonixWallet(config)
     
@@ -36,8 +44,13 @@ def create_hd_wallet(config: Optional[WalletConfig] = None) -> Tuple[str, Rayoni
     
     return mnemonic, wallet
 
-def create_wallet_from_private_key(private_key: str, config: Optional[WalletConfig] = None) -> RayonixWallet:
+def create_wallet_from_private_key(private_key: str, config=None) -> object:
     """Create wallet from private key"""
+    # Lazy imports to break circular dependency
+    from rayonix_wallet.core.config import WalletConfig
+    from rayonix_wallet.core.wallet import RayonixWallet
+    from rayonix_wallet.core.types import WalletType
+    
     config = config or WalletConfig()
     wallet = RayonixWallet(config)
     
@@ -48,6 +61,7 @@ def create_wallet_from_private_key(private_key: str, config: Optional[WalletConf
     
     return wallet
 
+# Rest of the functions remain the same (they don't have circular dependencies)
 def generate_random_bytes(length: int = 32) -> bytes:
     """Generate cryptographically secure random bytes"""
     return secrets.token_bytes(length)
