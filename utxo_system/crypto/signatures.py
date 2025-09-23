@@ -6,12 +6,16 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
-from utxo_system.models.transaction import Transaction
-from utxo_system.models.utxo import UTXO
+# REMOVE THIS LINE: from utxo_system.models.transaction import Transaction
+# REMOVE THIS LINE: from utxo_system.models.utxo import UTXO
 from utxo_system.utils.logging_config import logger
 
-def sign_transaction_input(transaction: Transaction, input_index: int, private_key, 
-                          utxo: UTXO, sighash_type: int = 1) -> None:
+def sign_transaction_input(transaction, input_index: int, private_key, 
+                          utxo, sighash_type: int = 1) -> None:
+    # Add import inside function
+    from utxo_system.models.transaction import Transaction
+    from utxo_system.models.utxo import UTXO
+    
     if input_index >= len(transaction.inputs):
         raise ValueError("Invalid input index")
     
@@ -33,7 +37,11 @@ def sign_transaction_input(transaction: Transaction, input_index: int, private_k
     transaction.inputs[input_index].signature = signature.hex()
     transaction.inputs[input_index].public_key = public_key
 
-def _get_signing_data(transaction: Transaction, input_index: int, utxo: UTXO, sighash_type: int) -> str:
+def _get_signing_data(transaction, input_index: int, utxo, sighash_type: int) -> str:
+    # Add import inside function
+    from utxo_system.models.transaction import Transaction
+    from utxo_system.models.utxo import UTXO
+    
     # Create copy without signatures for this input
     inputs_copy = []
     for i, inp in enumerate(transaction.inputs):
@@ -64,7 +72,11 @@ def _get_signing_data(transaction: Transaction, input_index: int, utxo: UTXO, si
     
     return signing_data
 
-def verify_transaction_signature(transaction: Transaction, input_index: int, utxo_set) -> bool:
+def verify_transaction_signature(transaction, input_index: int, utxo_set) -> bool:
+    # Add import inside function
+    from utxo_system.models.transaction import Transaction
+    from utxo_system.models.utxo import UTXO
+    
     if input_index >= len(transaction.inputs) or not transaction.inputs[input_index].signature:
         return False
     
