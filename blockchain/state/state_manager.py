@@ -11,7 +11,7 @@ from contextlib import contextmanager
 import logging
 
 from blockchain.models.block import Block
-from utxo_system.database.utxo import UTXOSet
+from utxo_system.database.core import UTXOSet
 from rules.core.consensus import ConsensusEngine
 from smart_contract.core.contract_manager import ContractManager
 
