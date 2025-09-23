@@ -5,7 +5,7 @@ import logging
 from typing import Dict, List, Any, Optional
 
 from blockchain.models.block import Block, BlockHeader
-from blockchain.models.transaction import Transaction
+from utxo_system.models.transaction import Transaction
 from blockchain.validation.validation_manager import ValidationManager
 
 logger = logging.getLogger(__name__)
