@@ -1,6 +1,8 @@
 import re
 from typing import Optional
-from rayonix_wallet.core.types import AddressType
+import re
+import hashlib  # Add this line
+from typing import Optional
 from rayonix_wallet.core.exceptions import WalletError
 
 def get_address_type():
