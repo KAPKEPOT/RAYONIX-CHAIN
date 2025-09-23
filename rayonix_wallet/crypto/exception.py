@@ -79,7 +79,7 @@ class EncryptionManager:
             key = self._derive_key_from_passphrase(
                 passphrase, 
                 encrypted_package['salt'],
-                encrypted_package.get('iterations', 100000)
+                encrypted_package.get('iterations', 300000)
             )
             
             return self.decrypt_data(encrypted_package['data'], key)
@@ -87,7 +87,7 @@ class EncryptionManager:
         except Exception as e:
             raise CryptoError(f"Passphrase decryption failed: {e}")
     
-    def _derive_key_from_passphrase(self, passphrase: str, salt: bytes, iterations: int = 100000) -> bytes:
+    def _derive_key_from_passphrase(self, passphrase: str, salt: bytes, iterations: int = 300000) -> bytes:
         """Derive encryption key from passphrase using PBKDF2"""
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),

@@ -12,9 +12,10 @@ class AddressDerivation:
     def __init__(self, config):
         self.config = config
     
-    def derive_address(self, public_key: bytes, index: int, is_change: bool) -> str:
+    def _derive_address(self, public_key: bytes, index: int, is_change: bool) -> str:
         """Derive address from public key based on address type"""
         if self.config.address_type == AddressType.RAYONIX:
+            # Rayonix-specific address derivation
             return self._derive_rayonix_address(public_key)
         elif self.config.address_type == AddressType.P2PKH:
             return self._derive_p2pkh_address(public_key)
@@ -23,46 +24,69 @@ class AddressDerivation:
         elif self.config.address_type == AddressType.BECH32:
             return self._derive_bech32_address(public_key)
         else:
+            # Default to Rayonix address
             return self._derive_rayonix_address(public_key)
     
     def _derive_rayonix_address(self, public_key: bytes) -> str:
         """Derive Rayonix-specific address"""
+        # Hash public key with SHA256
         sha_hash = hashlib.sha256(public_key).digest()
+        
+        # Hash again with RIPEMD160
         ripemd_hash = hashlib.new('ripemd160', sha_hash).digest()
         
+        # Add network prefix (0x3C for mainnet, 0x6F for testnet)
         network_byte = b'\x3C' if self.config.network == "mainnet" else b'\x6F'
         payload = network_byte + ripemd_hash
         
+        # Double SHA256 for checksum
         checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
+        
+        # Base58 encode
         address_bytes = payload + checksum
         return base58.b58encode(address_bytes).decode('ascii')
     
     def _derive_p2pkh_address(self, public_key: bytes) -> str:
         """Derive P2PKH address (legacy Bitcoin-style)"""
+        # Hash public key with SHA256
         sha_hash = hashlib.sha256(public_key).digest()
+        
+        # Hash again with RIPEMD160
         ripemd_hash = hashlib.new('ripemd160', sha_hash).digest()
         
+        # Add version byte (0x00 for mainnet, 0x6F for testnet)
         version_byte = b'\x00' if self.config.network == "mainnet" else b'\x6F'
         payload = version_byte + ripemd_hash
         
+        # Double SHA256 for checksum
         checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
+        
+        # Base58 encode
         address_bytes = payload + checksum
         return base58.b58encode(address_bytes).decode('ascii')
     
     def _derive_p2wpkh_address(self, public_key: bytes) -> str:
         """Derive P2WPKH address (native SegWit)"""
+        # Hash public key with SHA256
         sha_hash = hashlib.sha256(public_key).digest()
+        
+        # Hash again with RIPEMD160
         ripemd_hash = hashlib.new('ripemd160', sha_hash).digest()
         
+        # Bech32 encoding
         hrp = "bc" if self.config.network == "mainnet" else "tb"
         return bech32.encode(hrp, 0, ripemd_hash)
     
     def _derive_bech32_address(self, public_key: bytes) -> str:
         """Derive Bech32 address"""
+        # Hash public key with SHA256
         sha_hash = hashlib.sha256(public_key).digest()
+        
+        # Hash again with RIPEMD160
         ripemd_hash = hashlib.new('ripemd160', sha_hash).digest()
         
-        hrp = "ray" if self.config.network == "mainnet" else "tray"
+        # Bech32 encoding
+        hrp = "ryx" if self.config.network == "mainnet" else "ray"
         return bech32.encode(hrp, 0, ripemd_hash)
     
     def validate_address(self, address: str, address_type: AddressType, network: str) -> bool:
