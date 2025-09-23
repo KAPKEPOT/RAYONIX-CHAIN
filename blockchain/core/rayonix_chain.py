@@ -18,7 +18,7 @@ from rayonix_wallet.core.wallet import RayonixWallet
 from utxo_system.database.core import UTXOSet
 from consensusengine.core.consensus import ProofOfStake
 from blockchain.utils.genesis import GenesisBlockGenerator
-
+from network.core.p2p_network import AdvancedP2PNetwork
 logger = logging.getLogger(__name__)
 
 class RayonixBlockchain:
@@ -157,25 +157,46 @@ class RayonixBlockchain:
         from blockchain.models.smart_contract import ContractManager
         return ContractManager()
     
-    def _initialize_wallet(self) -> Any:
+    def _initialize_wallet(self):
         """Initialize wallet system"""
-        # This would be implemented based on your wallet implementation
+        wallet_config = WalletConfig(
+        network=self.network_type,
+        address_type=AddressType.RAYONIX,  # Use the enum directly
+        encryption=True
+    )
+        self.wallet = RayonixWallet(wallet_config)
         
-        wallet_config = self.config.get('wallet', {})
-        return RayonixWallet(wallet_config, os.path.join(self.data_dir, 'wallets'))
+        # Check if wallet needs to be initialized (no master key)
+        if not self.wallet.master_key:
+        	# Create a new HD wallet
+        	try:
+        		mnemonic_phrase, xpub = self.wallet.create_hd_wallet()
+        		logger.info(f"New HD wallet created with mnemonic: {mnemonic_phrase[:10]}...")
+        	except Exception as e:
+        	    logger.error(f"Failed to create HD wallet: {e}")
+        	    
+        	    # Fallback: create from random private key
+        	    private_key = os.urandom(32).hex()
+        	    self.wallet.create_from_private_key(private_key, WalletType.NON_HD)
+        	    logger.info("Non-HD wallet created from random private key")
+        	    
+        # Generate initial addresses
+        if self.wallet.master_key:
+            for i in range(5):
+                self.wallet.derive_address(i, False) 	    
     
     def _get_bootstrap_nodes(self) -> List[str]:
         """Get bootstrap nodes for network"""
         if self.network_type == "mainnet":
             return [
-                "node1.rayonix.com:30303",
-                "node2.rayonix.com:30303",
-                "node3.rayonix.com:30303"
+                "node1.rayonix.site:30303",
+                "node2.rayonix.site:30303",
+                "node3.rayonix.site:30303"
             ]
         elif self.network_type == "testnet":
             return [
-                "testnet-node1.rayonix.com:30304",
-                "testnet-node2.rayonix.com:30304"
+                "testnet-node1.rayonix.site:30304",
+                "testnet-node2.rayonix.site:30304"
             ]
         else:
             return []
@@ -222,8 +243,21 @@ class RayonixBlockchain:
         logger.info("Genesis block created and processed")
     
     def _load_blockchain_state(self):
-        """Load full blockchain state from database"""
-        logger.info("Blockchain state loaded from database")
+        """Load blockchain from database"""
+        try:
+            self.genesis_block = self.database.get('genesis_block')
+            chain_data = self.database.get('blockchain')
+            
+            if chain_data:
+                self.blockchain = chain_data
+                # Rebuild UTXO set by processing all blocks
+                for block in self.blockchain:
+                    self._update_utxo_set(block)
+                
+                # Calculate current supply
+                self._calculate_supply()
+                
+            logger.info(f"Blockchain loaded with {len(self.blockchain)} blocks")
     
     def start(self):
         """Start the blockchain node"""
@@ -274,7 +308,7 @@ class RayonixBlockchain:
         """Proof-of-Stake block production loop"""
         while self.running:
             try:
-                if self.state == BlockchainState.SYNCED:
+                if self.state == ChainState.SYNCED:
                     block = await self.block_producer.create_new_block()
                     if block:
                         await self._process_new_block(block)
