@@ -2,14 +2,15 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 import time
-
+from utxo_system.models.transaction import Transaction  
+from utxo_system.utxo import UTXO  
 @dataclass
 class TransactionCreationResult:
     success: bool
-    transaction: Optional['Transaction'] = None  # Transaction import will be handled later
     fee_estimate: int
-    selected_utxos: List['UTXO'] = field(default_factory=list)  # UTXO import will be handled later
     change_amount: int
+    transaction: Optional['Transaction'] = None  # Transaction import will be handled later
+    selected_utxos: List['UTXO'] = field(default_factory=list)  # UTXO import will be handled later
     error_message: Optional[str] = None
     total_input: int = 0
     total_output: int = 0
@@ -20,9 +21,7 @@ class TransactionCreationResult:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert transaction creation result to dictionary"""
-        from blockchain.models.transaction import Transaction  # Avoid circular import
-        from blockchain.models.utxo import UTXO  # Avoid circular import
-        
+  
         return {
             'success': self.success,
             'transaction': self.transaction.to_dict() if self.transaction else None,
@@ -41,18 +40,16 @@ class TransactionCreationResult:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TransactionCreationResult':
         """Create transaction creation result from dictionary"""
-        from blockchain.models.transaction import Transaction  # Avoid circular import
-        from blockchain.models.utxo import UTXO  # Avoid circular import
-        
+      
         transaction = Transaction.from_dict(data['transaction']) if data['transaction'] else None
         utxos = [UTXO.from_dict(utxo) for utxo in data['selected_utxos']] if data['selected_utxos'] else []
         
         return cls(
             success=data['success'],
-            transaction=transaction,
             fee_estimate=data['fee_estimate'],
-            selected_utxos=utxos,
             change_amount=data['change_amount'],
+            transaction=transaction,
+            selected_utxos=utxos,
             error_message=data.get('error_message'),
             total_input=data.get('total_input', 0),
             total_output=data.get('total_output', 0),
