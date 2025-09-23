@@ -6,6 +6,27 @@ Security-related exceptions for smart contract execution
 class SecurityError(Exception):
     """Base class for all security-related exceptions"""
     pass
+    
+class SecurityViolationError(SecurityError):
+    """General security violation detected"""
+    
+    def __init__(self, message: str, violation_type: str = "GENERAL"):
+        self.violation_type = violation_type
+        super().__init__(f"SecurityViolation[{violation_type}]: {message}")
+
+class RateLimitExceededError(SecurityViolationError):
+    """Rate limit exceeded"""
+    
+    def __init__(self, address: str, operation: str, limit: int, current: int):
+        message = f"Rate limit exceeded for {address} operation {operation}: {current}/{limit}"
+        super().__init__(message, "RATE_LIMIT")
+
+class BlacklistedAddressError(SecurityViolationError):
+    """Blacklisted address attempted access"""
+    
+    def __init__(self, address: str, reason: str = "Unknown"):
+        message = f"Blacklisted address {address} attempted access. Reason: {reason}"
+        super().__init__(message, "BLACKLISTED")    
 
 class ContractSecurityError(SecurityError):
     """Security violation detected in contract execution"""
