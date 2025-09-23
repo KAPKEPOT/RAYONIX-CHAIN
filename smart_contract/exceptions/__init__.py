@@ -1,16 +1,98 @@
 # smart_contract/exceptions/__init__.py
-from .contract_errors import (
-    ContractDeploymentError, ContractExecutionError,
-    ContractUpgradeError, ContractNotFoundError
+from smart_contract.exceptions.contract_errors import (
+    ContractError,
+    ContractDeploymentError,
+    ContractExecutionError,
+    ContractValidationError,
+    ContractUpgradeError,
+    ContractNotFoundError,
+    ContractStateError,
+    ContractCompilationError
 )
-from .security_errors import (
-    SecurityViolationError, RateLimitExceededError,
-    BlacklistedAddressError, InputValidationError
+
+from smart_contract.exceptions.security_errors import (
+    SecurityError,
+    ContractSecurityError,
+    AccessControlError,
+    ReentrancyAttackError,
+    IntegerOverflowError,
+    UncheckedCallError,
+    GasExhaustionAttackError,
+    TimestampDependencyError,
+    BlockhashDependencyError,
+    OracleManipulationError,
+    FrontRunningError,
+    DenialOfServiceError,
+    SignatureVerificationError,
+    MaliciousBytecodeError,
+    UnauthorizedUpgradeError,
+    StorageCollisionError,
+    FunctionVisibilityError,
+    EventSpoofingError,
+    PhishingAttemptError,
+    TokenTheftAttemptError,
+    FlashLoanAttackError,
+    PriceManipulationError,
+    GovernanceAttackError,
+    TimeLockBypassError,
+    WhitelistBypassError,
+    SandboxEscapeError,
+    MemoryCorruptionError,
+    InfiniteLoopError,
+    ResourceExhaustionError,
+    CryptographicWeaknessError,
+    DomainValidationError,
+    IPValidationError,
+    InputValidationError,
+    BehavioralAnomalyError,
+    ThreatIntelligenceError
 )
 
 __all__ = [
-    'ContractDeploymentError', 'ContractExecutionError',
-    'ContractUpgradeError', 'ContractNotFoundError',
-    'SecurityViolationError', 'RateLimitExceededError',
-    'BlacklistedAddressError', 'InputValidationError'
+    # Contract errors
+    'ContractError',
+    'ContractDeploymentError',
+    'ContractExecutionError',
+    'ContractValidationError',
+    'ContractUpgradeError',
+    'ContractNotFoundError',
+    'ContractStateError',
+    'ContractCompilationError',
+    
+    # Security errors
+    'SecurityError',
+    'ContractSecurityError',
+    'AccessControlError',
+    'ReentrancyAttackError',
+    'IntegerOverflowError',
+    'UncheckedCallError',
+    'GasExhaustionAttackError',
+    'TimestampDependencyError',
+    'BlockhashDependencyError',
+    'OracleManipulationError',
+    'FrontRunningError',
+    'DenialOfServiceError',
+    'SignatureVerificationError',
+    'MaliciousBytecodeError',
+    'UnauthorizedUpgradeError',
+    'StorageCollisionError',
+    'FunctionVisibilityError',
+    'EventSpoofingError',
+    'PhishingAttemptError',
+    'TokenTheftAttemptError',
+    'FlashLoanAttackError',
+    'PriceManipulationError',
+    'GovernanceAttackError',
+    'TimeLockBypassError',
+    'WhitelistBypassError',
+    'SandboxEscapeError',
+    'MemoryCorruptionError',
+    'InfiniteLoopError',
+    'ResourceExhaustionError',
+    'CryptographicWeaknessError',
+    'DomainValidationError',
+    'IPValidationError',
+    'InputValidationError',
+    'BehavioralAnomalyError',
+    'ThreatIntelligenceError'
 ]
