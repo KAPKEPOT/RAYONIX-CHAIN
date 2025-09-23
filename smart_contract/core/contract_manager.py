@@ -14,17 +14,17 @@ from contextlib import contextmanager
 import plyvel
 import aiohttp
 
-from ..core.contract import SmartContract
+from smart_contract.core.contract import SmartContract
 from ..core.execution_result import ExecutionResult
-from ..core.gas_system.gas_meter import GasMeter
-from ..security.contract_security import ContractSecurity
-from ..database.leveldb_manager import LevelDBManager
-from ..wasm.bytecode_validator import WASMBytecodeValidator
-from ..utils.validation_utils import validate_contract_id, validate_address
-from ..exceptions.contract_errors import (
+from smart_contract.core.gas_system.gas_meter import GasMeter
+from smart_contract.security.contract_security import ContractSecurity
+from smart_contract.database.leveldb_manager import LevelDBManager
+from smart_contract.wasm.bytecode_validator import WASMBytecodeValidator
+from smart_contract.utils.validation_utils import validate_contract_id, validate_address
+from smart_contract.exceptions.contract_errors import (
     ContractDeploymentError, ContractExecutionError, ContractNotFoundError
 )
-from ..exceptions.security_errors import SecurityViolationError
+from smart_contract.exceptions.security_errors import SecurityViolationError
 
 logger = logging.getLogger("SmartContract.ContractManager")
 
