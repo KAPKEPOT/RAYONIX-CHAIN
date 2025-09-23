@@ -6,7 +6,7 @@ from collections import defaultdict
 
 from blockchain.models.validation import ValidationResult, ValidationLevel
 from blockchain.models.block import Block
-from blockchain.models.transaction import Transaction
+from utxo_system.models.transaction import Transaction
 
 logger = logging.getLogger(__name__)
 
