@@ -434,4 +434,87 @@ class ConfigManager:
             
             for path in default_paths:
                 if os.path.exists(path):
-                    config = ConsensusConfig.from
+                    config = ConsensusConfig.from_file(path)
+                    break
+        
+        # Use default configuration if none found
+        if not config:
+            config = ConsensusConfig()
+            logger.info("No configuration file found, using defaults")
+        
+        # Validate configuration
+        errors = config.validate()
+        if errors:
+            logger.warning(f"Configuration validation errors: {errors}")
+        
+        return config
+    
+    def reload_config(self) -> bool:
+        """Reload configuration from file"""
+        try:
+            new_config = self.load_config()
+            self.config = new_config
+            logger.info("Configuration reloaded")
+            return True
+        except Exception as e:
+            logger.error(f"Error reloading configuration: {e}")
+            return False
+    
+    def get_config(self) -> ConsensusConfig:
+        """Get current configuration"""
+        return self.config
+    
+    def update_config(self, updates: Dict[str, Any]) -> bool:
+        """
+        Update configuration with new values
+        
+        Args:
+            updates: Dictionary of configuration updates
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Convert updates to nested dictionary structure if needed
+            nested_updates = {}
+            for key, value in updates.items():
+                if '.' in key:
+                    # Handle nested keys (e.g., 'network.port')
+                    parts = key.split('.')
+                    current = nested_updates
+                    for part in parts[:-1]:
+                        if part not in current:
+                            current[part] = {}
+                        current = current[part]
+                    current[parts[-1]] = value
+                else:
+                    nested_updates[key] = value
+            
+            # Create new config from current config + updates
+            current_dict = self.config.to_dict()
+            updated_dict = self._deep_update(current_dict, nested_updates)
+            
+            self.config = ConsensusConfig.from_dict(updated_dict)
+            
+            # Save updated configuration if we have a config file
+            if self.config_path:
+                self.config.save_to_file(self.config_path)
+            
+            logger.info("Configuration updated successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating configuration: {e}")
+            return False
+    
+    def _deep_update(self, original: Dict, updates: Dict) -> Dict:
+        """Deep update a dictionary"""
+        result = original.copy()
+        
+        for key, value in updates.items():
+            if isinstance(value, dict) and key in result and isinstance(result[key], dict):
+                result[key] = self._deep_update(result[key], value)
+            else:
+                result[key] = value
+        
+        return result
