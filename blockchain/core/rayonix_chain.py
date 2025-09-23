@@ -16,7 +16,7 @@ from blockchain.production.block_producer import BlockProducer
 from blockchain.models.blockchain_state import BlockchainState
 from rayonix_wallet.core.wallet import RayonixWallet
 from utxo_system.database.core import UTXOSet
-from rules.core.consensus import ProofOfStake
+from consensusengine.core.consensus import ProofOfStake
 from blockchain.utils.genesis import GenesisBlockGenerator
 
 logger = logging.getLogger(__name__)
