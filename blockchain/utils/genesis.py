@@ -5,7 +5,7 @@ import json
 from typing import Dict, Any, Optional
 
 from blockchain.models.block import Block, BlockHeader
-from blockchain.models.transaction import Transaction, TransactionOutput
+from utxo_system.models.transaction import Transaction
 
 class GenesisBlockGenerator:
     """Generates genesis blocks for different network configurations"""
