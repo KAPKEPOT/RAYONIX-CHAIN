@@ -9,8 +9,8 @@ from typing import Dict, Any, Optional, Set, List
 from dataclasses import dataclass, field
 from collections import OrderedDict
 
-from ....utils.cryptography_utils import encrypt_data, decrypt_data, derive_key
-from ....utils.serialization_utils import compress_data, decompress_data
+from smart_contract.utils.cryptography_utils import encrypt_data, decrypt_data, derive_key
+from smart_contract.utils.serialization_utils import compress_data, decompress_data
 
 logger = logging.getLogger("SmartContract.Storage")
 
