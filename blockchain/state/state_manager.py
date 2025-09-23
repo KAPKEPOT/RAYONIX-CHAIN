@@ -12,7 +12,7 @@ import logging
 
 from blockchain.models.block import Block
 from utxo_system.database.core import UTXOSet
-from rules.core.consensus import ConsensusEngine
+from consensusengine.core.consensus import ProofOfStake
 from smart_contract.core.contract_manager import ContractManager
 
 logger = logging.getLogger(__name__)
