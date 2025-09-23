@@ -14,17 +14,17 @@ from contextlib import contextmanager
 import plyvel
 import aiohttp
 
-from smart_contract.core.contract import SmartContract
-from smart_contract.core.execution_result import ExecutionResult
-from smart_contract.core.gas_system.gas_meter import GasMeter
-from smart_contract.security.contract_security import ContractSecurity
-from smart_contract.database.leveldb_manager import LevelDBManager
-from smart_contract.wasm.bytecode_validator import WASMBytecodeValidator
-from smart_contract.utils.validation_utils import validate_contract_id, validate_address
-from smart_contract.exceptions.contract_errors import (
+from ..core.contract import SmartContract
+from ..core.execution_result import ExecutionResult
+from ..core.gas_system.gas_meter import GasMeter
+from ..security.contract_security import ContractSecurity
+from ..database.leveldb_manager import LevelDBManager
+from ..wasm.bytecode_validator import WASMBytecodeValidator
+from ..utils.validation_utils import validate_contract_id, validate_address
+from ..exceptions.contract_errors import (
     ContractDeploymentError, ContractExecutionError, ContractNotFoundError
 )
-from smart_contract.exceptions.security_errors import SecurityViolationError
+from ..exceptions.security_errors import SecurityViolationError
 
 logger = logging.getLogger("SmartContract.ContractManager")
 
@@ -466,4 +466,40 @@ class ContractManager:
             for journal_id in self.state_journal:
                 journal_time = float(journal_id.split('_')[3])
                 if current_time - journal_time > 3600:  # 1 hour
-           
+                    journals_to_remove.append(journal_id)
+            
+            for journal_id in journals_to_remove:
+                del self.state_journal[journal_id]
+    
+    def cleanup_execution_cache(self) -> None:
+        """Clean up old execution cache entries"""
+        with self.lock:
+            current_time = time.time()
+            cache_keys_to_remove = []
+            
+            for key, (timestamp, _) in self.execution_cache.items():
+                if current_time - timestamp > 300:  # 5 minutes
+                    cache_keys_to_remove.append(key)
+            
+            for key in cache_keys_to_remove:
+                del self.execution_cache[key]
+    
+    def stop(self):
+        """Stop the contract manager and cleanup resources"""
+        self.running = False
+        if hasattr(self, 'gas_price_task'):
+            self.gas_price_task.cancel()
+        if hasattr(self, 'cleanup_task'):
+            self.cleanup_task.cancel()
+        
+        self.thread_pool.shutdown()
+        self.db.close()
+        
+        logger.info("Contract manager stopped")
+    
+    def __del__(self):
+        """Cleanup resources"""
+        try:
+            self.stop()
+        except:
+            pass
