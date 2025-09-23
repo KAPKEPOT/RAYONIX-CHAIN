@@ -2,7 +2,6 @@ import os
 import secrets
 import hashlib
 from typing import Optional, Tuple
-from rayonix_wallet.core.wallet import RayonixWallet
 from rayonix_wallet.core.config import WalletConfig
 from rayonix_wallet.core.types import WalletType
 
