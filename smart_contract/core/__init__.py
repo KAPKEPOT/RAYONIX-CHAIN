@@ -1,9 +1,9 @@
 # smart_contract/core/__init__.py
-from .contract import SmartContract
-from .contract_manager import ContractManager
-from .execution_result import ExecutionResult
-from .gas_system import GasMeter, GasOptimizer, OutOfGasError
-from .storage import ContractStorage
+from smart_contract.core.contract import SmartContract
+from smart_contract.core.contract_manager import ContractManager
+from smart_contract.core.execution_result import ExecutionResult
+from smart_contract.core.gas_system import GasMeter, GasOptimizer, OutOfGasError
+from smart_contract.core.storage import ContractStorage
 
 __all__ = [
     'SmartContract', 'ContractManager', 'ExecutionResult',
