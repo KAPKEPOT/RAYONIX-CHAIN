@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 
-from from smart_contract.core.gas_system.out_of_gas_error import OutOfGasError
+from smart_contract.core.gas_system.out_of_gas_error import OutOfGasError
 
 logger = logging.getLogger("SmartContract.GasMeter")
 
