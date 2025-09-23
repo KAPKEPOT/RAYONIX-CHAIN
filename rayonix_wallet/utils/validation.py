@@ -3,8 +3,14 @@ from typing import Optional
 from rayonix_wallet.core.types import AddressType
 from rayonix_wallet.core.exceptions import WalletError
 
-def validate_address_format(address: str, address_type: AddressType, network: str = "mainnet") -> bool:
+def get_address_type():
+    from rayonix_wallet.core.types import AddressType
+    return AddressType
+
+def validate_address_format(address: str, address_type, network: str = "mainnet") -> bool:
     """Validate cryptocurrency address format"""
+    AddressType = get_address_type()
+    
     try:
         if address_type == AddressType.RAYONIX:
             return _validate_rayonix_address(address, network)
