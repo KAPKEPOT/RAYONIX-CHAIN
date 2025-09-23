@@ -4,8 +4,8 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple
 from sortedcontainers import SortedDict
 
-from blockchain.models.transaction import Transaction
-from blockchain.models.utxo import UTXO
+from utxo_system.models.transaction import Transaction
+from utxo_system.models.utxo import UTXO
 from blockchain.models.transaction_results import TransactionCreationResult
 from blockchain.validation.validation_manager import ValidationManager
 
