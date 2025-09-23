@@ -3,8 +3,17 @@ import os
 import time
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional, Deque
+import signal
+import threading
+from typing import Dict, List, Any, Optional, Deque, Tuple, Set, Callable
 from collections import defaultdict, deque
+from enum import Enum
+from dataclasses import dataclass, asdict
+from pathlib import Path
+import json
+import pickle
+import hashlib
+import uuid
 
 from blockchain.state.state_manager import StateManager
 from blockchain.state.checkpoint_manager import CheckpointManager
@@ -19,407 +28,730 @@ from utxo_system.database.core import UTXOSet
 from consensusengine.core.consensus import ProofOfStake
 from blockchain.utils.genesis import GenesisBlockGenerator
 from network.core.p2p_network import AdvancedP2PNetwork
+
 logger = logging.getLogger(__name__)
 
+class BlockchainState(Enum):
+    """Blockchain node state enumeration"""
+    INITIALIZING = "initializing"
+    STOPPED = "stopped"
+    SYNCING = "syncing"
+    SYNCED = "synced"
+    FORKED = "forked"
+    RECOVERING = "recovering"
+    MAINTENANCE = "maintenance"
+
+class NodeHealth(Enum):
+    """Node health status enumeration"""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    UNHEALTHY = "unhealthy"
+    CRITICAL = "critical"
+
+@dataclass
+class NodeMetrics:
+    """Comprehensive node metrics container"""
+    # Blockchain metrics
+    block_height: int = 0
+    total_blocks_processed: int = 0
+    total_transactions_processed: int = 0
+    average_block_processing_time: float = 0.0
+    chain_reorganizations: int = 0
+    
+    # Network metrics
+    connected_peers: int = 0
+    bytes_sent: int = 0
+    bytes_received: int = 0
+    peer_quality_score: float = 0.0
+    
+    # Performance metrics
+    memory_usage_mb: float = 0.0
+    cpu_usage_percent: float = 0.0
+    disk_usage_gb: float = 0.0
+    database_size_gb: float = 0.0
+    
+    # Consensus metrics
+    validator_status: str = "inactive"
+    stake_amount: int = 0
+    blocks_produced: int = 0
+    consensus_participation: float = 0.0
+    
+    # System metrics
+    uptime_seconds: float = 0.0
+    last_block_time: float = 0.0
+    sync_progress: float = 0.0
+    node_health: NodeHealth = NodeHealth.HEALTHY
+
+@dataclass
+class BlockchainConfig:
+    """Blockchain configuration container"""
+    network_type: str = "mainnet"
+    data_dir: str = "./rayonix_data"
+    port: int = 30303
+    max_connections: int = 50
+    block_time_target: int = 30
+    max_block_size: int = 4000000
+    min_transaction_fee: int = 1
+    stake_minimum: int = 1000
+    developer_fee_percent: float = 0.05
+    enable_auto_staking: bool = True
+    enable_transaction_relay: bool = True
+    enable_state_pruning: bool = True
+    max_reorganization_depth: int = 100
+    checkpoint_interval: int = 1000
+
 class RayonixBlockchain:
-    """Production-ready RAYONIX blockchain engine"""
+    """Production-ready RAYONIX blockchain engine with enterprise features"""
     
     def __init__(self, network_type: str = "mainnet", data_dir: str = "./rayonix_data", 
                  config: Optional[Dict[str, Any]] = None):
         self.network_type = network_type
-        self.data_dir = data_dir
-        self.state = BlockchainState.STOPPED
+        self.data_dir = Path(data_dir)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.state = BlockchainState.INITIALIZING
+        self.health = NodeHealth.UNHEALTHY
         self.config = self._load_configuration(config)
+        self.startup_time = time.time()
         
-        # Initialize components
-        self.database = self._initialize_database()
-        self.utxo_set = self._initialize_utxo_set()
-        self.consensus = self._initialize_consensus()
-        self.contract_manager = self._initialize_contract_manager()
-        self.wallet = self._initialize_wallet()
+        # Initialize components with error handling
+        self._initialize_components()
         
-        # Initialize core managers
-        self.state_manager = StateManager(self.database, self.utxo_set, self.consensus, self.contract_manager)
-        self.checkpoint_manager = CheckpointManager(self.database, self.state_manager)
-        self.validation_manager = ValidationManager(self.state_manager, self.config['validation'])
-        self.transaction_manager = TransactionManager(self.state_manager, self.wallet, self.config['transactions'])
-        self.fee_estimator = FeeEstimator(self.state_manager, self.config['fees'])
-        self.fork_manager = ForkManager(self.state_manager, self.validation_manager, self.config['forks'])
-        self.block_producer = BlockProducer(self.state_manager, self.validation_manager, self.config, self.wallet)
-        
-        # State variables
+        # State management
         self.chain_head = None
         self.mempool_size = 0
-        self.sync_progress = 0
-        self.performance_metrics = defaultdict(list)
+        self.sync_progress = 0.0
+        self.last_sync_update = 0.0
+        
+        # Performance tracking
+        self.metrics = NodeMetrics()
+        self.performance_history: Deque[NodeMetrics] = deque(maxlen=1000)
+        self.error_counters = defaultdict(int)
+        
+        # Event subscribers
+        self.event_subscribers: Dict[str, List[Callable]] = {
+            'block_processed': [],
+            'transaction_received': [],
+            'chain_reorganization': [],
+            'node_state_change': [],
+            'consensus_participation': []
+        }
         
         # Background tasks
-        self.background_tasks = []
+        self.background_tasks: Set[asyncio.Task] = set()
         self.running = False
+        self.shutdown_event = asyncio.Event()
+        
+        # Threading and synchronization
+        self.lock = threading.RLock()
+        self.chain_lock = asyncio.Lock()
         
         # Initialize blockchain
         self._initialize_blockchain()
         
         logger.info(f"RAYONIX node initialized for {network_type} network")
-    
-    def _load_configuration(self, custom_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        """Load node configuration"""
-        default_config = {
-            'network': {
-                'type': self.network_type,
-                'port': 30303,
-                'max_connections': 50,
-                'bootstrap_nodes': self._get_bootstrap_nodes()
-            },
-            'consensus': {
-                'block_reward': 50,
-                'halving_interval': 210000,
-                'difficulty_adjustment_blocks': 2016,
-                'stake_minimum': 1000,
-                'block_time_target': 30,
-                'max_supply': 21000000,
-                'developer_fee_percent': 0.05
-            },
-            'validation': {
-                'max_block_size': 4000000,
-                'max_transaction_size': 100000,
-                'min_transaction_fee': 1,
-                'max_future_block_time': 7200,
-                'max_past_block_time': 86400
-            },
-            'transactions': {
-                'max_mempool_size': 10000,
-                'mempool_expiry_time': 3600,
-                'fee_estimation_window': 100
-            },
-            'fees': {
-                'fee_estimation_interval': 30,
-                'min_transaction_fee': 1,
-                'base_gas_price': 1000000000,
-                'adjustment_factor': 1.125
-            },
-            'forks': {
-                'fork_detection_threshold': 6,
-                'max_reorganizations_per_hour': 3,
-                'reorganization_depth_limit': 100
-            },
-            'database': {
-                'type': 'plyvel',
-                'cache_size': 128 * 1024 * 1024,
-                'compression': 'snappy',
-                'max_open_files': 1000
-            }
-        }
+
+    def _initialize_components(self):
+        """Initialize all blockchain components with comprehensive error handling"""
+        try:
+            # Initialize database with retry logic
+            self.database = self._initialize_database_with_retry()
+            
+            # Initialize core components
+            self.utxo_set = UTXOSet(self.database, self.config)
+            self.consensus = ProofOfStake(self.config)
+            self.contract_manager = self._initialize_contract_manager()
+            self.wallet = self._initialize_wallet()
+            
+            # Initialize core managers with dependency injection
+            self.state_manager = StateManager(
+                self.database, self.utxo_set, self.consensus, self.contract_manager,
+                state_path=str(self.data_dir / "state")
+            )
+            
+            self.checkpoint_manager = CheckpointManager(self.database, self.state_manager)
+            self.validation_manager = ValidationManager(self.state_manager, self.config)
+            self.transaction_manager = TransactionManager(self.state_manager, self.wallet, self.config)
+            self.fee_estimator = FeeEstimator(self.state_manager, self.config)
+            self.fork_manager = ForkManager(self.state_manager, self.validation_manager, self.config)
+            self.block_producer = BlockProducer(self.state_manager, self.validation_manager, self.config, self.wallet)
+            
+            # Initialize network layer
+            self.network = AdvancedP2PNetwork(
+                network_id=self._get_network_id(),
+                port=self.config.port,
+                max_connections=self.config.max_connections,
+                node_id=self._generate_node_id()
+            )
+            
+            self.health = NodeHealth.HEALTHY
+            
+        except Exception as e:
+            logger.error(f"Component initialization failed: {e}")
+            self.health = NodeHealth.CRITICAL
+            raise
+
+    def _initialize_database_with_retry(self, max_retries: int = 3) -> Any:
+        """Initialize database with retry logic for production robustness"""
+        for attempt in range(max_retries):
+            try:
+                db_path = self.data_dir / 'blockchain_db'
+                db_path.mkdir(parents=True, exist_ok=True)
+                
+                # Use LevelDB for production (fallback to SQLite if not available)
+                try:
+                    import plyvel
+                    db = plyvel.DB(str(db_path), create_if_missing=True)
+                    logger.info("LevelDB database initialized successfully")
+                    return db
+                except ImportError:
+                    logger.warning("LevelDB not available, using SQLite fallback")
+                    import sqlite3
+                    db_file = db_path / "blockchain.sqlite"
+                    db = sqlite3.connect(str(db_file), check_same_thread=False)
+                    db.execute("PRAGMA journal_mode=WAL")
+                    db.execute("PRAGMA synchronous=NORMAL")
+                    db.execute("PRAGMA cache_size=-64000")  # 64MB cache
+                    logger.info("SQLite database initialized successfully")
+                    return db
+                    
+            except Exception as e:
+                logger.error(f"Database initialization attempt {attempt + 1} failed: {e}")
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(2 ** attempt)  # Exponential backoff
         
-        # Merge with custom config if provided
+        raise RuntimeError("Failed to initialize database after retries")
+
+    def _initialize_contract_manager(self) -> Any:
+        """Initialize contract manager with enhanced features"""
+        try:
+            from smart_contract.core.contract_manager import ContractManager
+            return ContractManager(self.database, self.config)
+        except ImportError as e:
+            logger.warning(f"Contract manager not available: {e}")
+            # Return a mock contract manager for basic functionality
+            class MockContractManager:
+                def execute_transaction(self, tx): return type('obj', (object,), {'success': True})()
+                def revert_transaction(self, tx): return True
+                def create_snapshot(self): return {}
+                def restore_snapshot(self, snapshot): pass
+                def verify_integrity(self): return True
+            return MockContractManager()
+
+    def _initialize_wallet(self) -> RayonixWallet:
+        """Initialize wallet with comprehensive key management"""
+        try:
+            wallet_config = {
+                'network': self.network_type,
+                'data_dir': str(self.data_dir / "wallet"),
+                'encryption': True,
+                'auto_backup': True
+            }
+            
+            wallet = RayonixWallet(wallet_config)
+            
+            # Initialize wallet if not exists
+            if not wallet.is_initialized():
+                logger.info("Initializing new wallet...")
+                mnemonic = wallet.initialize_new_wallet()
+                logger.info(f"New wallet created with mnemonic (first 10 chars): {mnemonic[:10]}...")
+            
+            # Generate initial addresses
+            for i in range(5):
+                wallet.derive_address(i)
+            
+            logger.info(f"Wallet initialized with {len(wallet.addresses)} addresses")
+            return wallet
+            
+        except Exception as e:
+            logger.error(f"Wallet initialization failed: {e}")
+            raise
+
+    def _load_configuration(self, custom_config: Optional[Dict[str, Any]]) -> BlockchainConfig:
+        """Load and validate node configuration"""
+        # Default configuration for mainnet
+        default_config = BlockchainConfig(
+            network_type=self.network_type,
+            data_dir=str(self.data_dir),
+            port=30303 if self.network_type == "mainnet" else 30304,
+            max_connections=50,
+            block_time_target=30,
+            max_block_size=4000000,
+            min_transaction_fee=1,
+            stake_minimum=1000,
+            developer_fee_percent=0.05,
+            enable_auto_staking=True,
+            enable_transaction_relay=True,
+            enable_state_pruning=True,
+            max_reorganization_depth=100,
+            checkpoint_interval=1000
+        )
+        
+        # Apply custom configuration
         if custom_config:
-            self._deep_merge(default_config, custom_config)
+            for key, value in custom_config.items():
+                if hasattr(default_config, key):
+                    setattr(default_config, key, value)
+        
+        # Validate configuration
+        self._validate_configuration(default_config)
+        
+        # Save configuration for reference
+        config_file = self.data_dir / "node_config.json"
+        with open(config_file, 'w') as f:
+            json.dump(asdict(default_config), f, indent=2)
         
         return default_config
-    
-    def _deep_merge(self, base: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
-        """Deep merge two dictionaries"""
-        for key, value in update.items():
-            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                self._deep_merge(base[key], value)
-            else:
-                base[key] = value
-        return base
-    
-    def _initialize_database(self) -> Any:
-        """Initialize database with proper configuration"""
-        # This would be implemented based on your specific database backend
-        # For example, using Plyvel:
-        try:
-            import plyvel
-            db_path = os.path.join(self.data_dir, 'blockchain_db')
-            db = plyvel.DB(db_path, create_if_missing=True)
-            return db
-        except ImportError:
-            logger.error("Plyvel not available, using in-memory database")
-            return {}  # Fallback to in-memory dict
-    
-    def _initialize_utxo_set(self) -> Any:
-        """Initialize UTXO set"""
-        # This would be implemented based on your UTXO set implementation
+
+    def _validate_configuration(self, config: BlockchainConfig):
+        """Validate configuration parameters"""
+        if config.stake_minimum < 100:
+            raise ValueError("Stake minimum must be at least 100")
         
-        return UTXOSet()
-    
-    def _initialize_consensus(self) -> Any:
-        """Initialize consensus mechanism"""
-        # This would be implemented based on your consensus implementation
+        if config.max_block_size > 10 * 1024 * 1024:  # 10MB max
+            raise ValueError("Max block size too large")
         
-        return ProofOfStake(self.config['consensus'])
-    
-    def _initialize_contract_manager(self) -> Any:
-        """Initialize contract manager"""
-        # This would be implemented based on your contract system
-        from blockchain.models.smart_contract import ContractManager
-        return ContractManager()
-    
-    def _initialize_wallet(self):
-        """Initialize wallet system"""
-        wallet_config = WalletConfig(
-        network=self.network_type,
-        address_type=AddressType.RAYONIX,  # Use the enum directly
-        encryption=True
-    )
-        self.wallet = RayonixWallet(wallet_config)
+        if config.developer_fee_percent > 0.1:  # 10% max
+            raise ValueError("Developer fee percent too high")
+
+    def _get_network_id(self) -> int:
+        """Get network ID based on network type"""
+        network_ids = {
+            "mainnet": 1,
+            "testnet": 2,
+            "devnet": 3
+        }
+        return network_ids.get(self.network_type, 0)
+
+    def _generate_node_id(self) -> str:
+        """Generate unique node ID"""
+        node_id_file = self.data_dir / "node_id"
+        if node_id_file.exists():
+            with open(node_id_file, 'r') as f:
+                return f.read().strip()
         
-        # Check if wallet needs to be initialized (no master key)
-        if not self.wallet.master_key:
-        	# Create a new HD wallet
-        	try:
-        		mnemonic_phrase, xpub = self.wallet.create_hd_wallet()
-        		logger.info(f"New HD wallet created with mnemonic: {mnemonic_phrase[:10]}...")
-        	except Exception as e:
-        	    logger.error(f"Failed to create HD wallet: {e}")
-        	    
-        	    # Fallback: create from random private key
-        	    private_key = os.urandom(32).hex()
-        	    self.wallet.create_from_private_key(private_key, WalletType.NON_HD)
-        	    logger.info("Non-HD wallet created from random private key")
-        	    
-        # Generate initial addresses
-        if self.wallet.master_key:
-            for i in range(5):
-                self.wallet.derive_address(i, False) 	    
-    
-    def _get_bootstrap_nodes(self) -> List[str]:
-        """Get bootstrap nodes for network"""
-        if self.network_type == "mainnet":
-            return [
-                "node1.rayonix.site:30303",
-                "node2.rayonix.site:30303",
-                "node3.rayonix.site:30303"
-            ]
-        elif self.network_type == "testnet":
-            return [
-                "testnet-node1.rayonix.site:30304",
-                "testnet-node2.rayonix.site:30304"
-            ]
-        else:
-            return []
-    
+        new_id = hashlib.sha256(os.urandom(32)).hexdigest()[:16]
+        with open(node_id_file, 'w') as f:
+            f.write(new_id)
+        return new_id
+
     def _initialize_blockchain(self):
-        """Initialize or load blockchain state"""
+        """Initialize or load blockchain state with comprehensive recovery"""
         try:
-            # Try to load chain head from database
-            self.chain_head = self.database.get(b'chain_head')
-            
-            if not self.chain_head:
-                # Create genesis block if not exists
-                genesis_block = self._create_genesis_block()
-                self._process_genesis_block(genesis_block)
-            else:
-                # Load full state
-                self._load_blockchain_state()
+            with self.lock:
+                # Check if blockchain exists
+                if self._blockchain_exists():
+                    self._load_blockchain_state()
+                    logger.info(f"Blockchain loaded from storage (height: {self.metrics.block_height})")
+                else:
+                    self._create_genesis_blockchain()
+                    logger.info("New blockchain created with genesis block")
+                
+                self.state = BlockchainState.STOPPED
                 
         except Exception as e:
             logger.error(f"Blockchain initialization failed: {e}")
-            raise
-    
-    def _create_genesis_block(self) -> Any:
-        """Create genesis block""" 
-        generator = GenesisBlockGenerator(self.config)
-        return generator.generate_genesis_block()
-    
-    def _process_genesis_block(self, genesis_block: Any):
-        """Process genesis block and initialize state"""
-        # Validate genesis block
-        validation_result = self.validation_manager.validate_block(genesis_block, ValidationLevel.CONSENSUS)
-        if not validation_result.is_valid:
-            raise ValueError(f"Genesis block validation failed: {validation_result.errors}")
-        
-        # Apply to state
-        if not self.state_manager.apply_block(genesis_block):
-            raise ValueError("Failed to apply genesis block")
-        
-        # Save to database
-        self.database.put(genesis_block.hash.encode(), genesis_block.to_bytes())
-        self.database.put(b'chain_head', genesis_block.hash.encode())
-        self.chain_head = genesis_block.hash
-        
-        logger.info("Genesis block created and processed")
-    
-    def _load_blockchain_state(self):
-        """Load blockchain from database"""
+            if self._attempt_blockchain_recovery():
+                logger.info("Blockchain recovery successful")
+            else:
+                logger.error("Blockchain recovery failed, initializing new chain")
+                self._create_genesis_blockchain()
+
+    def _blockchain_exists(self) -> bool:
+        """Check if blockchain data exists"""
         try:
-            self.genesis_block = self.database.get('genesis_block')
-            chain_data = self.database.get('blockchain')
+            chain_head = self.database.get(b'chain_head')
+            return chain_head is not None
+        except Exception:
+            return False
+
+    def _create_genesis_blockchain(self):
+        """Create new blockchain with genesis block"""
+        try:
+            generator = GenesisBlockGenerator(self.config)
+            genesis_block = generator.generate_genesis_block()
             
-            if chain_data:
-                self.blockchain = chain_data
-                # Rebuild UTXO set by processing all blocks
-                for block in self.blockchain:
-                    self._update_utxo_set(block)
-                
-                # Calculate current supply
-                self._calculate_supply()
-                
-            logger.info(f"Blockchain loaded with {len(self.blockchain)} blocks")
-    
-    def start(self):
-        """Start the blockchain node"""
+            # Validate and apply genesis block
+            if not self.validation_manager.validate_genesis_block(genesis_block):
+                raise ValueError("Genesis block validation failed")
+            
+            if not self.state_manager.apply_block(genesis_block):
+                raise ValueError("Failed to apply genesis block")
+            
+            # Store genesis block
+            self._store_block(genesis_block)
+            self.chain_head = genesis_block.hash
+            self.database.put(b'chain_head', genesis_block.hash.encode())
+            
+            # Create initial checkpoint
+            self.checkpoint_manager.create_checkpoint_if_needed(genesis_block)
+            
+            logger.info("Genesis blockchain created successfully")
+            
+        except Exception as e:
+            logger.error(f"Genesis blockchain creation failed: {e}")
+            raise
+
+    def _load_blockchain_state(self):
+        """Load blockchain state from storage"""
+        try:
+            # Load chain head
+            chain_head_bytes = self.database.get(b'chain_head')
+            if not chain_head_bytes:
+                raise ValueError("Chain head not found")
+            
+            self.chain_head = chain_head_bytes.decode()
+            
+            # Load current height
+            current_height = self.state_manager.get_current_height()
+            self.metrics.block_height = current_height
+            
+            # Verify state integrity
+            if not self.state_manager.verify_state_integrity():
+                logger.warning("State integrity verification failed during load")
+                if not self._recover_blockchain_state():
+                    raise StateRecoveryError("Blockchain state recovery failed")
+            
+            logger.info(f"Blockchain state loaded successfully (height: {current_height})")
+            
+        except Exception as e:
+            logger.error(f"Blockchain state loading failed: {e}")
+            raise
+
+    def _attempt_blockchain_recovery(self) -> bool:
+        """Attempt to recover corrupted blockchain state"""
+        logger.warning("Attempting blockchain recovery...")
+        
+        try:
+            # Try to restore from latest checkpoint
+            checkpoints = self.checkpoint_manager.list_checkpoints()
+            if checkpoints:
+                latest_checkpoint = max(checkpoints, key=lambda x: x['height'])
+                if self.checkpoint_manager.restore_from_checkpoint(latest_checkpoint['name']):
+                    logger.info(f"Recovered from checkpoint at height {latest_checkpoint['height']}")
+                    return True
+            
+            # Fallback to genesis block
+            genesis_block = self.database.get(b'genesis_block')
+            if genesis_block:
+                if self.state_manager.restore_checkpoint('genesis'):
+                    logger.info("Recovered from genesis block")
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Blockchain recovery attempt failed: {e}")
+            return False
+
+    async def start(self):
+        """Start the blockchain node with comprehensive initialization"""
         if self.running:
             logger.warning("Node is already running")
             return
         
-        self.running = True
-        self.state = BlockchainState.SYNCING
+        logger.info("Starting RAYONIX blockchain node...")
         
-        # Start background tasks
-        self._start_background_tasks()
-        
-        logger.info("RAYONIX node started")
-    
-    def stop(self):
-        """Stop the blockchain node"""
+        try:
+            self.running = True
+            self.shutdown_event.clear()
+            self.state = BlockchainState.INITIALIZING
+            
+            # Start network layer
+            await self.network.start()
+            
+            # Start background tasks
+            await self._start_background_tasks()
+            
+            # Change state to syncing
+            self.state = BlockchainState.SYNCING
+            self._notify_subscribers('node_state_change', {'state': self.state})
+            
+            # Begin synchronization
+            asyncio.create_task(self._synchronization_loop())
+            
+            logger.info("RAYONIX node started successfully")
+            
+        except Exception as e:
+            logger.error(f"Node startup failed: {e}")
+            self.health = NodeHealth.CRITICAL
+            await self.stop()
+
+    async def stop(self):
+        """Stop the blockchain node gracefully"""
         if not self.running:
             return
         
+        logger.info("Stopping RAYONIX blockchain node...")
+        
         self.running = False
+        self.shutdown_event.set()
         self.state = BlockchainState.STOPPED
         
-        # Stop background tasks
+        # Cancel background tasks
         for task in self.background_tasks:
-            task.cancel()
+            if not task.done():
+                task.cancel()
+        
+        # Stop network
+        await self.network.stop()
         
         # Save state
-        self._save_state()
+        self._save_node_state()
         
-        logger.info("RAYONIX node stopped")
-    
-    def _start_background_tasks(self):
-        """Start background maintenance tasks"""
+        # Wait for tasks to complete
+        try:
+            await asyncio.gather(*self.background_tasks, return_exceptions=True)
+        except Exception as e:
+            logger.debug(f"Background task cancellation: {e}")
+        
+        self.background_tasks.clear()
+        logger.info("RAYONIX node stopped gracefully")
+
+    async def _start_background_tasks(self):
+        """Start all background maintenance tasks"""
         tasks = [
-            self._block_production_loop,
-            self._mempool_management_loop,
-            self._state_pruning_loop,
-            self._performance_monitoring_loop,
-            self._fork_monitoring_loop
+            ('block_production', self._block_production_loop, 1),
+            ('mempool_management', self._mempool_management_loop, 60),
+            ('state_pruning', self._state_pruning_loop, 3600),
+            ('performance_monitoring', self._performance_monitoring_loop, 300),
+            ('fork_monitoring', self._fork_monitoring_loop, 30),
+            ('health_check', self._health_monitoring_loop, 60),
+            ('metrics_collection', self._metrics_collection_loop, 30)
         ]
         
-        for task_func in tasks:
-            task = asyncio.create_task(task_func())
-            self.background_tasks.append(task)
-    
+        for name, coro, interval in tasks:
+            task = asyncio.create_task(self._managed_background_task(name, coro, interval))
+            self.background_tasks.add(task)
+            task.add_done_callback(self.background_tasks.discard)
+
+    async def _managed_background_task(self, name: str, coro: Callable, interval: float):
+        """Run a background task with managed error handling"""
+        while self.running and not self.shutdown_event.is_set():
+            try:
+                await coro()
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Background task {name} failed: {e}")
+                self.error_counters[f"task_{name}"] += 1
+                await asyncio.sleep(min(interval, 300))  # Cap backoff at 5 minutes
+
     async def _block_production_loop(self):
         """Proof-of-Stake block production loop"""
-        while self.running:
-            try:
-                if self.state == ChainState.SYNCED:
-                    block = await self.block_producer.create_new_block()
-                    if block:
-                        await self._process_new_block(block)
-                
-                await asyncio.sleep(1)
-                
-            except Exception as e:
-                logger.error(f"Block production error: {e}")
-                await asyncio.sleep(5)
-    
+        if self.state != BlockchainState.SYNCED:
+            return
+        
+        if not self.config.enable_auto_staking:
+            return
+        
+        try:
+            # Check if we should produce a block
+            if await self.block_producer.should_produce_block():
+                block = await self.block_producer.create_new_block()
+                if block:
+                    success = await self._process_new_block(block)
+                    if success:
+                        self._notify_subscribers('block_processed', {
+                            'height': block.header.height,
+                            'hash': block.hash,
+                            'producer': self.wallet.get_primary_address()
+                        })
+        
+        except Exception as e:
+            logger.error(f"Block production error: {e}")
+            self.error_counters['block_production'] += 1
+
     async def _mempool_management_loop(self):
         """Mempool management loop"""
-        while self.running:
-            try:
-                # Clean expired transactions
-                self.transaction_manager.clean_mempool()
-                
-                await asyncio.sleep(60)
-                
-            except Exception as e:
-                logger.error(f"Mempool management error: {e}")
-                await asyncio.sleep(30)
-    
-    async def _state_pruning_loop(self):
-        """State pruning and compaction loop"""
-        while self.running:
-            try:
-                if self.state == BlockchainState.SYNCED:
-                    # Prune old state data
-                    await self._prune_old_state()
-                    
-                    # Compact database
-                    if self._should_compact_database():
-                        await self._compact_database()
-                
-                await asyncio.sleep(3600)  # Run hourly
-                
-            except Exception as e:
-                logger.error(f"State pruning error: {e}")
-                await asyncio.sleep(3600)
-    
-    async def _performance_monitoring_loop(self):
-        """Performance monitoring loop"""
-        while self.running:
-            try:
-                metrics = await self._collect_performance_metrics()
-                self.performance_metrics[time.time()] = metrics
-                
-                # Keep only last 24 hours of metrics
-                cutoff = time.time() - 86400
-                self.performance_metrics = {k: v for k, v in self.performance_metrics.items() if k > cutoff}
-                
-                await asyncio.sleep(300)  # Run every 5 minutes
-                
-            except Exception as e:
-                logger.error(f"Performance monitoring error: {e}")
-                await asyncio.sleep(300)
-    
-    async def _fork_monitoring_loop(self):
-        """Fork monitoring loop"""
-        while self.running:
-            try:
-                if self.state == BlockchainState.SYNCED:
-                    fork_risk = self.fork_manager.monitor_fork_risk()
-                    if fork_risk['fork_probability'] > 0.1:
-                        logger.warning(f"High fork risk detected: {fork_risk}")
-                
-                await asyncio.sleep(30)
-                
-            except Exception as e:
-                logger.error(f"Fork monitoring error: {e}")
-                await asyncio.sleep(30)
-    
-    async def _process_new_block(self, block: Any) -> bool:
-        """Process a newly created block"""
         try:
-            # Apply to state
-            if not self.state_manager.apply_block(block):
-                logger.error("Failed to apply self-created block")
-                return False
+            # Clean expired transactions
+            expired_count = self.transaction_manager.clean_mempool()
+            if expired_count > 0:
+                logger.debug(f"Cleaned {expired_count} expired transactions from mempool")
             
-            # Update chain head
-            self.chain_head = block.hash
-            self.database.put(b'chain_head', block.hash.encode())
-            self.database.put(block.hash.encode(), block.to_bytes())
-            
-            # Remove transactions from mempool
-            self.transaction_manager.remove_from_mempool([tx.hash for tx in block.transactions])
-            
-            logger.info(f"New block created: #{block.header.height} - {block.hash[:16]}...")
-            return True
+            # Update fee estimates
+            self.fee_estimator.update_estimates()
             
         except Exception as e:
-            logger.error(f"New block processing failed: {e}")
-            return False
-    
-    async def _prune_old_state(self):
-        """Prune old state data to save space"""
-        current_height = self.state_manager.get_current_height()
-        prune_height = current_height - self.config['forks']['reorganization_depth_limit']
+            logger.error(f"Mempool management error: {e}")
+            self.error_counters['mempool_management'] += 1
+
+    async def _state_pruning_loop(self):
+        """State pruning and compaction loop"""
+        if not self.config.enable_state_pruning:
+            return
         
-        if prune_height > 0:
-            # Prune old blocks and state data
-            await self._prune_blocks_before(prune_height)
-            logger.info(f"Pruned state data before height {prune_height}")
-    
-    async def _prune_blocks_before(self, height: int):
+        try:
+            current_height = self.state_manager.get_current_height()
+            prune_height = current_height - self.config.max_reorganization_depth
+            
+            if prune_height > 0:
+                pruned_blocks = await self._prune_blocks_before(prune_height)
+                if pruned_blocks > 0:
+                    logger.info(f"Pruned {pruned_blocks} blocks before height {prune_height}")
+            
+            # Compact database periodically
+            if current_height % 10000 == 0:  # Every 10,000 blocks
+                await self._compact_database()
+            
+        except Exception as e:
+            logger.error(f"State pruning error: {e}")
+            self.error_counters['state_pruning'] += 1
+
+    async def _performance_monitoring_loop(self):
+        """Performance monitoring loop"""
+        try:
+            metrics = await self._collect_performance_metrics()
+            self.performance_history.append(metrics)
+            
+            # Update health status based on metrics
+            self._update_health_status(metrics)
+            
+        except Exception as e:
+            logger.error(f"Performance monitoring error: {e}")
+            self.error_counters['performance_monitoring'] += 1
+
+    async def _fork_monitoring_loop(self):
+        """Fork monitoring loop"""
+        try:
+            if self.state == BlockchainState.SYNCED:
+                fork_risk = await self.fork_manager.assess_fork_risk()
+                if fork_risk.risk_level == 'high':
+                    logger.warning(f"High fork risk detected: {fork_risk}")
+                    self.state = BlockchainState.FORKED
+                    self._notify_subscribers('chain_reorganization', fork_risk)
+        
+        except Exception as e:
+            logger.error(f"Fork monitoring error: {e}")
+            self.error_counters['fork_monitoring'] += 1
+
+    async def _health_monitoring_loop(self):
+        """Health monitoring loop"""
+        try:
+            health_status = self._assess_health()
+            if health_status != self.health:
+                self.health = health_status
+                logger.info(f"Node health changed to: {health_status.value}")
+        
+        except Exception as e:
+            logger.error(f"Health monitoring error: {e}")
+            self.error_counters['health_monitoring'] += 1
+
+    async def _metrics_collection_loop(self):
+        """Metrics collection loop"""
+        try:
+            self.metrics = await self._collect_comprehensive_metrics()
+            self.metrics.node_health = self.health
+            self.metrics.uptime_seconds = time.time() - self.startup_time
+            
+        except Exception as e:
+            logger.error(f"Metrics collection error: {e}")
+            self.error_counters['metrics_collection'] += 1
+
+    async def _synchronization_loop(self):
+        """Blockchain synchronization loop"""
+        try:
+            # Connect to bootstrap nodes
+            await self._connect_to_network()
+            
+            # Start synchronization
+            sync_result = await self.network.synchronize_chain(self._process_received_block)
+            
+            if sync_result.success:
+                self.state = BlockchainState.SYNCED
+                self.sync_progress = 100.0
+                logger.info("Blockchain synchronization completed")
+            else:
+                logger.error(f"Synchronization failed: {sync_result.error}")
+                self.state = BlockchainState.STOPPED
+        
+        except Exception as e:
+            logger.error(f"Synchronization error: {e}")
+            self.state = BlockchainState.STOPPED
+
+    async def _process_received_block(self, block: Any) -> bool:
+        """Process a block received from the network"""
+        async with self.chain_lock:
+            try:
+                # Validate block
+                validation_result = await self.validation_manager.validate_block(block)
+                if not validation_result.is_valid:
+                    logger.warning(f"Block validation failed: {validation_result.errors}")
+                    return False
+                
+                # Apply block to state
+                if not await self.state_manager.apply_block(block):
+                    logger.error("Failed to apply received block")
+                    return False
+                
+                # Update chain head
+                self.chain_head = block.hash
+                self._store_block(block)
+                
+                # Update metrics
+                self.metrics.total_blocks_processed += 1
+                self.metrics.last_block_time = time.time()
+                
+                # Remove transactions from mempool
+                self.transaction_manager.remove_from_mempool([tx.hash for tx in block.transactions])
+                
+                # Create checkpoint if needed
+                self.checkpoint_manager.create_checkpoint_if_needed(block)
+                
+                logger.debug(f"Processed block #{block.header.height} - {block.hash[:16]}...")
+                return True
+                
+            except Exception as e:
+                logger.error(f"Block processing failed: {e}")
+                return False
+
+    async def _process_new_block(self, block: Any) -> bool:
+        """Process a newly created block"""
+        async with self.chain_lock:
+            try:
+                # Apply to state
+                if not self.state_manager.apply_block(block):
+                    logger.error("Failed to apply self-created block")
+                    return False
+                
+                # Update chain head
+                self.chain_head = block.hash
+                self._store_block(block)
+                
+                # Broadcast to network
+                await self.network.broadcast_block(block)
+                
+                # Remove transactions from mempool
+                self.transaction_manager.remove_from_mempool([tx.hash for tx in block.transactions])
+                
+                logger.info(f"New block created: #{block.header.height} - {block.hash[:16]}...")
+                return True
+                
+            except Exception as e:
+                logger.error(f"New block processing failed: {e}")
+                return False
+
+    def _store_block(self, block: Any):
+        """Store block in database"""
+        try:
+            block_data = pickle.dumps(block)
+            self.database.put(block.hash.encode(), block_data)
+            
+            # Also store height index
+            height_key = f"height_{block.header.height}".encode()
+            self.database.put(height_key, block.hash.encode())
+            
+        except Exception as e:
+            logger.error(f"Failed to store block: {e}")
+
+    async def _prune_blocks_before(self, height: int) -> int:
         """Prune blocks before specified height"""
-        # This would be implemented based on your database structure
-        pass
-    
+        # Implementation depends on database structure
+        return 0  # Placeholder
+
     async def _compact_database(self):
         """Compact database"""
         try:
@@ -428,117 +760,200 @@ class RayonixBlockchain:
                 logger.info("Database compaction completed")
         except Exception as e:
             logger.error(f"Database compaction failed: {e}")
-    
-    def _should_compact_database(self) -> bool:
-        """Check if database should be compacted"""
-        # This would check database size and fragmentation
-        return False  # Placeholder
-    
-    async def _collect_performance_metrics(self) -> Dict[str, Any]:
-        """Collect performance metrics"""
-        return {
-            'block_height': self.state_manager.get_current_height(),
-            'mempool_size': len(self.transaction_manager.mempool),
-            'memory_usage': self._get_memory_usage(),
-            'cpu_usage': self._get_cpu_usage(),
-            'disk_usage': self._get_disk_usage(),
-            'validation_stats': self.validation_manager.get_stats(),
-            'fork_count': self.fork_manager.reorganization_count
+
+    async def _connect_to_network(self):
+        """Connect to network bootstrap nodes"""
+        bootstrap_nodes = self._get_bootstrap_nodes()
+        for node in bootstrap_nodes:
+            try:
+                await self.network.connect_to_node(node)
+            except Exception as e:
+                logger.debug(f"Failed to connect to bootstrap node {node}: {e}")
+
+    def _get_bootstrap_nodes(self) -> List[str]:
+        """Get bootstrap nodes for network"""
+        if self.network_type == "mainnet":
+            return [
+                "node1.rayonix.org:30303",
+                "node2.rayonix.org:30303",
+                "node3.rayonix.org:30303"
+            ]
+        elif self.network_type == "testnet":
+            return [
+                "testnet-node1.rayonix.org:30304",
+                "testnet-node2.rayonix.org:30304"
+            ]
+        else:
+            return []
+
+    def _assess_health(self) -> NodeHealth:
+        """Assess node health based on various metrics"""
+        error_thresholds = {
+            'block_production': 10,
+            'mempool_management': 5,
+            'state_pruning': 3
         }
-    
-    def _get_memory_usage(self) -> float:
-        """Get memory usage in MB"""
+        
+        # Check error counters
+        for error_type, threshold in error_thresholds.items():
+            if self.error_counters.get(error_type, 0) > threshold:
+                return NodeHealth.UNHEALTHY
+        
+        # Check synchronization status
+        if self.state == BlockchainState.SYNCING and time.time() - self.last_sync_update > 300:
+            return NodeHealth.DEGRADED
+        
+        # Check memory usage
+        if self.metrics.memory_usage_mb > 4096:  # 4GB threshold
+            return NodeHealth.DEGRADED
+        
+        return NodeHealth.HEALTHY
+
+    def _update_health_status(self, metrics: NodeMetrics):
+        """Update health status based on metrics"""
+        # Implementation would analyze various metrics to determine health
+        pass
+
+    async def _collect_comprehensive_metrics(self) -> NodeMetrics:
+        """Collect comprehensive node metrics"""
+        metrics = NodeMetrics()
+        
+        # Blockchain metrics
+        metrics.block_height = self.state_manager.get_current_height()
+        metrics.total_blocks_processed = self.metrics.total_blocks_processed
+        metrics.sync_progress = self.sync_progress
+        
+        # Network metrics
+        metrics.connected_peers = len(self.network.connected_peers)
+        
+        # Performance metrics (simplified)
         try:
             import psutil
             process = psutil.Process()
-            return process.memory_info().rss / 1024 / 1024
+            metrics.memory_usage_mb = process.memory_info().rss / 1024 / 1024
+            metrics.cpu_usage_percent = psutil.cpu_percent()
         except ImportError:
-            return 0
-    
-    def _get_cpu_usage(self) -> float:
-        """Get CPU usage percentage"""
+            pass
+        
+        return metrics
+
+    def _save_node_state(self):
+        """Save current node state to disk"""
         try:
-            import psutil
-            return psutil.cpu_percent()
-        except ImportError:
-            return 0
-    
-    def _get_disk_usage(self) -> float:
-        """Get disk usage in GB"""
-        try:
-            import psutil
-            usage = psutil.disk_usage(self.data_dir)
-            return usage.used / 1024 / 1024 / 1024
-        except ImportError:
-            return 0
-    
-    def _save_state(self):
-        """Save current state to disk"""
-        try:
-            self.state_manager.create_checkpoint()
-            if hasattr(self.database, 'sync'):
-                self.database.sync()
+            # Create checkpoint
+            self.state_manager.create_checkpoint("shutdown_checkpoint")
+            
+            # Save node state
+            state_data = {
+                'chain_head': self.chain_head,
+                'state': self.state.value,
+                'health': self.health.value,
+                'timestamp': time.time()
+            }
+            
+            state_file = self.data_dir / "node_state.json"
+            with open(state_file, 'w') as f:
+                json.dump(state_data, f)
+            
             logger.info("Node state saved successfully")
+            
         except Exception as e:
             logger.error(f"Failed to save node state: {e}")
-    
+
+    def _notify_subscribers(self, event_type: str, data: Dict[str, Any]):
+        """Notify event subscribers"""
+        for callback in self.event_subscribers.get(event_type, []):
+            try:
+                callback(data)
+            except Exception as e:
+                logger.error(f"Event subscriber error: {e}")
+
+    def subscribe_to_events(self, event_type: str, callback: Callable):
+        """Subscribe to node events"""
+        if event_type in self.event_subscribers:
+            self.event_subscribers[event_type].append(callback)
+
     # Public API methods
     def get_balance(self, address: str) -> int:
         """Get balance for address"""
         return self.state_manager.utxo_set.get_balance(address)
-    
+
     def get_transaction(self, tx_hash: str) -> Optional[Any]:
         """Get transaction by hash"""
-        # Check mempool first
-        mempool_tx = self.transaction_manager.get_transaction(tx_hash)
-        if mempool_tx:
-            return mempool_tx
-        
-        # Check blockchain
-        # This would be implemented based on your database
-        return None
-    
-    def get_block(self, height_or_hash: Any) -> Optional[Any]:
+        return self.transaction_manager.get_transaction(tx_hash)
+
+    def get_block(self, identifier: Any) -> Optional[Any]:
         """Get block by height or hash"""
-        # This would be implemented based on your database
-        return None
-    
+        try:
+            if isinstance(identifier, int):
+                # Get by height
+                height_key = f"height_{identifier}".encode()
+                block_hash = self.database.get(height_key)
+                if block_hash:
+                    identifier = block_hash.decode()
+            
+            # Get by hash
+            block_data = self.database.get(identifier.encode())
+            if block_data:
+                return pickle.loads(block_data)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to get block: {e}")
+            return None
+
     def send_transaction(self, from_address: str, to_address: str, amount: int,
                        fee_strategy: str = 'medium', **kwargs) -> Any:
         """Send a transaction"""
         return self.transaction_manager.create_transaction(
             from_address, to_address, amount, fee_strategy, **kwargs
         )
-    
+
     def get_blockchain_info(self) -> Dict[str, Any]:
-        """Get blockchain information"""
-        current_height = self.state_manager.get_current_height()
+        """Get comprehensive blockchain information"""
         return {
-            'height': current_height,
+            'network': self.network_type,
+            'height': self.metrics.block_height,
             'chain_head': self.chain_head,
-            'total_supply': self.consensus.total_supply,
-            'circulating_supply': self.consensus.circulating_supply,
-            'difficulty': self.consensus.calculate_difficulty(current_height),
-            'block_reward': self.consensus.get_block_reward(current_height),
+            'state': self.state.value,
+            'health': self.health.value,
+            'sync_progress': self.sync_progress,
             'mempool_size': len(self.transaction_manager.mempool),
-            'network_state': self.state.name,
-            'sync_progress': self.sync_progress
+            'connected_peers': self.metrics.connected_peers,
+            'uptime': self.metrics.uptime_seconds,
+            'total_supply': self.consensus.get_total_supply(),
+            'circulating_supply': self.consensus.get_circulating_supply()
         }
-    
+
     def get_validator_info(self, address: Optional[str] = None) -> Dict[str, Any]:
         """Get validator information"""
         if not address and self.wallet.addresses:
             address = list(self.wallet.addresses.keys())[0]
         
-        if not address:
-            return {'error': 'No validator address provided'}
-        
-        return self.consensus.get_validator_info(address)
-    
+        return self.consensus.get_validator_info(address) if address else {}
+
     def register_validator(self, stake_amount: int) -> bool:
         """Register as validator"""
+        if stake_amount < self.config.stake_minimum:
+            logger.error(f"Stake amount {stake_amount} below minimum {self.config.stake_minimum}")
+            return False
+        
         if not self.wallet.addresses:
+            logger.error("No wallet addresses available for validation")
             return False
         
         validator_address = list(self.wallet.addresses.keys())[0]
         return self.consensus.register_validator(validator_address, stake_amount)
+
+    def get_node_metrics(self) -> NodeMetrics:
+        """Get current node metrics"""
+        return self.metrics
+
+    def get_performance_history(self) -> List[NodeMetrics]:
+        """Get performance history"""
+        return list(self.performance_history)
+
+class StateRecoveryError(Exception):
+    """State recovery failed"""
+    pass
