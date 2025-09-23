@@ -7,6 +7,18 @@ from typing import Optional, Dict, Any
 import re
 
 logger = logging.getLogger("SmartContract.Network")
+# Add to imports
+import time
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def timeout_context(seconds: int):
+    """Context manager for timeout operations"""
+    try:
+        yield
+    except asyncio.TimeoutError:
+        logger.warning(f"Operation timed out after {seconds} seconds")
+        raise
 
 async def fetch_network_conditions() -> Dict[str, Any]:
     """Fetch current network conditions"""
@@ -110,20 +122,33 @@ def get_network_interfaces() -> Dict[str, Any]:
         logger.warning("netifaces module not available")
         return {}
 
-async measure_latency(host: str, port: int = 80, samples: int = 3) -> float:
-    """Measure network latency to host"""
+async def measure_latency(host: str, port: int = 80, samples: int = 3, timeout: int = 5) -> float:
+    """Measure network latency to host with improved error handling"""
+    if samples <= 0:
+        raise ValueError("Samples must be positive")
+    
     latencies = []
     
-    for _ in range(samples):
+    for i in range(samples):
         try:
-            start_time = asyncio.get_event_loop().time()
-            await check_connectivity(host, port, timeout=5)
-            end_time = asyncio.get_event_loop().time()
-            latencies.append((end_time - start_time) * 1000)  # Convert to ms
+            start_time = time.perf_counter()
+            success = await check_connectivity(host, port, timeout=timeout)
+            end_time = time.perf_counter()
+            
+            if success:
+                latency_ms = (end_time - start_time) * 1000
+                latencies.append(latency_ms)
+                logger.debug(f"Sample {i+1}: {latency_ms:.2f}ms")
+            else:
+                logger.warning(f"Sample {i+1}: Connection failed")
+                
         except Exception as e:
-            logger.debug(f"Latency measurement failed: {e}")
+            logger.debug(f"Latency measurement sample {i+1} failed: {e}")
     
     if latencies:
-        return sum(latencies) / len(latencies)
+        avg_latency = sum(latencies) / len(latencies)
+        logger.info(f"Average latency to {host}:{port}: {avg_latency:.2f}ms")
+        return avg_latency
     else:
+        logger.warning(f"All latency measurements failed for {host}:{port}")
         return float('inf')
