@@ -6,11 +6,11 @@ Production-ready Proof-of-Stake Consensus Engine
 __version__ = "1.0.0"
 __author__ = "Consensus Team"
 
-from consensus.core.engine import ProofOfStake
-from consensus.models.validators import Validator, ValidatorStatus
-from consensus.models.blocks import BlockProposal
-from consensus.models.votes import Vote, VoteType
-from consensus.abci.interface import ABCIApplication
+from consensusengine.core.engine import ProofOfStake
+from consensusengine.models.validators import Validator, ValidatorStatus
+from consensusengine.models.blocks import BlockProposal
+from consensusengine.models.votes import Vote, VoteType
+from consensusengine.abci.interface import ABCIApplication
 
 __all__ = [
     'ProofOfStake',
