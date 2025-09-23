@@ -1,0 +1,32 @@
+consensus/
+├── __init__.py
+├── core/
+│   ├── __init__.py
+│   ├── engine.py
+│   └── state.py
+├── models/
+│   ├── __init__.py
+│   ├── validators.py
+│   ├── blocks.py
+│   └── votes.py
+├── abci/
+│   ├── __init__.py
+│   ├── interface.py
+│   └── handlers.py
+├── staking/
+│   ├── __init__.py
+│   ├── manager.py
+│   └── slashing.py
+├── network/
+│   ├── __init__.py
+│   └── protocol.py
+├── crypto/
+│   ├── __init__.py
+│   └── signing.py
+└── utils/
+    ├── __init__.py
+    ├── database.py
+    ├── timing.py
+    └── config/
+        ├── __init__.py
+        └── settings.py
