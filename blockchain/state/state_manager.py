@@ -11,9 +11,9 @@ from contextlib import contextmanager
 import logging
 
 from blockchain.models.block import Block
-from blockchain.models.utxo import UTXOSet
-from blockchain.models.consensus import ProofOfStake
-from blockchain.models.smart_contract import ContractManager
+from utxo_system.models.utxo import UTXOSet
+from rules.core.consensus import ConsensusEngine
+from smart_contract.core.contract_manager import ContractManager
 
 logger = logging.getLogger(__name__)
 
