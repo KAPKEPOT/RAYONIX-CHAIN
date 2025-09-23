@@ -26,7 +26,7 @@ from smart_contract.exceptions.contract_errors import (
 )
 from smart_contract.exceptions.security_errors import SecurityViolationError
 from smart_contract.types.enums import ContractType, ContractState, ContractSecurityLevel
-from smart_contract.core.contract_storage import ContractStorage  # Missing import
+from smart_contract.core.storage.contract_storage import ContractStorage  # Missing import
 
 logger = logging.getLogger("SmartContract.ContractManager")
 
