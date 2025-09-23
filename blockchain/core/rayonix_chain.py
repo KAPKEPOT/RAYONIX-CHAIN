@@ -13,7 +13,7 @@ from blockchain.transactions.transaction_manager import TransactionManager
 from blockchain.fees.fee_estimator import FeeEstimator
 from blockchain.forks.fork_manager import ForkManager
 from blockchain.production.block_producer import BlockProducer
-from blockchain.models.blockchain_state import BlockchainState
+from blockchain.models.chain_state import ChainState
 from rayonix_wallet.core.wallet import RayonixWallet
 from utxo_system.database.core import UTXOSet
 from consensusengine.core.consensus import ProofOfStake
