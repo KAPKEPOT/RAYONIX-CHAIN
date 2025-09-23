@@ -4,7 +4,7 @@ import random
 from typing import List, Tuple, Dict, Any
 from dataclasses import dataclass
 
-from blockchain.models.utxo import UTXO
+from utxo_system.models.utxo import UTXO
 
 @dataclass
 class CoinSelectionConfig:

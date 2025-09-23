@@ -4,7 +4,7 @@ import heapq
 from typing import Dict, List, Any, Optional, Tuple
 from sortedcontainers import SortedDict
 
-from blockchain.models.transaction import Transaction
+from utxo_system.models.transaction import Transaction
 
 class Mempool:
     """Advanced mempool management with priority scheduling"""
