@@ -25,6 +25,8 @@ from smart_contract.exceptions.contract_errors import (
     ContractDeploymentError, ContractExecutionError, ContractNotFoundError
 )
 from smart_contract.exceptions.security_errors import SecurityViolationError
+from smart_contract.types.enums import ContractType, ContractState, ContractSecurityLevel
+from smart_contract.core.contract_storage import ContractStorage  # Missing import
 
 logger = logging.getLogger("SmartContract.ContractManager")
 
@@ -69,6 +71,7 @@ class ContractManager:
             contracts_data = self.db.load_all_contracts()
             for contract_id, contract_data in contracts_data.items():
                 try:
+                    from smart_contract.core.contract_storage import ContractStorage
                     contract = SmartContract(
                         contract_id=contract_data['contract_id'],
                         owner=contract_data['owner'],
