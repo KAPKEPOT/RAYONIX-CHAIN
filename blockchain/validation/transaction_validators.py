@@ -1,7 +1,7 @@
 # blockchain/validation/transaction_validators.py
 from typing import Dict, Any, List
 
-from blockchain.models.transaction import Transaction
+from utxo_system.models.transaction import Transaction
 
 class TransactionValidators:
     """Collection of transaction validation functions"""
