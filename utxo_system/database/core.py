@@ -3,6 +3,7 @@ import plyvel
 import json
 import struct
 import threading
+import pickle
 from typing import List, Dict, Set, Tuple, Optional, Iterator, Any
 from contextlib import contextmanager
 from utxo_system.models.utxo import UTXO
@@ -235,3 +236,198 @@ class UTXOSet:
             stats['total_size_mb'] = sum(1 for _ in self.db.iterator()) * 0.0001
             
             return stats
+
+    # === State Management Methods Required by StateManager ===
+    
+    def create_snapshot(self) -> Any:
+        """Create a snapshot of the current UTXO set state"""
+        with self.lock:
+            # Create a comprehensive snapshot of all UTXO data
+            snapshot = {
+                'last_block_height': self.get_last_processed_block_height(),
+                'utxos': {},
+                'spent_utxos': {},
+                'address_index': {}
+            }
+            
+            # Capture all unspent UTXOs
+            for key, value in self.db.iterator(prefix=UTXO_PREFIX):
+                utxo_id = key.decode('utf-8').split(':', 1)[1]
+                snapshot['utxos'][utxo_id] = value
+            
+            # Capture all spent UTXOs
+            for key, value in self.db.iterator(prefix=SPENT_UTXO_PREFIX):
+                utxo_id = key.decode('utf-8').split(':', 1)[1]
+                snapshot['spent_utxos'][utxo_id] = value
+            
+            # Capture address index
+            for key, value in self.db.iterator(prefix=ADDRESS_INDEX_PREFIX):
+                address = key.decode('utf-8').split(':', 1)[1]
+                snapshot['address_index'][address] = value
+            
+            return snapshot
+    
+    def restore_snapshot(self, snapshot: Any):
+        """Restore the UTXO set from a snapshot"""
+        with self.lock:
+            with self.atomic_write() as batch:
+                # Clear existing data
+                for key, _ in self.db.iterator(prefix=UTXO_PREFIX):
+                    batch.delete(key)
+                for key, _ in self.db.iterator(prefix=SPENT_UTXO_PREFIX):
+                    batch.delete(key)
+                for key, _ in self.db.iterator(prefix=ADDRESS_INDEX_PREFIX):
+                    batch.delete(key)
+                
+                # Restore UTXOs
+                for utxo_id, utxo_data in snapshot['utxos'].items():
+                    key = self._get_utxo_key(utxo_id)
+                    batch.put(key, utxo_data)
+                
+                # Restore spent UTXOs
+                for utxo_id, utxo_data in snapshot['spent_utxos'].items():
+                    key = self._get_spent_utxo_key(utxo_id)
+                    batch.put(key, utxo_data)
+                
+                # Restore address index
+                for address, index_data in snapshot['address_index'].items():
+                    key = ADDRESS_INDEX_PREFIX + address.encode('utf-8')
+                    batch.put(key, index_data)
+                
+                # Restore last block height
+                if 'last_block_height' in snapshot:
+                    batch.put(LAST_BLOCK_HEIGHT_KEY, 
+                             struct.pack('>I', snapshot['last_block_height']))
+    
+    def to_bytes(self) -> bytes:
+        """Serialize the entire UTXO set to bytes for persistence"""
+        snapshot = self.create_snapshot()
+        return pickle.dumps(snapshot)
+    
+    def from_bytes(self, data: bytes):
+        """Deserialize the UTXO set from bytes"""
+        snapshot = pickle.loads(data)
+        self.restore_snapshot(snapshot)
+    
+    def calculate_hash(self) -> str:
+        """Calculate a hash representing the current state of the UTXO set"""
+        import hashlib
+        
+        with self.lock:
+            # Create a hash of all UTXO data for integrity checking
+            hasher = hashlib.sha256()
+            
+            # Hash all unspent UTXOs
+            for key, value in sorted(self.db.iterator(prefix=UTXO_PREFIX)):
+                hasher.update(key)
+                hasher.update(value)
+            
+            # Hash all spent UTXOs
+            for key, value in sorted(self.db.iterator(prefix=SPENT_UTXO_PREFIX)):
+                hasher.update(key)
+                hasher.update(value)
+            
+            # Hash address index
+            for key, value in sorted(self.db.iterator(prefix=ADDRESS_INDEX_PREFIX)):
+                hasher.update(key)
+                hasher.update(value)
+            
+            # Hash last block height
+            last_height = self.get_last_processed_block_height()
+            hasher.update(struct.pack('>I', last_height))
+            
+            return hasher.hexdigest()
+    
+    def verify_integrity(self) -> bool:
+        """Verify the integrity of the UTXO set"""
+        try:
+            with self.lock:
+                # Verify that all indexed UTXOs exist
+                for key, value in self.db.iterator(prefix=ADDRESS_INDEX_PREFIX):
+                    address = key.decode('utf-8').split(':', 1)[1]
+                    utxo_ids = json.loads(value.decode('utf-8'))
+                    
+                    for utxo_id in utxo_ids:
+                        utxo = self.get_utxo(utxo_id)
+                        if not utxo:
+                            logger.error(f"UTXO {utxo_id} indexed for address {address} but not found")
+                            return False
+                        if utxo.address != address:
+                            logger.error(f"UTXO {utxo_id} address mismatch: expected {address}, got {utxo.address}")
+                            return False
+                
+                # Verify that no UTXO is both spent and unspent
+                utxo_ids = set()
+                for key, _ in self.db.iterator(prefix=UTXO_PREFIX):
+                    utxo_id = key.decode('utf-8').split(':', 1)[1]
+                    if utxo_id in utxo_ids:
+                        logger.error(f"Duplicate UTXO found: {utxo_id}")
+                        return False
+                    utxo_ids.add(utxo_id)
+                
+                for key, _ in self.db.iterator(prefix=SPENT_UTXO_PREFIX):
+                    utxo_id = key.decode('utf-8').split(':', 1)[1]
+                    if utxo_id in utxo_ids:
+                        logger.error(f"UTXO {utxo_id} exists in both spent and unspent sets")
+                        return False
+                
+                return True
+                
+        except Exception as e:
+            logger.error(f"UTXO set integrity verification failed: {e}")
+            return False
+    
+    def get_utxo_count(self) -> int:
+        """Get the total number of unspent UTXOs"""
+        count = 0
+        for _, _ in self.db.iterator(prefix=UTXO_PREFIX):
+            count += 1
+        return count
+    
+    def revert_transaction(self, transaction: Transaction) -> bool:
+        """Revert a transaction by restoring inputs and removing outputs"""
+        with self.atomic_write() as batch:
+            try:
+                # Remove outputs (new UTXOs created by this transaction)
+                for i in range(len(transaction.outputs)):
+                    utxo_id = f"{transaction.hash}:{i}"
+                    
+                    # Delete from UTXO set
+                    utxo_key = self._get_utxo_key(utxo_id)
+                    utxo_data = self.db.get(utxo_key)
+                    
+                    if utxo_data:
+                        utxo = deserialize_utxo(utxo_data)
+                        batch.delete(utxo_key)
+                        self.indexer.remove_utxo_from_address(utxo.address, utxo_id, batch)
+                
+                # Restore inputs (UTXOs spent by this transaction)
+                for tx_input in transaction.inputs:
+                    utxo_id = f"{tx_input.tx_hash}:{tx_input.output_index}"
+                    spent_key = self._get_spent_utxo_key(utxo_id)
+                    spent_data = self.db.get(spent_key)
+                    
+                    if spent_data:
+                        utxo = deserialize_utxo(spent_data)
+                        utxo.spent = False
+                        
+                        # Move back to unspent UTXOs
+                        utxo_key = self._get_utxo_key(utxo_id)
+                        batch.put(utxo_key, serialize_utxo(utxo))
+                        batch.delete(spent_key)
+                        
+                        # Restore to address index
+                        self.indexer.add_utxo_to_address(utxo.address, utxo_id, batch)
+                
+                return True
+                
+            except Exception as e:
+                logger.error(f"Failed to revert transaction {transaction.hash}: {e}")
+                return False
+    
+    def revert_transaction_by_hash(self, tx_hash: str) -> bool:
+        """Revert a transaction by its hash"""
+        # This would need to lookup the transaction first, then call revert_transaction
+        # Implementation depends on transaction storage
+        logger.warning(f"revert_transaction_by_hash not fully implemented for tx: {tx_hash}")
+        return False
