@@ -158,7 +158,8 @@ class RayonixBlockchain:
             self.database = self._initialize_database_with_retry()
             
             # Initialize core components
-            self.utxo_set = UTXOSet(self.database, self.config)
+            db_path = str(self.data_dir / 'utxo_db')
+            self.utxo_set = UTXOSet(db_path)
             self.consensus = ProofOfStake(self.config)
             self.contract_manager = self._initialize_contract_manager()
             self.wallet = self._initialize_wallet()
