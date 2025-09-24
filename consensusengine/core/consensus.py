@@ -31,8 +31,23 @@ class ProofOfStake:
             config: Consensus configuration
             **kwargs: Override configuration parameters
         """
-        self.config = config or ConsensusConfig(**kwargs)
-        
+        if config is None:
+        	from consensusengine.utils.config.settings import ConsensusConfig
+        	self.config = ConsensusConfig(**kwargs)
+        	
+        elif isinstance(config, dict):
+        	from consensusengine.utils.config.settings import ConsensusConfig
+        	self.config = ConsensusConfig(**{**config, **kwargs})
+        	
+        elif hasattr(config, '__dataclass_fields__'):
+        	self.config = config
+        else:
+        	from consensusengine.utils.config.settings import ConsensusConfig
+        	self.config = ConsensusConfig(**vars(config))
+        	
+        # Add fallback for missing attributes
+        self._ensure_config_attributes()
+ 
         # Core state management
         self.height = 0
         self.round = 0
@@ -79,6 +94,26 @@ class ProofOfStake:
         
         self._load_state()
         self._start_background_tasks()
+        
+    def _ensure_config_attributes(self):
+    	"""Ensure config has all required attributes with defaults"""
+    	defaults = {
+    	    'epoch_blocks': 100,
+    	    'timeout_propose': 3000,
+    	    'timeout_prevote': 1000,
+    	    'timeout_precommit': 1000,
+    	    'timeout_commit': 1000,
+    	    'db_path': './consensus_data',
+    	    'max_validators': 100,
+    	    'min_stake_amount': 1000,
+    	    'unbonding_period': 86400 * 21,
+    	    'slashing_percentage': 0.01,
+    	    'jail_duration': 86400 * 2
+    	}
+    	for attr, default in defaults.items():
+    		if not hasattr(self.config, attr):
+    			setattr(self.config, attr, default)
+    			logger.warning(f"Added missing config attribute {attr} with default value {default}")
     
     def _load_state(self):
         """Load consensus state from database"""
