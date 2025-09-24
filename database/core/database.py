@@ -738,11 +738,18 @@ class AdvancedDatabase:
         
         for index_name, index in self.indexes.items():
             if hasattr(index, 'calculate_update'):
-                update = index.calculate_update(key, new_value, old_value, ttl)
-                if update:
-                    updates[index_name] = update
-        
-        return updates
+                try:
+                	update = index.calculate_update(key, new_value, old_value, ttl)
+                	if update:
+                		# Ensure both values are lists, not None
+                		update['new_values'] = update.get('new_values', []) or []
+                		update['old_values'] = update.get('old_values', []) or []
+                		updates[index_name] = update
+                except Exception as e:
+                	logger.error(f"Index calculation failed for {index_name}: {e}")
+                	# Continue with other indexes instead of failing completely
+            return updates
+                
     
     def _update_indexes(self, key: bytes, value: Any, updates: Dict[str, Any]):
         """Update indexes with calculated updates"""

@@ -28,7 +28,7 @@ class FunctionalBTreeIndex:
         try:
             # Extract index fields from value
             index_values = self._extract_index_values(new_value)
-            old_index_values = self._extract_index_values(old_value) if old_value else None
+            old_index_values = self._extract_index_values(old_value) if old_value else []
             
             if not index_values and self.sparse:
                 return None
@@ -43,8 +43,8 @@ class FunctionalBTreeIndex:
     def update(self, key: bytes, value: Any, update_data: Any):
         """Update index with new data"""
         try:
-            new_values = update_data.get('new_values', [])
-            old_values = update_data.get('old_values', [])
+            new_values = update_data.get('new_values', []) or []
+            old_values = update_data.get('old_values', []) or []  # Ensure it's never None
             
             # Remove old index entries
             for old_value in old_values:
@@ -62,7 +62,7 @@ class FunctionalBTreeIndex:
     def remove(self, key: bytes, removal_data: Any):
         """Remove key from index"""
         try:
-            old_values = removal_data.get('old_values', [])
+            old_values = removal_data.get('old_values', []) or []  # Ensure it's never None
             for old_value in old_values:
                 index_key = self._create_index_key(old_value, key)
                 self.db.db.delete(index_key)
