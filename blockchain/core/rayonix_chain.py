@@ -299,13 +299,17 @@ class RayonixBlockchain:
     def _initialize_wallet(self) -> RayonixWallet:
         """Initialize wallet with comprehensive key management"""
         try:
-            wallet_config = {
-                'network': self.network_type,
-                'data_dir': str(self.data_dir / "wallet"),
-                'encryption': True,
-                'auto_backup': True
-            }
-            
+            from rayonix_wallet.core.config import WalletConfig
+            wallet_config = WalletConfig(
+                network=self.network_type,
+                data_dir=str(self.data_dir / "wallet"),
+                encryption=True,
+                auto_backup=True,
+                db_path=str(self.data_dir / "wallet" / "wallet.db"),
+                address_type='rayonix',  # or appropriate default
+                gap_limit=20,
+                account_index=0
+            )    
             wallet = RayonixWallet(wallet_config)
             
             # Initialize wallet if not exists
