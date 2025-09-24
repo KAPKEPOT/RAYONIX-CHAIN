@@ -161,12 +161,18 @@ class RayonixBlockchain:
             # Initialize core components
             db_path = str(self.data_dir / 'utxo_db')
             self.utxo_set = UTXOSet(db_path)
-            consensus_config = ConsensusConfig.from_blockchain_config(
-                self.config,
-                db_path=str(self.data_dir / "consensus_data")
+            from consensusengine.utils.config.factory import ConfigFactory
+            consensus_config = ConfigFactory.create_consensus_config(
+                **getattr(self, 'consensus_config', {})
+            )
+            network_config = ConfigFactory.create_network_config(
+                **getattr(self, 'network_config', {})
             )
             
-            self.consensus = ProofOfStake(consensus_config)
+            self.consensus = ProofOfStake(
+                config=consensus_config,
+                network_config=network_config
+            )
             self.contract_manager = self._initialize_contract_manager()
             self.wallet = self._initialize_wallet()
             
