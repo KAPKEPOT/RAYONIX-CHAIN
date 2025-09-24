@@ -156,6 +156,10 @@ class RayonixBlockchain:
         """Initialize all blockchain components with comprehensive error handling"""
         try:
             logger.info("Initializing blockchain components...")
+            
+            # Convert config to dict for components that need it
+            config_dict = asdict(self.config) if hasattr(self.config, '__dataclass_fields__') else self.config
+            
             # Initialize database with retry logic
             self.database = self._initialize_database_with_retry()
             
