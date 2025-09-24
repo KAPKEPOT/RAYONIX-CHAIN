@@ -1,4 +1,4 @@
-from rayonix_wallet.storage.database import WalletDatabase
+from database.core.database import AdvancedDatabase
 from rayonix_wallet.storage.backup import BackupManager
 from rayonix_wallet.storage.cache import CacheManager
 
