@@ -9,7 +9,7 @@ from rayonix_wallet.core.types import WalletType, SecureKeyPair, Transaction, Ad
 from rayonix_wallet.core.exceptions import WalletError
 from rayonix_wallet.crypto.key_management import KeyManager
 from rayonix_wallet.crypto.address import AddressDerivation
-from rayonix_wallet.storage.database import WalletDatabase
+from database.core.database import AdvancedDatabase
 from rayonix_wallet.storage.backup import BackupManager
 from rayonix_wallet.services.synchronizer import WalletSynchronizer
 from rayonix_wallet.services.transaction import TransactionManager
@@ -67,10 +67,16 @@ class RayonixWallet:
         self.addresses = {addr.address: addr for addr in self.db.get_all_addresses()}
         self.transactions = {tx.txid: tx for tx in self.db.get_transactions(limit=1000)}
     
-    def set_blockchain_reference(self, blockchain_interface: BlockchainInterface) -> bool:
-        """Set reference to blockchain interface"""
+    def set_blockchain_reference(self, rayonix_coin_instance: Any) -> bool:
+        """Set reference to blockchain instance"""
         try:
-            self.blockchain_interface = blockchain_interface
+            if not hasattr(rayonix_coin_instance, 'utxo_set') or not hasattr(rayonix_rayonix_chain_instance, 'get_balance'):
+                logger.error("Invalid blockchain reference provided")
+                return False
+            self.rayonix_chain = rayonix_coin_instance
+            logger.info("Blockchain reference set successfully")
+            
+            # Start synchronizer if we have blockchain reference
             self.synchronizer.start()
             return True
         except Exception as e:
@@ -80,11 +86,36 @@ class RayonixWallet:
     def create_from_mnemonic(self, mnemonic_phrase: str, passphrase: str = "") -> bool:
         """Create wallet from BIP39 mnemonic phrase"""
         try:
-            success = self.key_manager.initialize_from_mnemonic(mnemonic_phrase, passphrase)
-            if success:
-                self._generate_initial_addresses()
-                return True
-            return False
+            # Validate mnemonic
+            if not self._validate_mnemonic(mnemonic_phrase):
+                raise ValueError("Invalid mnemonic phrase")
+            
+            # Generate seed from mnemonic
+            seed = self._mnemonic_to_seed(mnemonic_phrase, passphrase)
+            
+            # Generate master key from seed using BIP32 library
+            bip32 = BIP32.from_seed(seed)
+            
+            # Create secure key pair
+            private_key_secure = SecureString(bip32.private_key)
+            self.master_key = SecureKeyPair(
+                _private_key=private_key_secure,
+                public_key=bip32.public_key,
+                chain_code=bip32.chain_code,
+                depth=0,
+                index=0,
+                parent_fingerprint=b'\x00\x00\x00\x00'
+            )
+            
+            # Store mnemonic securely
+            self._creation_mnemonic = SecureString(mnemonic_phrase.encode())
+            
+            # Generate initial addresses
+            self._generate_initial_addresses()
+            
+            logger.info("Wallet created from mnemonic successfully")
+            return True
+            
         except Exception as e:
             logger.error(f"Failed to create wallet from mnemonic: {e}")
             return False
@@ -92,13 +123,43 @@ class RayonixWallet:
     def create_from_private_key(self, private_key: str, wallet_type: WalletType = WalletType.NON_HD) -> bool:
         """Create wallet from private key"""
         try:
-            success = self.key_manager.initialize_from_private_key(private_key, wallet_type)
-            if success:
-                address = self.address_derivation.derive_address(self.key_manager.get_public_key(), 0, False)
-                self._save_address_info(address, 0, 'm/0/0', False)
-                self.config.wallet_type = wallet_type
-                return True
-            return False
+            # Decode private key
+            priv_key_bytes = self._decode_private_key(private_key)
+            
+            # Create secure key pair
+            private_key_secure = SecureString(priv_key_bytes)
+            public_key = self._private_to_public(priv_key_bytes)
+            
+            key_pair = SecureKeyPair(
+                _private_key=private_key_secure,
+                public_key=public_key
+            )
+            
+            # Store in memory (for non-HD wallets, we don't use derivation paths)
+            self.master_key = key_pair
+            
+            # Generate address
+            address = self._derive_address(public_key, 0, False)
+            address_info = AddressInfo(
+                address=address,
+                index=0,
+                derivation_path='m/0/0',
+                balance=0,
+                received=0,
+                sent=0,
+                tx_count=0,
+                is_used=False,
+                is_change=False
+            )
+            
+            # Save to database
+            self.db.save_address(address_info)
+            self.addresses[address] = address_info
+            
+            self.config.wallet_type = wallet_type
+            logger.info("Wallet created from private key successfully")
+            return True
+            
         except Exception as e:
             logger.error(f"Failed to create wallet from private key: {e}")
             return False
@@ -106,12 +167,35 @@ class RayonixWallet:
     def create_hd_wallet(self) -> Tuple[str, str]:
         """Create new HD wallet with mnemonic"""
         try:
-            mnemonic = self.key_manager.generate_mnemonic()
-            success = self.key_manager.initialize_from_mnemonic(mnemonic, "")
-            if success:
-                self._generate_initial_addresses()
-                return mnemonic, self.wallet_id
-            raise WalletError("Failed to create HD wallet")
+            # Generate mnemonic
+            mnemonic_phrase = self._generate_mnemonic()
+            
+            # Generate seed
+            seed = self._mnemonic_to_seed(mnemonic_phrase, "")
+            
+            # Generate master key using BIP32 library
+            bip32 = BIP32.from_seed(seed)
+            
+            # Create secure key pair
+            private_key_secure = SecureString(bip32.private_key)
+            self.master_key = SecureKeyPair(
+                _private_key=private_key_secure,
+                public_key=bip32.public_key,
+                chain_code=bip32.chain_code,
+                depth=0,
+                index=0,
+                parent_fingerprint=b'\x00\x00\x00\x00'
+            )
+            
+            # Store mnemonic securely
+            self._creation_mnemonic = SecureString(mnemonic_phrase.encode())
+            
+            # Generate initial addresses
+            self._generate_initial_addresses()
+            
+            logger.info("HD wallet created successfully")
+            return mnemonic_phrase, self.wallet_id
+            
         except Exception as e:
             logger.error(f"Failed to create HD wallet: {e}")
             raise
@@ -125,15 +209,50 @@ class RayonixWallet:
     
     def derive_address(self, index: int, is_change: bool = False) -> str:
         """Derive address at specified index"""
-        if self.locked:
-            raise WalletError("Wallet is locked")
+        if not self.master_key:
+            raise ValueError("Wallet is locked or not initialized")
         
-        derivation_path = self.key_manager.get_derivation_path(index, is_change)
-        public_key = self.key_manager.derive_public_key(derivation_path)
-        address = self.address_derivation.derive_address(public_key, index, is_change)
+        # Use BIP32 library for proper derivation
+        bip32 = BIP32.from_seed(self.master_key.private_key)
         
-        self._save_address_info(address, index, derivation_path, is_change)
-        return address
+        # BIP44 derivation path: m/purpose'/coin_type'/account'/change/address_index
+        change_index = 1 if is_change else 0
+        derivation_path = f"m/44'/0'/{self.config.account_index}'/{change_index}/{index}"
+        
+        try:
+            # Derive child key
+            derived_private_key = bip32.get_privkey_from_path(derivation_path)
+            derived_public_key = bip32.get_pubkey_from_path(derivation_path)
+            
+            # Generate address
+            address = self._derive_address(derived_public_key, index, is_change)
+            
+            # Create address info
+            address_info = AddressInfo(
+                address=address,
+                index=index,
+                derivation_path=derivation_path,
+                balance=0,
+                received=0,
+                sent=0,
+                tx_count=0,
+                is_used=False,
+                is_change=is_change
+            )
+            
+            # Save to database
+            self.db.save_address(address_info)
+            self.addresses[address] = address_info
+            
+            # Update wallet state
+            self.state.addresses_generated += 1
+            self.db.save_wallet_state(self.state)
+            
+            return address
+            
+        except Exception as e:
+            logger.error(f"Failed to derive address: {e}")
+            raise
     
     def _save_address_info(self, address: str, index: int, derivation_path: str, is_change: bool):
         """Save address information to database"""
