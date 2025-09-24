@@ -33,7 +33,7 @@ class AdvancedP2PNetwork:
         	config = NodeConfig(
         	    listen_port=port,
         	    max_connections=max_connections,
-        	    network_id=network_id
+        	    
         	)    	
   	
         self.config = config or NodeConfig()
