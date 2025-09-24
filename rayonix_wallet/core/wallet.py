@@ -9,7 +9,7 @@ from rayonix_wallet.core.types import WalletType, SecureKeyPair, Transaction, Ad
 from rayonix_wallet.core.exceptions import WalletError
 from rayonix_wallet.crypto.key_management import KeyManager
 from rayonix_wallet.crypto.address import AddressDerivation
-from database.core.database import AdvancedDatabase
+from rayonix_wallet.storage.wallet_database import WalletDatabaseAdapter
 from rayonix_wallet.storage.backup import BackupManager
 from rayonix_wallet.services.synchronizer import WalletSynchronizer
 from rayonix_wallet.services.transaction import TransactionManager
@@ -27,7 +27,7 @@ class RayonixWallet:
         self.wallet_id = wallet_id or self._generate_wallet_id()
         
         # Initialize components
-        self.db = AdvancedDatabase(self.config.db_path)
+        self.db = WalletDatabaseAdapter(AdvancedDatabase(self.config.db_path))
         self.key_manager = KeyManager(self.config)
         self.address_derivation = AddressDerivation(self.config)
         self.transaction_manager = TransactionManager(self)
