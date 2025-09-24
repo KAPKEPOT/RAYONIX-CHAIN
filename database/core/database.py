@@ -34,7 +34,10 @@ import tempfile
 import shutil
 from sortedcontainers import SortedDict, SortedList
 
-from database.utils.types import DatabaseConfig, IndexConfig, BatchOperation
+from database.utils.types import (
+    DatabaseType, CompressionType, EncryptionType, 
+    IndexType, SerializationType, DatabaseConfig, IndexConfig, BatchOperation
+)
 from database.utils.exceptions import (
     DatabaseError, KeyNotFoundError, SerializationError, IndexError,
     IntegrityError, CompressionError, EncryptionError
