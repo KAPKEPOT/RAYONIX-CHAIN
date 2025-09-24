@@ -210,11 +210,11 @@ class RayonixBlockchain:
             )
             
             self.checkpoint_manager = CheckpointManager(self.database, self.state_manager)
-            self.validation_manager = ValidationManager(self.state_manager, self.config)
-            self.transaction_manager = TransactionManager(self.state_manager, self.wallet, self.config)
-            self.fee_estimator = FeeEstimator(self.state_manager, self.config)
-            self.fork_manager = ForkManager(self.state_manager, self.validation_manager, self.config)
-            self.block_producer = BlockProducer(self.state_manager, self.validation_manager, self.config, self.wallet)
+            self.validation_manager = ValidationManager(self.state_manager, config_dict)
+            self.transaction_manager = TransactionManager(self.state_manager, self.wallet, config_dict)
+            self.fee_estimator = FeeEstimator(self.state_manager, config_dict)
+            self.fork_manager = ForkManager(self.state_manager, self.validation_manager, config_dict)
+            self.block_producer = BlockProducer(self.state_manager, self.validation_manager, config_dict, self.wallet)
             
             # Initialize network layer
             self.network = AdvancedP2PNetwork(
