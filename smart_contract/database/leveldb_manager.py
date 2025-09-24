@@ -3,6 +3,7 @@ import plyvel
 import json
 import logging
 import pickle
+import os
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 
@@ -23,6 +24,17 @@ class LevelDBManager:
     """Advanced LevelDB manager for contract storage"""
     
     def __init__(self, db_path: str, config: Optional[DatabaseConfig] = None):
+        # Validate and normalize db_path
+        if not isinstance(db_path, (str, bytes)):
+            raise TypeError(f"db_path must be a string or bytes, got {type(db_path)}")
+        
+        # Convert to string if it's bytes
+        if isinstance(db_path, bytes):
+            db_path = db_path.decode('utf-8')
+        
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else '.', exist_ok=True)
+        
         self.db_path = db_path
         self.config = config or DatabaseConfig()
         self.db: Optional[plyvel.DB] = None
@@ -33,8 +45,14 @@ class LevelDBManager:
     def _open_database(self) -> None:
         """Open or create LevelDB database"""
         try:
+            # Ensure path is properly encoded
+            if isinstance(self.db_path, str):
+                db_path_bytes = self.db_path.encode('utf-8')
+            else:
+                db_path_bytes = self.db_path
+            
             self.db = plyvel.DB(
-                self.db_path,
+                db_path_bytes,  # Use encoded path
                 create_if_missing=self.config.create_if_missing,
                 error_if_exists=self.config.error_if_exists,
                 compression='snappy' if self.config.compression else None,
@@ -44,7 +62,7 @@ class LevelDBManager:
                 max_open_files=self.config.max_open_files
             )
         except Exception as e:
-            logger.error(f"Failed to open database: {e}")
+            logger.error(f"Failed to open database at {self.db_path}: {e}")
             raise
     
     def save_contract(self, contract: Any) -> bool:
