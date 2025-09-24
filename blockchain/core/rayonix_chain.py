@@ -28,6 +28,7 @@ from utxo_system.database.core import UTXOSet
 from consensusengine.core.consensus import ProofOfStake
 from blockchain.utils.genesis import GenesisBlockGenerator
 from network.core.p2p_network import AdvancedP2PNetwork
+from blockchain.config.consensus_config import ConsensusConfig
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,12 @@ class RayonixBlockchain:
             # Initialize core components
             db_path = str(self.data_dir / 'utxo_db')
             self.utxo_set = UTXOSet(db_path)
-            self.consensus = ProofOfStake(self.config)
+            consensus_config = ConsensusConfig.from_blockchain_config(
+                self.config,
+                db_path=str(self.data_dir / "consensus_data")
+            )
+            
+            self.consensus = ProofOfStake(consensus_config)
             self.contract_manager = self._initialize_contract_manager()
             self.wallet = self._initialize_wallet()
             
