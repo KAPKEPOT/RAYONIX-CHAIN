@@ -8,6 +8,7 @@ from utxo_system.models.transaction import Transaction
 from utxo_system.models.utxo import UTXO
 from blockchain.models.transaction_results import TransactionCreationResult
 from blockchain.validation.validation_manager import ValidationManager
+from blockchain.fees.fee_estimator import FeeEstimator
 
 logger = logging.getLogger(__name__)
 
