@@ -163,7 +163,7 @@ class RayonixBlockchain:
             db_path = str(self.data_dir / 'utxo_db')
             self.utxo_set = UTXOSet(db_path)
             
-            from consensus.utils.config.factory import ConfigFactory
+            from consensusengine.utils.config.factory import ConfigFactory
             
             # Get configuration parameters from instance or use defaults
             consensus_params = getattr(self, 'consensus_config', {})
