@@ -3,7 +3,7 @@ import time
 from typing import List, Dict, Optional
 from rayonix_wallet.core.types import Transaction, AddressInfo
 from rayonix_wallet.core.exceptions import SyncError
-from rayonix_wallet.storage.database import WalletDatabase
+from database.core.database import AdvancedDatabase
 
 class WalletSynchronizer:
     """Blockchain synchronization service"""
