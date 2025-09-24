@@ -446,7 +446,9 @@ class RayonixBlockchain:
     def _create_genesis_blockchain(self):
         """Create new blockchain with genesis block"""
         try:
-            generator = GenesisBlockGenerator(self.config)
+            config_dict = asdict(self.config) if hasattr(self.config, '__dataclass_fields__') else self.config
+            
+            generator = GenesisBlockGenerator(config_dict)
             genesis_block = generator.generate_genesis_block()
             
             # Validate and apply genesis block
