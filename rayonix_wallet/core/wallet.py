@@ -21,6 +21,7 @@ from rayonix_wallet.utils.qr_code import generate_qr_code
 from rayonix_wallet.interfaces.blockchain import BlockchainInterface
 from rayonix_wallet.utils.logging import logger
 from rayonix_wallet.core.config import WalletConfig
+from rayonix_wallet.utils.secure import SecureString
 
 class RayonixWallet:
     """Advanced cryptographic wallet with enterprise-grade features"""
@@ -112,22 +113,19 @@ class RayonixWallet:
             # Generate seed from mnemonic
             seed = self._mnemonic_to_seed(mnemonic_phrase, passphrase)
             
-            # Generate master key from seed using BIP32 library
-            # Note: You'll need to import or implement BIP32
+            # Generate master key from seed using BIP32
             from bip32 import BIP32
             bip32 = BIP32.from_seed(seed)
             
+            # Get private key using proper method
+            private_key_bytes = self._get_private_key_from_bip32(bip32)
+            
             # Create secure key pair
-            try:
-            	private_key_bytes = bip32.get_privkey_from_path("m")
-            except Exception:
-            	private_key_bytes = bip32.private_key
-            # Create secure key pair
-            from rayonix_wallet.core.types import SecureString
             private_key_secure = SecureString(private_key_bytes)
             
             # Get public key
             public_key_bytes = bip32.get_pubkey_from_path("m")
+            
             self.master_key = SecureKeyPair(
                 _private_key=private_key_secure,
                 public_key=public_key_bytes,
@@ -136,6 +134,7 @@ class RayonixWallet:
                 index=0,
                 parent_fingerprint=b'\x00\x00\x00\x00'
             )
+            
             # Store mnemonic securely
             self._creation_mnemonic = SecureString(mnemonic_phrase.encode())
             
@@ -148,6 +147,30 @@ class RayonixWallet:
             logger.error(f"Failed to create wallet from mnemonic: {e}")
             return False
 
+    def _get_private_key_from_bip32(self, bip32_obj) -> bytes:
+        """Extract private key from BIP32 object using multiple methods"""
+        try:
+            # Method 1: Try get_privkey_from_path
+            return bip32_obj.get_privkey_from_path("m")
+        except Exception:
+            try:
+                # Method 2: Try get_private_key
+                return bip32_obj.get_private_key()
+            except Exception:
+                try:
+                    # Method 3: Try accessing internal attributes
+                    if hasattr(bip32_obj, '_privkey'):
+                        return bip32_obj._privkey
+                    elif hasattr(bip32_obj, 'private_key'):
+                        return bip32_obj.private_key
+                    else:
+                        # Method 4: Derive from extended private key
+                        xprv = bip32_obj.get_xpriv()
+                        # Extract private key from xprv (remove version bytes and chain code)
+                        return bytes.fromhex(xprv[26:90])  # This is implementation-specific
+                except Exception as e:
+                    raise WalletError(f"Cannot extract private key from BIP32 object: {e}")
+
     def create_from_private_key(self, private_key: str, wallet_type: WalletType = WalletType.NON_HD) -> bool:
         """Create wallet from private key"""
         try:
@@ -155,7 +178,6 @@ class RayonixWallet:
             priv_key_bytes = self._decode_private_key(private_key)
             
             # Create secure key pair
-            from rayonix_wallet.core.types import SecureString
             private_key_secure = SecureString(priv_key_bytes)
             public_key = self._private_to_public(priv_key_bytes)
             
@@ -206,12 +228,18 @@ class RayonixWallet:
             from bip32 import BIP32
             bip32 = BIP32.from_seed(seed)
             
+            # Get private key using proper method
+            private_key_bytes = self._get_private_key_from_bip32(bip32)
+            
             # Create secure key pair
-            from rayonix_wallet.core.types import SecureString
-            private_key_secure = SecureString(bip32.private_key)
+            private_key_secure = SecureString(private_key_bytes)
+            
+            # Get public key
+            public_key_bytes = bip32.get_pubkey_from_path("m")
+            
             self.master_key = SecureKeyPair(
                 _private_key=private_key_secure,
-                public_key=bip32.public_key,
+                public_key=public_key_bytes,
                 chain_code=bip32.chain_code,
                 depth=0,
                 index=0,
@@ -310,6 +338,8 @@ class RayonixWallet:
         
         # Use BIP32 library for proper derivation
         from bip32 import BIP32
+        
+        # Create BIP32 object from the master private key
         bip32 = BIP32.from_seed(self.master_key.private_key)
         
         # BIP44 derivation path: m/purpose'/coin_type'/account'/change/address_index
@@ -318,7 +348,6 @@ class RayonixWallet:
         
         try:
             # Derive child key
-            derived_private_key = bip32.get_privkey_from_path(derivation_path)
             derived_public_key = bip32.get_pubkey_from_path(derivation_path)
             
             # Generate address
