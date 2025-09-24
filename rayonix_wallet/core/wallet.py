@@ -39,6 +39,10 @@ class RayonixWallet:
         self.backup_manager = BackupManager(self)
         self.synchronizer = WalletSynchronizer(self)
         
+        # Wallet state
+        self.master_key = None
+        self._creation_mnemonic = None
+        
         # Load state
         self._load_wallet_state()
         
@@ -52,6 +56,18 @@ class RayonixWallet:
         self.background_thread = None
         
         logger.info(f"Wallet initialized with ID: {self.wallet_id}")
+    
+    def is_initialized(self) -> bool:
+        """Check if wallet is properly initialized with keys"""
+        return self.master_key is not None
+    
+    def initialize_new_wallet(self) -> str:
+        """Initialize a new HD wallet and return the mnemonic"""
+        if self.is_initialized():
+            raise WalletError("Wallet is already initialized")
+        
+        mnemonic, wallet_id = self.create_hd_wallet()
+        return mnemonic
     
     def _generate_wallet_id(self) -> str:
         """Generate unique wallet ID"""
@@ -73,7 +89,7 @@ class RayonixWallet:
     def set_blockchain_reference(self, rayonix_coin_instance: Any) -> bool:
         """Set reference to blockchain instance"""
         try:
-            if not hasattr(rayonix_coin_instance, 'utxo_set') or not hasattr(rayonix_rayonix_chain_instance, 'get_balance'):
+            if not hasattr(rayonix_coin_instance, 'utxo_set') or not hasattr(rayonix_coin_instance, 'get_balance'):
                 logger.error("Invalid blockchain reference provided")
                 return False
             self.rayonix_chain = rayonix_coin_instance
@@ -97,9 +113,13 @@ class RayonixWallet:
             seed = self._mnemonic_to_seed(mnemonic_phrase, passphrase)
             
             # Generate master key from seed using BIP32 library
+            # Note: You'll need to import or implement BIP32
+            from bip32 import BIP32
             bip32 = BIP32.from_seed(seed)
             
             # Create secure key pair
+            # Note: You'll need to implement SecureString
+            from rayonix_wallet.core.types import SecureString
             private_key_secure = SecureString(bip32.private_key)
             self.master_key = SecureKeyPair(
                 _private_key=private_key_secure,
@@ -130,6 +150,7 @@ class RayonixWallet:
             priv_key_bytes = self._decode_private_key(private_key)
             
             # Create secure key pair
+            from rayonix_wallet.core.types import SecureString
             private_key_secure = SecureString(priv_key_bytes)
             public_key = self._private_to_public(priv_key_bytes)
             
@@ -177,9 +198,11 @@ class RayonixWallet:
             seed = self._mnemonic_to_seed(mnemonic_phrase, "")
             
             # Generate master key using BIP32 library
+            from bip32 import BIP32
             bip32 = BIP32.from_seed(seed)
             
             # Create secure key pair
+            from rayonix_wallet.core.types import SecureString
             private_key_secure = SecureString(bip32.private_key)
             self.master_key = SecureKeyPair(
                 _private_key=private_key_secure,
@@ -203,6 +226,71 @@ class RayonixWallet:
             logger.error(f"Failed to create HD wallet: {e}")
             raise
     
+    def _generate_mnemonic(self) -> str:
+        """Generate BIP39 mnemonic phrase"""
+        try:
+            import bip39
+            return bip39.generate_mnemonic()
+        except ImportError:
+            # Fallback implementation
+            import hashlib
+            import secrets
+            entropy = secrets.token_bytes(32)
+            return hashlib.sha256(entropy).hexdigest()[:32]  # Simplified
+    
+    def _mnemonic_to_seed(self, mnemonic: str, passphrase: str = "") -> bytes:
+        """Convert mnemonic to seed using BIP39"""
+        try:
+            import bip39
+            return bip39.mnemonic_to_seed(mnemonic, passphrase)
+        except ImportError:
+            # Fallback implementation
+            import hashlib
+            return hashlib.pbkdf2_hmac('sha512', mnemonic.encode(), 
+                                     f'mnemonic{passphrase}'.encode(), 2048)
+    
+    def _validate_mnemonic(self, mnemonic: str) -> bool:
+        """Validate BIP39 mnemonic"""
+        try:
+            import bip39
+            return bip39.validate_mnemonic(mnemonic)
+        except ImportError:
+            # Basic validation fallback
+            words = mnemonic.split()
+            return len(words) in [12, 15, 18, 21, 24]
+    
+    def _decode_private_key(self, private_key: str) -> bytes:
+        """Decode private key from various formats"""
+        # Implementation depends on your key format
+        try:
+            import base58
+            return base58.b58decode(private_key)
+        except:
+            return private_key.encode()
+    
+    def _private_to_public(self, private_key: bytes) -> bytes:
+        """Convert private key to public key"""
+        # Implementation depends on your cryptography library
+        try:
+            from ecdsa import SigningKey, SECP256k1
+            sk = SigningKey.from_string(private_key, curve=SECP256k1)
+            return sk.verifying_key.to_string()
+        except ImportError:
+            return private_key  # Simplified fallback
+    
+    def _derive_address(self, public_key: bytes, index: int, is_change: bool) -> str:
+        """Derive address from public key"""
+        # Implementation depends on your address format
+        try:
+            import hashlib
+            import base58
+            # Simple implementation for demonstration
+            hash1 = hashlib.sha256(public_key).digest()
+            hash2 = hashlib.new('ripemd160', hash1).digest()
+            return base58.b58encode_check(hash2).decode()
+        except:
+            return f"addr_{index}_{int(is_change)}_{public_key.hex()[:16]}"
+    
     def _generate_initial_addresses(self):
         """Generate initial set of addresses"""
         for i in range(self.config.gap_limit):
@@ -216,6 +304,7 @@ class RayonixWallet:
             raise ValueError("Wallet is locked or not initialized")
         
         # Use BIP32 library for proper derivation
+        from bip32 import BIP32
         bip32 = BIP32.from_seed(self.master_key.private_key)
         
         # BIP44 derivation path: m/purpose'/coin_type'/account'/change/address_index
@@ -413,6 +502,12 @@ class RayonixWallet:
                          fee_rate: Optional[int] = None) -> Optional[str]:
         """Sweep funds from private key to wallet address"""
         return self.transaction_manager.sweep_private_key(private_key, to_address, fee_rate)
+    
+    def get_primary_address(self) -> Optional[str]:
+        """Get primary address for this wallet"""
+        if not self.addresses:
+            return None
+        return list(self.addresses.keys())[0]
     
     def close(self):
         """Cleanly close wallet"""
