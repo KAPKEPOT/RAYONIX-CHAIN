@@ -12,7 +12,7 @@ from consensusengine.models.votes import Vote, VoteType
 from consensusengine.abci.interface import ABCIApplication
 from consensusengine.staking.manager import StakingManager
 from consensusengine.staking.slashing import SlashingManager
-from consensusengine.network.protocol import NetworkProtocol
+from network.core.p2p_network import AdvancedP2PNetwork
 from consensusengine.crypto.signing import CryptoManager
 from consensusengine.utils.database import DatabaseManager
 from consensusengine.utils.timing import TimeoutManager
@@ -69,7 +69,7 @@ class ProofOfStake:
         self.crypto_manager = CryptoManager()
         self.staking_manager = StakingManager(self)
         self.slashing_manager = SlashingManager(self)
-        self.network_protocol = NetworkProtocol(self)
+        self.AdvancedP2P_Network = AdvancedP2PNetwork(self)
         
         # Block and vote storage
         self.block_proposals: Dict[str, BlockProposal] = {}
