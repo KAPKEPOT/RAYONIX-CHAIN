@@ -72,13 +72,30 @@ class RayonixNode:
                 from config.config_manager import init_config
                 self.config_manager = init_config(config_path, encryption_key, auto_reload=True)
             
-            # Initialize rayonix_coin if not provided via dependencies
+            # Initialize rayonix_chain if not provided via dependencies
             if not self.rayonix_chain:
                 from blockchain.core.rayonix_chain import RayonixBlockchain
                 
                 network_type = self.config_manager.get('network.network_type', 'testnet')
                 data_dir = Path(self.config_manager.get('database.db_path', './rayonix_data'))
                 data_dir.mkdir(exist_ok=True, parents=True)
+                # Create blockchain configuration from main config
+                blockchain_config = {
+                    'network_type': network_type,
+                    'data_dir': str(data_dir),
+                    'port': self.config_manager.get('network.port', 30303),
+                    'max_connections': self.config_manager.get('network.max_connections', 50),
+                    'block_time_target': self.config_manager.get('consensus.block_time_target', 30),
+                    'max_block_size': self.config_manager.get('consensus.max_block_size', 4000000),
+                    'min_transaction_fee': self.config_manager.get('gas.min_transaction_fee', 1),
+                    'stake_minimum': self.config_manager.get('consensus.stake_minimum', 1000),
+                    'developer_fee_percent': self.config_manager.get('consensus.developer_fee_percent', 0.05),
+                    'enable_auto_staking': self.config_manager.get('consensus.enable_auto_staking', True),
+                    'enable_transaction_relay': self.config_manager.get('network.enable_transaction_relay', True),
+                    'enable_state_pruning': self.config_manager.get('database.enable_state_pruning', True),
+                    'max_reorganization_depth': self.config_manager.get('consensus.max_reorganization_depth', 100),
+                    'checkpoint_interval': self.config_manager.get('database.checkpoint_interval', 1000)
+                }
                 
                 # Get gas price config from main config
                 gas_price_config = {
@@ -92,7 +109,7 @@ class RayonixNode:
                 self.rayonix_chain = RayonixBlockchain(
                     network_type=network_type,
                     data_dir=str(data_dir),
-                    gas_price_config=gas_price_config
+                    config=blockchain_config
                 )
             
             # Initialize wallet if not provided via dependencies
