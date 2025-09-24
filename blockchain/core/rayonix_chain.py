@@ -254,18 +254,48 @@ class RayonixBlockchain:
         """Initialize contract manager with enhanced features"""
         try:
             from smart_contract.core.contract_manager import ContractManager
-            return ContractManager(self.database, self.config)
+            # Create contract database path
+            contracts_db_path = self.data_dir / "contracts_db"
+            contracts_db_path.mkdir(parents=True, exist_ok=True)
+            
+            # Prepare contract manager configuration
+            contract_config = {
+                'db_path': str(contracts_db_path),
+                'max_workers': getattr(self.config, 'contract_max_workers', 50),
+                'gas_price_config': {
+                    'min_gas_price': getattr(self.config, 'min_gas_price', 1),
+                    'max_gas_price': getattr(self.config, 'max_gas_price', 100),
+                    'base_gas_price': getattr(self.config, 'base_gas_price', 5),
+                    'adjustment_sensitivity': 0.2,
+                'update_interval': 30,
+                'emergency_update_interval': 5,
+                'max_mempool_size': 10000,
+                'target_block_utilization': 0.7,
+                }
+            }
+            # Initialize contract manager with proper configuration
+            contract_manager = ContractManager(
+                db_path=str(contracts_db_path),
+                config=contract_config,
+                max_workers=getattr(self.config, 'contract_max_workers', 50)
+            )
+            # Set up integration with blockchain components
+            contract_manager.set_blockchain_reference(self)
+            contract_manager.set_consensus_engine(self.consensus)
+            contract_manager.set_state_manager(self.state_manager)
+            
+            # Initialize contract manager
+            contract_manager.initialize()
+            
+            logger.info("Production contract manager initialized successfully")
+            return contract_manager
+            
         except ImportError as e:
-            logger.warning(f"Contract manager not available: {e}")
-            # Return a mock contract manager for basic functionality
-            class MockContractManager:
-                def execute_transaction(self, tx): return type('obj', (object,), {'success': True})()
-                def revert_transaction(self, tx): return True
-                def create_snapshot(self): return {}
-                def restore_snapshot(self, snapshot): pass
-                def verify_integrity(self): return True
-            return MockContractManager()
-
+        	logger.error(f"Contract manager import failed: {e}")
+        	raise RuntimeError("Contract manager is required for production deployment")
+        except Exception as e:
+        	logger.error(f"Contract manager initialization failed: {e}")
+  
     def _initialize_wallet(self) -> RayonixWallet:
         """Initialize wallet with comprehensive key management"""
         try:
