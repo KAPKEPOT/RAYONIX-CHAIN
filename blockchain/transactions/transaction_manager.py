@@ -19,12 +19,28 @@ class TransactionManager:
         self.state_manager = state_manager
         self.wallet = wallet
         self.config = config
+        # Convert dataclass to dict if needed
+        if hasattr(config, '__dataclass_fields__'):
+        	from dataclasses import asdict
+        	config_dict = asdict(config)
+        else:
+        	config_dict = config
+  
+        
         self.fee_estimator = FeeEstimator(state_manager, config)
         self.coin_selection_strategies = self._initialize_coin_selection_strategies()
         self.mempool: SortedDict = SortedDict()  # tx_hash -> (transaction, timestamp, fee_rate)
         self.validation_manager = ValidationManager(state_manager, config)
-        self.mempool_size_limit = config.get('max_mempool_size', 10000)
-        self.mempool_expiry_time = config.get('mempool_expiry_time', 3600)
+        # Use attribute access or dict get with fallback
+        if hasattr(config, 'max_mempool_size'):
+        	self.mempool_size_limit = config.max_mempool_size
+        else:
+        	self.mempool_size_limit = config_dict.get('max_mempool_size', 10000)
+        	
+        if hasattr(config, 'mempool_expiry_time'):
+        	self.mempool_expiry_time = config.mempool_expiry_time
+        else:
+        	self.mempool_expiry_time = config_dict.get('mempool_expiry_time', 3600) 
     
     def _initialize_coin_selection_strategies(self) -> Dict[str, callable]:
         """Initialize coin selection strategies"""
