@@ -28,13 +28,13 @@ class AdvancedP2PNetwork:
     
     def __init__(self, network_id: int = 1, port: int = 30303, max_connections: int = 50, node_id: str = None, config: Optional[NodeConfig] = None):
     	# Use provided parameters or create config from them
-    	if config is None:
-    		from network.config.node_config import NodeConfig
-    		config = NodeConfig(
-    		    port=port,
-    		    max_connections=max_connections,
-    		    network_id=network_id
-    		)
+        if config is None:
+        	from network.config.node_config import NodeConfig
+        	config = NodeConfig(
+        	    port=port,
+        	    max_connections=max_connections,
+        	    network_id=network_id
+        	)    	
   	
         self.config = config or NodeConfig()
         self.node_id = self._generate_node_id()
