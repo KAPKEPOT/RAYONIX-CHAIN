@@ -240,7 +240,7 @@ class RayonixWallet:
             self.master_key = SecureKeyPair(
                 _private_key=private_key_secure,
                 public_key=public_key_bytes,
-                chain_code=bip32.chain_code,
+                chain_code=bip32.chaincode,
                 depth=0,
                 index=0,
                 parent_fingerprint=b'\x00\x00\x00\x00'
