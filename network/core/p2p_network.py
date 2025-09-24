@@ -26,10 +26,19 @@ logger = logging.getLogger("AdvancedP2PNetwork")
 class AdvancedP2PNetwork:
     """Main P2P network class"""
     
-    def __init__(self, config: Optional[NodeConfig] = None):
+    def __init__(self, network_id: int = 1, port: int = 30303, max_connections: int = 50, node_id: str = None, config: Optional[NodeConfig] = None):
+    	# Use provided parameters or create config from them
+    	if config is None:
+    		from network.config.node_config import NodeConfig
+    		config = NodeConfig(
+    		    port=port,
+    		    max_connections=max_connections,
+    		    network_id=network_id
+    		)
+  	
         self.config = config or NodeConfig()
         self.node_id = self._generate_node_id()
-        self.magic = b'RAYX'  # Network magic number
+        self.magic = self._get_magic_number(network_id)  # Network magic number
         
         # Core components
         self.connection_manager = ConnectionManager(self)
@@ -60,6 +69,15 @@ class AdvancedP2PNetwork:
         # Task references
         self.maintenance_task = None
         self.metrics_task = None
+        
+    def _get_magic_number(self, network_id: int) -> bytes:
+    	"""Get magic number based on network ID"""
+    	magic_numbers = {
+    	    1: b'RAYX',  # Mainnet
+    	    2: b'RAYT',  # Testnet
+    	    3: b'RAYD',  # Devnet
+    	}
+    	return magic_numbers.get(network_id, b'RAYX')
     
     def _generate_node_id(self) -> str:
         """Generate unique node ID"""
