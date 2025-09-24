@@ -30,22 +30,28 @@ class KeyManager:
             seed = self._mnemonic_to_seed(mnemonic_phrase, passphrase)
             bip32 = BIP32.from_seed(seed)
             
-            private_key_secure = SecureString(bip32.private_key)
+            # Get private key using correct method
+            try:
+            	private_key_bytes = bip32.get_privkey_from_path("m")
+            except Exception:
+            	private_key_bytes = bip32.private_key
+            private_key_secure = SecureString(private_key_bytes)
+            
+            # Get public key
+            public_key_bytes = bip32.get_pubkey_from_path("m")
             self.master_key = SecureKeyPair(
                 _private_key=private_key_secure,
-                public_key=bip32.public_key,
+                public_key=public_key_bytes,
                 chain_code=bip32.chain_code,
                 depth=0,
                 index=0,
                 parent_fingerprint=b'\x00\x00\x00\x00'
             )
-            
             self._creation_mnemonic = SecureString(mnemonic_phrase.encode())
             return True
-            
         except Exception as e:
-            raise CryptoError(f"Failed to initialize from mnemonic: {e}")
-    
+        	raise CryptoError(f"Failed to initialize from mnemonic: {e}")
+      
     def initialize_from_private_key(self, private_key: str, wallet_type: WalletType) -> bool:
         """Initialize from private key"""
         try:
