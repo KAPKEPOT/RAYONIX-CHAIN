@@ -10,6 +10,7 @@ from rayonix_wallet.core.exceptions import WalletError
 from rayonix_wallet.crypto.key_management import KeyManager
 from rayonix_wallet.crypto.address import AddressDerivation
 from rayonix_wallet.storage.wallet_database import WalletDatabaseAdapter
+from database.core.database import AdvancedDatabase
 from rayonix_wallet.storage.backup import BackupManager
 from rayonix_wallet.services.synchronizer import WalletSynchronizer
 from rayonix_wallet.services.transaction import TransactionManager
