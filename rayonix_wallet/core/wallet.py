@@ -27,7 +27,7 @@ class RayonixWallet:
         self.wallet_id = wallet_id or self._generate_wallet_id()
         
         # Initialize components
-        self.db = WalletDatabase(self.config.db_path)
+        self.db = AdvancedDatabase(self.config.db_path)
         self.key_manager = KeyManager(self.config)
         self.address_derivation = AddressDerivation(self.config)
         self.transaction_manager = TransactionManager(self)
