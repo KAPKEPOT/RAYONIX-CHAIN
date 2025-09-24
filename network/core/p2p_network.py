@@ -31,7 +31,7 @@ class AdvancedP2PNetwork:
         if config is None:
         	from network.config.node_config import NodeConfig
         	config = NodeConfig(
-        	    port=port,
+        	    listen_port=port,
         	    max_connections=max_connections,
         	    network_id=network_id
         	)    	
