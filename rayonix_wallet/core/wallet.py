@@ -1,5 +1,3 @@
-[file name]: wallet.py
-[file content begin]
 import threading
 import time
 import gc
