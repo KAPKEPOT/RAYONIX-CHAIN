@@ -151,6 +151,15 @@ class RayonixBlockchain:
         self._initialize_blockchain()
         
         logger.info(f"RAYONIX node initialized for {network_type} network")
+        
+    def _config_to_dict(self) -> Dict[str, Any]:
+    	"""Convert BlockchainConfig to dictionary"""
+    	if hasattr(self.config, '__dataclass_fields__'):
+    		return {field: getattr(self.config, field) for field in self.config.__dataclass_fields__}
+    	elif isinstance(self.config, dict):
+    		return self.config.copy()
+    	else:
+    		return vars(self.config) if hasattr(self.config, '__dict__') else {}        
 
     def _initialize_components(self):
         """Initialize all blockchain components with comprehensive error handling"""
@@ -158,7 +167,7 @@ class RayonixBlockchain:
             logger.info("Initializing blockchain components...")
             
             # Convert config to dict for components that need it
-            config_dict = asdict(self.config) if hasattr(self.config, '__dataclass_fields__') else self.config
+            config_dict = self._config_to_dict()
             
             # Initialize database with retry logic
             self.database = self._initialize_database_with_retry()
