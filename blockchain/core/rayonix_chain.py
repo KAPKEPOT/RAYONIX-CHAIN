@@ -300,9 +300,12 @@ class RayonixBlockchain:
         """Initialize wallet with comprehensive key management"""
         try:
             from rayonix_wallet.core.config import WalletConfig
+            # Create wallet data directory
+            wallet_dir = self.data_dir / "wallet"
+            wallet_dir.mkdir(parents=True, exist_ok=True)
+            
             wallet_config = WalletConfig(
-                network=self.network_type,
-                data_dir=str(self.data_dir / "wallet"),
+                network=self.network_type,          
                 encryption=True,
                 auto_backup=True,
                 db_path=str(self.data_dir / "wallet" / "wallet.db"),
