@@ -19,6 +19,8 @@ from rayonix_wallet.services.multisig import MultisigManager
 from rayonix_wallet.utils.validation import validate_address_format
 from rayonix_wallet.utils.qr_code import generate_qr_code
 from rayonix_wallet.interfaces.blockchain import BlockchainInterface
+from rayonix_wallet.utils.logging import logger
+from rayonix_wallet.core.config import WalletConfig
 
 class RayonixWallet:
     """Advanced cryptographic wallet with enterprise-grade features"""
