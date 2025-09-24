@@ -15,11 +15,20 @@ class FeeEstimator:
     def __init__(self, state_manager: Any, config: Dict[str, Any]):
         self.state_manager = state_manager
         self.config = config
+        # Handle both dict and dataclass config
+        if hasattr(config, '__dataclass_fields__'):
+        	from dataclasses import asdict
+        	self.config_dict = asdict(config)
+        else:
+        	self.config_dict = config
+   
         self.fee_history: Deque = deque(maxlen=1000)
         self.mempool_stats: Deque = deque(maxlen=100)
-        self.last_estimate = FeeEstimate(0, 0, 0, 0, time.time(), 0.0, 0)
+        self.last_estimate = FeeEstimate(0, 0, 0, 0, time.time(), 0.0, 0)     
         self.historical_data: List[Dict[str, Any]] = []
-        self.update_interval = config.get('fee_estimation_interval', 30)
+        
+        # Use dict-style access for compatibility
+        self.update_interval = self.config_dict.get('fee_estimation_interval', 30)
         self.last_update = 0
     
     def estimate_fee(self, strategy: str = 'medium', confirmation_target: int = 6) -> int:
