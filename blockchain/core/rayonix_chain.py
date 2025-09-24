@@ -504,16 +504,19 @@ class RayonixBlockchain:
         
         try:
             # Try to restore from latest checkpoint
+            config_dict = asdict(self.config) if hasattr(self.config, '__dataclass_fields__') else self.config
+            
             checkpoints = self.checkpoint_manager.list_checkpoints()
             if checkpoints:
-                latest_checkpoint = max(checkpoints, key=lambda x: x['height'])
-                if self.checkpoint_manager.restore_from_checkpoint(latest_checkpoint['name']):
+                latest_checkpoint = max(checkpoints, key=lambda x: x.height)
+                if self.checkpoint_manager.restore_from_checkpoint(latest_checkpoint.name):
                     logger.info(f"Recovered from checkpoint at height {latest_checkpoint['height']}")
                     return True
             
             # Fallback to genesis block
-            genesis_block = self.database.get(b'genesis_block')
-            if genesis_block:
+            genesis_block_data = self.database.get(b'genesis_block')
+            if genesis_block_data:
+                generator = GenesisBlockGenerator(config_dict)
                 if self.state_manager.restore_checkpoint('genesis'):
                     logger.info("Recovered from genesis block")
                     return True
