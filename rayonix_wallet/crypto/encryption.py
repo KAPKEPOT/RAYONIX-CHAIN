@@ -225,12 +225,20 @@ class EncryptionManager:
     
     def _configure_from_settings(self) -> None:
         """Configure manager from provided settings"""
-        self.use_scrypt = self.config.get('use_scrypt', True)
-        self.enable_key_hierarchy = self.config.get('enable_key_hierarchy', True)
-        self.enable_brute_force_protection = self.config.get('enable_brute_force_protection', True)
-        self.max_decrypt_attempts = self.config.get('max_decrypt_attempts', 
-                                                   self.constants.MAX_DECRYPT_ATTEMPTS)
-    
+        if hasattr(self.config, 'get') and callable(getattr(self.config, 'get')):
+        	# It's a dictionary-like object
+        	self.use_scrypt = self.config.get('use_scrypt', True)
+        	self.enable_key_hierarchy = self.config.get('enable_key_hierarchy', True)
+        	self.enable_brute_force_protection = self.config.get('enable_brute_force_protection', True)
+        	self.max_decrypt_attempts = self.config.get('max_decrypt_attempts', self.constants.MAX_DECRYPT_ATTEMPTS)
+        else:
+        	# It's an object with attributes
+        	self.use_scrypt = getattr(self.config, 'use_scrypt', True)
+        	self.enable_key_hierarchy = getattr(self.config, 'enable_key_hierarchy', True)
+        	self.enable_brute_force_protection = getattr(self.config, 'enable_brute_force_protection', True)
+        	self.max_decrypt_attempts = getattr(self.config, 'max_decrypt_attempts', self.constants.MAX_DECRYPT_ATTEMPTS) 
+                                           
+  
     def _check_brute_force_protection(self, identifier: str) -> None:
         """Implement brute force protection"""
         if not self.enable_brute_force_protection:
