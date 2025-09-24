@@ -23,7 +23,7 @@ logger = logging.getLogger('ConsensusEngine')
 class ProofOfStake:
     """Production-ready Proof-of-Stake consensus engine with BFT features"""
     
-    def __init__(self, config: ConsensusConfig = None, **kwargs):
+    def __init__(self, config: ConsensusConfig = None, network_config=None, **kwargs):
         """
         Initialize Proof-of-Stake consensus engine
         
@@ -69,7 +69,12 @@ class ProofOfStake:
         self.crypto_manager = CryptoManager()
         self.staking_manager = StakingManager(self)
         self.slashing_manager = SlashingManager(self)
-        self.AdvancedP2P_Network = AdvancedP2PNetwork(self)
+        
+        #Network configuration
+        self.network_config = network_config
+        
+        # Initialize network with proper config
+        self.network = AdvancedP2PNetwork(self.network_config)
         
         # Block and vote storage
         self.block_proposals: Dict[str, BlockProposal] = {}
