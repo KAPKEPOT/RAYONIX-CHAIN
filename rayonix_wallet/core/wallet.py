@@ -1,3 +1,5 @@
+[file name]: wallet.py
+[file content begin]
 import threading
 import time
 import gc
@@ -84,16 +86,39 @@ class RayonixWallet:
             total_sent=0, security_score=0
         )
         
-        self.addresses = {addr.address: addr for addr in self.db.get_all_addresses()}
-        self.transactions = {tx.txid: tx for tx in self.db.get_transactions(limit=1000)}
+        # Fix: Convert dictionary to AddressInfo objects if needed
+        addresses_data = self.db.get_all_addresses()
+        self.addresses = {}
+        
+        for addr_data in addresses_data:
+            if isinstance(addr_data, dict):
+                # Convert dictionary to AddressInfo object
+                address_info = AddressInfo(**addr_data)
+                self.addresses[address_info.address] = address_info
+            else:
+                # It's already an AddressInfo object
+                self.addresses[addr_data.address] = addr_data
+        
+        # Fix: Handle transactions similarly
+        transactions_data = self.db.get_transactions(limit=1000)
+        self.transactions = {}
+        
+        for tx_data in transactions_data:
+            if isinstance(tx_data, dict):
+                # Convert dictionary to Transaction object
+                transaction = Transaction(**tx_data)
+                self.transactions[transaction.txid] = transaction
+            else:
+                # It's already a Transaction object
+                self.transactions[tx_data.txid] = tx_data
     
-    def set_blockchain_reference(self, rayonix_coin_instance: Any) -> bool:
+    def set_blockchain_reference(self, rayonix_chain_instance: Any) -> bool:
         """Set reference to blockchain instance"""
         try:
-            if not hasattr(rayonix_coin_instance, 'utxo_set') or not hasattr(rayonix_coin_instance, 'get_balance'):
+            if not hasattr(rayonix_chain_instance, 'utxo_set') or not hasattr(rayonix_chain_instance, 'get_balance'):
                 logger.error("Invalid blockchain reference provided")
                 return False
-            self.rayonix_chain = rayonix_coin_instance
+            self.rayonix_chain = rayonix_chain_instance
             logger.info("Blockchain reference set successfully")
             
             # Start synchronizer if we have blockchain reference
@@ -561,3 +586,4 @@ class RayonixWallet:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit"""
         self.close()
+[file content end]
