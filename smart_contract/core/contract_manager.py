@@ -33,7 +33,15 @@ logger = logging.getLogger("SmartContract.ContractManager")
 class ContractManager:
     """Advanced contract manager with atomic state transitions and inter-contract calls"""
     
-    def __init__(self, db_path: str = "contracts_db", max_workers: int = 50):
+    def __init__(self, db_path: str = "contracts_db", config: Optional[Dict] = None, max_workers: int = 50):
+        # Ensure db_path is a string
+        if not isinstance(db_path, str):
+            logger.warning(f"db_path is not a string, converting: {type(db_path)} -> str")
+            db_path = str(db_path)
+        
+        # Ensure path exists
+        os.makedirs(db_path, exist_ok=True)
+        
         self.contracts: Dict[str, SmartContract] = {}
         self.db = LevelDBManager(db_path)
         self.security = ContractSecurity()
