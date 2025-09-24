@@ -155,24 +155,38 @@ class RayonixBlockchain:
     def _initialize_components(self):
         """Initialize all blockchain components with comprehensive error handling"""
         try:
+            logger.info("Initializing blockchain components...")
             # Initialize database with retry logic
             self.database = self._initialize_database_with_retry()
             
             # Initialize core components
             db_path = str(self.data_dir / 'utxo_db')
             self.utxo_set = UTXOSet(db_path)
-            from consensusengine.utils.config.factory import ConfigFactory
-            consensus_config = ConfigFactory.create_consensus_config(
-                **getattr(self, 'consensus_config', {})
-            )
-            network_config = ConfigFactory.create_network_config(
-                **getattr(self, 'network_config', {})
-            )
             
+            from consensus.utils.config.factory import ConfigFactory
+            
+            # Get configuration parameters from instance or use defaults
+            consensus_params = getattr(self, 'consensus_config', {})
+            network_params = getattr(self, 'network_config', {})
+            
+            logger.info(f"Consensus params: {list(consensus_params.keys())}")
+            logger.info(f"Network params: {list(network_params.keys())}")
+            
+            # Create configurations with safe fallback
+            consensus_config = ConfigFactory.create_safe_consensus_config(**consensus_params)
+            network_config = ConfigFactory.create_network_config(**network_params)
+            
+            logger.info("Configurations created successfully")
+            
+            # Import consensus engine here to avoid circular imports
+            from consensusengine.core.consensus import ProofOfStake
             self.consensus = ProofOfStake(
                 config=consensus_config,
                 network_config=network_config
             )
+            logger.info("Consensus engine initialized successfully")
+           
+            
             self.contract_manager = self._initialize_contract_manager()
             self.wallet = self._initialize_wallet()
             
