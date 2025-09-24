@@ -1,4 +1,5 @@
 # smart_contract/core/contract_manager.py
+import os
 import time
 import threading
 import logging
