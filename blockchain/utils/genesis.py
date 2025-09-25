@@ -479,6 +479,19 @@ class GenesisBlockGenerator:
             
         for key in keys_to_remove:
             del self._validation_cache[key]
+            
+    def create_minimal_genesis_block(self) -> Block:
+    	"""Create a minimal valid genesis block for emergency recovery"""
+    	minimal_config = {
+    	    'premine_amount': 1000000,
+    	    'foundation_address': 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX', 
+    	    'network_id': 1,
+    	    'timestamp': int(time.time()),
+    	    'difficulty': 1,
+    	    'version': 1,
+    	    'genesis_description': 'Emergency recovery genesis block'
+    	}
+    	return self.generate_genesis_block(minimal_config)            
 
 
 class GenesisGenerationError(Exception):
