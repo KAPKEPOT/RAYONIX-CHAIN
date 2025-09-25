@@ -125,16 +125,11 @@ class GenesisBlockGenerator:
     
     def _create_premine_transaction(self, config: Dict[str, Any]) -> Transaction:
         """Create premine transaction with enhanced metadata and security"""
+        # Create the output without unsupported parameters
         output = TransactionOutput(
             address=config['foundation_address'],
             amount=config['premine_amount'],
-            locktime=0,
-            output_type="premine",
-            metadata={
-                'genesis_network_id': config['network_id'],
-                'creation_timestamp': config['timestamp'],
-                'premine_type': 'foundation'
-            }
+            locktime=0
         )
         
         return Transaction(
@@ -143,12 +138,17 @@ class GenesisBlockGenerator:
             locktime=0,
             version=1,
             timestamp=config['timestamp'],
-            transaction_type="genesis_premine",
             metadata={
                 'network_id': config['network_id'],
                 'premine_amount': config['premine_amount'],
                 'block_height': 0,
-                'consensus_algorithm': config['consensus_algorithm']
+                'consensus_algorithm': config['consensus_algorithm'],
+                'premine_info': {
+                    'type': 'foundation',
+                    'network_id': config['network_id'],
+                    'creation_timestamp': config['timestamp'],
+                    'premine_type': 'foundation'
+                }
             }
         )
     
