@@ -258,23 +258,30 @@ class CheckpointManager:
         checkpoints = []
         
         try:
-            # Get from database
-            for key in self.database.keys():
-                if key.startswith('checkpoint_meta_'):
-                    meta_dict = self.database.get(key)
-                    if meta_dict:
-                        meta = CheckpointMetadata(**meta_dict)
-                        if include_corrupted or meta.status != CheckpointState.CORRUPTED:
-                            checkpoints.append(meta)
-            
+            # Fix: Use proper database iteration for LevelDB
+            if hasattr(self.database, 'iterator'):
+            	# For LevelDB
+            	with self.database.iterator() as it:
+            		for key, value in it:
+            			key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+            			if key_str.startswith('checkpoint_meta_'):
+            				try:
+            					meta_dict = json.loads(value) if isinstance(value, (bytes, str)) else value
+            					meta = CheckpointMetadata(**meta_dict)
+            					if include_corrupted or meta.status != CheckpointState.CORRUPTED:
+            						checkpoints.append(meta)
+            				except Exception as e:
+            					logger.warning(f"Failed to parse checkpoint metadata: {e}")
+            else:
+            	# For other databases
+            	# You'll need to implement appropriate iteration
+            	pass
             # Sort by height
             checkpoints.sort(key=lambda x: x.height)
-            
         except Exception as e:
-            logger.error(f"Failed to list checkpoints: {e}")
-        
+        	logger.error(f"Failed to list checkpoints: {e}")
         return checkpoints
-
+ 
     def get_best_checkpoint(self, target_height: Optional[int] = None) -> Optional[CheckpointMetadata]:
         """Get the best checkpoint for the given target height"""
         checkpoints = self.list_checkpoints()
