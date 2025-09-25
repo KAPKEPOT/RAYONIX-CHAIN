@@ -14,7 +14,7 @@ from consensusengine.staking.manager import StakingManager
 from consensusengine.staking.slashing import SlashingManager
 from network.core.p2p_network import AdvancedP2PNetwork
 from consensusengine.crypto.signing import CryptoManager
-from consensusengine.utils.database import DatabaseManager
+from database.core.database import AdvancedDatabase
 from consensusengine.utils.timing import TimeoutManager
 from consensusengine.utils.config.settings import ConsensusConfig
 
@@ -64,7 +64,7 @@ class ProofOfStake:
         self.epoch_state = EpochState(self.config.epoch_blocks)
         
         # Manager instances
-        self.db_manager = DatabaseManager(self.config.db_path)
+        self.database = AdvancedDatabase(self.config.db_path)
         self.timeout_manager = TimeoutManager()
         self.crypto_manager = CryptoManager()
         self.staking_manager = StakingManager(self)
@@ -554,6 +554,8 @@ class ProofOfStake:
                 logger.error(f"Error committing block: {e}")
                 # Trigger recovery procedures
                 self._start_recovery()
+                
+                
     
     def _start_recovery(self):
         """Start consensus recovery procedures"""
@@ -599,7 +601,65 @@ class ProofOfStake:
             'active_validators_count': len(self.active_validators),
             'total_validators_count': len(self.validators)
         }
-    
+        
+    def to_bytes(self) -> bytes:
+    	"""Convert consensus state to bytes"""
+    	state_data = {
+    	    'validators': self.validators,
+    	    'stakes': self.stakes,
+    	    'total_stake': self.total_stake,
+    	    'current_height': self.current_height
+    	}
+    	return pickle.dumps(state_data)
+    	
+    def from_bytes(self, data: bytes):
+    	"""Restore consensus state from bytes"""
+    	state_data = pickle.loads(data)
+    	self.validators = state_data.get('validators', {})
+    	self.stakes = state_data.get('stakes', {})
+    	self.total_stake = state_data.get('total_stake', 0)
+    	self.current_height = state_data.get('current_height', 0)
+    	
+    def create_snapshot(self):
+    	"""Create a snapshot of current consensus state"""
+    	return {
+    	    'validators': self.validators.copy(),
+    	    'stakes': self.stakes.copy(),
+    	    'total_stake': self.total_stake,
+    	    'current_height': self.current_height,
+    	    'timestamp': time.time()
+    	}
+    	
+    def restore_snapshot(self, snapshot):
+    	"""Restore consensus state from snapshot"""
+    	self.validators = snapshot.get('validators', {}).copy()
+    	self.stakes = snapshot.get('stakes', {}).copy()
+    	self.total_stake = snapshot.get('total_stake', 0)
+    	self.current_height = snapshot.get('current_height', 0)
+    	
+    def calculate_hash(self) -> str:
+    	"""Calculate hash of consensus state"""
+    	state_data = {
+    	    'validators_hash': hashlib.sha256(str(sorted(self.validators.items())).encode()).hexdigest(),
+    	    'total_stake': self.total_stake,
+    	    'current_height': self.current_height
+    	}
+    	return hashlib.sha256(json.dumps(state_data, sort_keys=True).encode()).hexdigest()
+    	
+    def verify_integrity(self) -> bool:
+    	"""Verify consensus state integrity"""
+    	try:
+    		# Basic validation
+    		if self.total_stake < 0:
+    			return False
+    		# Validate stakes consistency
+    		calculated_total = sum(self.stakes.values())
+    		if abs(calculated_total - self.total_stake) > 1:
+    			return False
+    		return True
+    	except Exception:
+    		return False
+
     def shutdown(self):
         """Shutdown the consensus engine"""
         self._running = False
