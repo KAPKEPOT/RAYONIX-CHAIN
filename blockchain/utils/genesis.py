@@ -132,25 +132,30 @@ class GenesisBlockGenerator:
             locktime=0
         )
         
-        return Transaction(
+        # Create transaction without timestamp parameter
+        premine_tx = Transaction(
             inputs=[],
             outputs=[output],
             locktime=0,
-            version=1,
-            timestamp=config['timestamp'],
-            metadata={
-                'network_id': config['network_id'],
-                'premine_amount': config['premine_amount'],
-                'block_height': 0,
-                'consensus_algorithm': config['consensus_algorithm'],
-                'premine_info': {
-                    'type': 'foundation',
-                    'network_id': config['network_id'],
-                    'creation_timestamp': config['timestamp'],
-                    'premine_type': 'foundation'
-                }
-            }
+            version=1
         )
+        
+        # Add timestamp to metadata instead
+        premine_tx.metadata = {
+            'network_id': config['network_id'],
+            'premine_amount': config['premine_amount'],
+            'block_height': 0,
+            'consensus_algorithm': config['consensus_algorithm'],
+            'timestamp': config['timestamp'],
+            'premine_info': {
+                'type': 'foundation',
+                'network_id': config['network_id'],
+                'creation_timestamp': config['timestamp'],
+                'premine_type': 'foundation'
+            }
+        }
+        
+        return premine_tx
     
     def _create_genesis_header(self, config: Dict[str, Any], transactions: List[Transaction]) -> BlockHeader:
         """Create genesis block header with enhanced security features"""
