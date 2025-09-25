@@ -125,22 +125,28 @@ class GenesisBlockGenerator:
     
     def _create_premine_transaction(self, config: Dict[str, Any]) -> Transaction:
         """Create premine transaction with enhanced metadata and security"""
-        # Create the output without unsupported parameters
+        coinbase_input = TransactionInput(
+            tx_hash="0" * 64,
+            output_index=-1,
+            sequence=0xFFFFFFFF,
+            signature=None,
+            public_key=None,
+            address="coinbase",
+            witness=[],
+            script_sig="genesis_coinbase"
+        )
         output = TransactionOutput(
             address=config['foundation_address'],
             amount=config['premine_amount'],
             locktime=0
         )
-        
-        # Create transaction without timestamp parameter
+        # Create transaction with the coinbase input
         premine_tx = Transaction(
-            inputs=[],
+            inputs=[coinbase_input],
             outputs=[output],
             locktime=0,
             version=1
         )
-        
-        # Add timestamp to metadata instead
         premine_tx.metadata = {
             'network_id': config['network_id'],
             'premine_amount': config['premine_amount'],
@@ -152,9 +158,9 @@ class GenesisBlockGenerator:
                 'network_id': config['network_id'],
                 'creation_timestamp': config['timestamp'],
                 'premine_type': 'foundation'
-            }
+            },
+            'is_genesis': True
         }
-        
         return premine_tx
     
     def _create_genesis_header(self, config: Dict[str, Any], transactions: List[Transaction]) -> BlockHeader:
