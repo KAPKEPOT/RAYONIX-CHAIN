@@ -13,14 +13,3 @@ def get_safe_genesis_config():
         'consensus_algorithm': 'pos'
     }
 
-# Use this when initializing your blockchain
-from config.patch_config import get_safe_genesis_config
-
-class RayonixNode:
-    def initialize_components(self):
-        safe_config = get_safe_genesis_config()
-        self.rayonix_chain = RayonixBlockchain(
-            network_type=self.network_type,
-            data_dir=self.data_dir,
-            config=safe_config
-        )
