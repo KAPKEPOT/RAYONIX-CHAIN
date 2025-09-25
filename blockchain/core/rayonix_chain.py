@@ -100,6 +100,15 @@ class BlockchainConfig:
     enable_state_pruning: bool = True
     max_reorganization_depth: int = 100
     checkpoint_interval: int = 1000
+    # Add genesis-related configuration fields
+    genesis_premine: int = 1000000
+    max_supply: int = 21000000
+    block_reward: int = 50
+    foundation_address: str = 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX'
+    # Add other missing configuration fields
+    genesis_description: str = 'Initial RAYONIX blockchain genesis block'
+    consensus_algorithm: str = 'pos'
+    security_level: str = 'high'
 
 class RayonixBlockchain:
     """Production-ready RAYONIX blockchain engine with enterprise features"""
@@ -366,7 +375,10 @@ class RayonixBlockchain:
             genesis_premine=1000000,
             max_supply=21000000,
             block_reward=50,
-            foundation_address='RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX'
+            foundation_address='RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX',
+            genesis_description='Initial RAYONIX blockchain genesis block',
+            consensus_algorithm='pos',
+            security_level='high'
         )
         
         # Apply custom configuration
@@ -395,6 +407,15 @@ class RayonixBlockchain:
         
         if config.developer_fee_percent > 0.1:  # 10% max
             raise ValueError("Developer fee percent too high")
+        # Validate genesis-related parameters
+        if config.genesis_premine <= 0:
+        	raise ValueError("Premine amount must be positive")
+        if config.max_supply <= config.genesis_premine:
+        	raise ValueError("Max supply must be greater than premine amount")
+        if config.block_reward <= 0:
+        	raise ValueError("Block reward must be positive")
+        if not config.foundation_address or len(config.foundation_address) < 10:
+        	raise ValueError("Foundation address must be valid")
 
     def _get_network_id(self) -> int:
         """Get network ID based on network type"""
