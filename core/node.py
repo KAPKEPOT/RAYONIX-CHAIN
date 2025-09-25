@@ -110,7 +110,7 @@ class RayonixNode:
                 self.rayonix_chain = RayonixBlockchain(
                     network_type=network_type,
                     data_dir=str(data_dir),
-                    config=BlockchainConfig
+                    config=blockchain_config
                 )
             
             # Initialize wallet if not provided via dependencies
