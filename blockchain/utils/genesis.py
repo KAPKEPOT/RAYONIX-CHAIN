@@ -7,7 +7,7 @@ from dataclasses import asdict
 import secrets
 
 from blockchain.models.block import Block, BlockHeader
-from utxo_system.models.transaction import Transaction, TransactionOutput
+from utxo_system.models.transaction import Transaction, TransactionOutput, TransactionInput
 
 
 class GenesisBlockGenerator:
