@@ -14,6 +14,7 @@ from tasks.staking_task import StakingTask
 from tasks.mempool_task import MempoolTask
 from tasks.peer_monitor import PeerMonitor
 from network.sync_manager import SyncManager
+from config.patch_config import get_safe_genesis_config
 
 logger = logging.getLogger("rayonix_node.core")
 
@@ -109,7 +110,7 @@ class RayonixNode:
                 self.rayonix_chain = RayonixBlockchain(
                     network_type=network_type,
                     data_dir=str(data_dir),
-                    config=blockchain_config
+                    config=safe_config
                 )
             
             # Initialize wallet if not provided via dependencies
