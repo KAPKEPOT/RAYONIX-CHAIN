@@ -60,13 +60,17 @@ class TransactionInput:
         """Validate input parameters"""
         if not self.tx_hash or len(self.tx_hash) != 64:
             raise ValidationError("Invalid transaction hash: must be 64-character hex string")
-        if self.output_index < 0:
-            raise ValidationError("Output index cannot be negative")
+        if self.output_index < 0 and self.output_index != -1:  # Allow -1 for coinbase
+            raise ValidationError("Output index cannot be negative (except -1 for coinbase)")
         if self.sequence < 0:
             raise ValidationError("Sequence cannot be negative")
-        if self.tx_hash != "0" * 64:  # Not coinbase
+        if self.tx_hash != "0" * 64 and not self.is_coinbase():  # Not coinbase
             if not self.address:
                 raise ValidationError("Address is required for non-coinbase inputs")
+    
+    def is_coinbase(self) -> bool:
+        """Check if this is a coinbase input"""
+        return self.tx_hash == "0" * 64 and self.output_index == -1
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary with proper serialization"""
