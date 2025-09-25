@@ -362,7 +362,11 @@ class RayonixBlockchain:
             enable_transaction_relay=True,
             enable_state_pruning=True,
             max_reorganization_depth=100,
-            checkpoint_interval=1000
+            checkpoint_interval=1000,
+            genesis_premine=1000000,
+            max_supply=21000000,
+            block_reward=50,
+            foundation_address='RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX'
         )
         
         # Apply custom configuration
