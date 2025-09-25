@@ -182,7 +182,7 @@ class GenesisBlockGenerator:
             timestamp=config['timestamp'],
             difficulty=config['difficulty'],
             nonce=config['nonce'],
-            validator=config['validator'],
+            validator='genesis',
             signature=None,
             extra_data={
                 'network_id': config['network_id'],
@@ -196,7 +196,8 @@ class GenesisBlockGenerator:
                 'max_supply': config['max_supply'],
                 'developer_fee_percent': config['developer_fee_percent'],
                 'creation_timestamp': config['timestamp'],
-                'metadata_hash': self._calculate_metadata_hash(config.get('genesis_metadata', {}))
+                'metadata_hash': self._calculate_metadata_hash(config.get('genesis_metadata', {})),
+                'is_genesis': True
             }
         )
     
