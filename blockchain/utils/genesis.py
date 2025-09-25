@@ -57,7 +57,7 @@ class GenesisBlockGenerator:
     def _merge_configs(self, custom_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Merge custom config with default config with comprehensive validation"""
         default_config = {
-            'premine_amount': self.config.get('genesis_premine', 1000000000000000),
+            'premine_amount': self.config.get('genesis_premine', 1000000),
             'foundation_address': self.config.get('foundation_address', 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX'),
             'block_reward': self.config.get('block_reward', 50),
             'network_id': self.config.get('network_id', 1),
@@ -325,7 +325,7 @@ class GenesisBlockGenerator:
                 return False
             
             # Configuration validation
-            expected_amount = expected_config.get('premine_amount', 1000000000000000)
+            expected_amount = expected_config.get('premine_amount', 1000000)
             if premine_tx.outputs[0].amount != expected_amount:
                 return False
             
@@ -374,9 +374,9 @@ class GenesisBlockGenerator:
             'premine_amount': {
                 'description': 'Initial coin supply for foundation',
                 'type': 'integer',
-                'default': 1000000000000000,
+                'default': 1000000,
                 'min': 1,
-                'max': 1000000000000000000,
+                'max': 1000000000,
                 'security_level': 'high'
             },
             'foundation_address': {
