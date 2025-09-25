@@ -230,6 +230,16 @@ class Transaction:
     
     def _validate_transaction(self) -> None:
         """Validate transaction structure and basic rules"""
+        if self._is_genesis_coinbase():
+        	if len(self.inputs) != 1:
+        		raise ValidationError("Genesis coinbase must have exactly one input")
+        	genesis_input = self.inputs[0]
+        	if not (genesis_input.tx_hash == "0" * 64 and genesis_input.output_index == -1):
+        		raise ValidationError("Invalid genesis coinbase input")
+        	# Skip further input validation for genesis
+        	return
+        # Normal transaction validation
+        
         if not self.inputs:
             raise ValidationError("Transaction must have at least one input")
         
