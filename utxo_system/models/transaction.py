@@ -267,6 +267,18 @@ class Transaction:
         for i, output in enumerate(self.outputs):
             if not output.validate():
                 raise ValidationError(f"Invalid transaction output at index {i}")
+                
+    def _is_genesis_coinbase(self) -> bool:
+    	if not self.inputs:
+    		return False
+    	# Check metadata for genesis marker
+    	if self.metadata and self.metadata.get('is_genesis'):
+    		return True
+    	# Check input structure for genesis pattern
+    	first_input = self.inputs[0]
+    	return (first_input.tx_hash == "0" * 64 and 
+            first_input.output_index == -1 and
+            getattr(first_input, 'script_sig', '') == 'genesis_coinbase')                
     
     def calculate_hash(self) -> str:
         """Calculate transaction hash (excluding witness data) using double SHA256"""
