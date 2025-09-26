@@ -75,3 +75,4 @@ wasmtime
 watchgod
 websockets
 yarl
+zstandard
