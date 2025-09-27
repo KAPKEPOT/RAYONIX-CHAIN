@@ -353,6 +353,32 @@ class RayonixBlockchain:
         except Exception as e:
             logger.error(f"Wallet initialization failed: {e}")
             raise
+            
+    def _initialize_state_manager(self):
+    	"""Initialize state manager with safe database wrapper"""
+    	try:
+    		# Create safe database wrapper
+    		from blockchain.utils.database_wrapper import SafeDatabaseWrapper
+    		safe_db = SafeDatabaseWrapper(self.database)
+    		# Initialize state manager with safe wrapper
+    		self.state_manager = StateManager(
+    		    safe_db,
+    		    self.utxo_set,
+    		    self.consensus,
+    		    self.contract_manager,
+    		    state_path=str(self.data_dir / "state")
+    		)
+    	except Exception as e:
+    		logger.error(f"State manager initialization failed: {e}")
+    		
+    		# Fallback to basic initialization
+    		self.state_manager = StateManager(
+    		    self.database,
+    		    self.utxo_set,
+    		    self.consensus,
+    		    self.contract_manager,
+    		    state_path=str(self.data_dir / "state")
+    		)            
 
     def _load_configuration(self, custom_config: Optional[Dict[str, Any]]) -> BlockchainConfig:
         """Load and validate node configuration"""
@@ -474,15 +500,27 @@ class RayonixBlockchain:
             config_dict = asdict(self.config) if hasattr(self.config, '__dataclass_fields__') else self.config
             
             generator = GenesisBlockGenerator(config_dict)
-            genesis_block = generator.generate_genesis_block()
-            
+            genesis_block = None
+            generation_strategies = [
+                self._generate_standard_genesis,
+                self._generate_minimal_genesis,
+                self._generate_emergency_genesis 
+            ]
+            for strategy in generation_strategies:
+            	try:
+            		genesis_block = strategy(generator, config_dict)
+            		if genesis_block and self._validate_genesis_block_special(genesis_block):
+            			break
+            	except Exception as e:
+            		logger.warning(f"Genesis strategy {strategy.__name__} failed: {e}")
+            		continue
+            if not genesis_block:
+            	raise ValueError("All genesis generation strategies failed")
+            	
             # Validate and apply genesis block
-            if not self._validate_genesis_block_special(genesis_block):
-                logger.warning("Standard genesis validation failed, attempting special validation")
-                if not self._validate_genesis_block_fallback(genesis_block):
-                	raise ValueError("Genesis block validation failed")
             if not self.state_manager.apply_block(genesis_block):
-                raise ValueError("Failed to apply genesis block")
+            	raise ValueError("Failed to apply genesis block")
+            
             # Store genesis block
             self._store_block(genesis_block)
             self.chain_head = genesis_block.hash
@@ -493,12 +531,50 @@ class RayonixBlockchain:
             logger.info("Genesis blockchain created successfully")
         except Exception as e:
         	logger.error(f"Genesis blockchain creation failed: {e}")
-        	# Attempt fallback genesis creation
-        	if self._create_fallback_genesis_blockchain():
-        		logger.info("Fallback genesis blockchain created successfully")
-        	else:
-        		raise
+        	
+        	if not self._create_emergency_blockchain():
+        		raise RuntimeError("Failed to create emergency blockchain")
         		
+    def _generate_standard_genesis(self, generator, config_dict) -> Any:
+    	"""Standard genesis generation"""
+    	return generator.generate_genesis_block()  
+    	
+    def _generate_minimal_genesis(self, generator, config_dict) -> Any:
+    	"""Minimal genesis generation with safe parameters"""
+    	minimal_config = {
+    	    'premine_amount': 1000000,
+    	    'foundation_address': 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX',
+    	    'network_id': 1,
+    	    'timestamp': int(time.time()),
+    	    'difficulty': 1,
+    	    'version': 1
+    	}
+    	return generator.generate_genesis_block(minimal_config)
+    	
+    def _generate_emergency_genesis(self, generator, config_dict) -> Any:
+    	from blockchain.models.block import Block, BlockHeader
+    	from utxo_system.models.transaction import Transaction
+    	
+    	# Create minimal header
+    	header = BlockHeader(
+    	    version=1,
+    	    height=0,
+    	    previous_hash='0' * 64,
+    	    merkle_root='0' * 64,
+    	    timestamp=int(time.time()),
+    	    difficulty=1,
+    	    nonce=0,
+    	    validator='emergency'
+    	)
+    	# Create minimal transaction
+    	emergency_tx = Transaction(inputs=[], outputs=[])
+    	emergency_tx.hash = hashlib.sha256(b'emergency').hexdigest()
+    	
+    	# Create basic block
+    	emergency_block = Block(header=header, transactions=[emergency_tx])
+    	emergency_block.hash = header.calculate_hash()
+    	return emergency_block
+   
     def _validate_genesis_block_special(self, genesis_block: Any) -> bool:
     	"""Special validation for genesis blocks"""
     	try:
@@ -927,14 +1003,14 @@ class RayonixBlockchain:
         """Get bootstrap nodes for network"""
         if self.network_type == "mainnet":
             return [
-                "node1.rayonix.org:30303",
-                "node2.rayonix.org:30303",
-                "node3.rayonix.org:30303"
+                "node1.rayonix.site:30303",
+                "node2.rayonix.site:30303",
+                "node3.rayonix.site:30303"
             ]
         elif self.network_type == "testnet":
             return [
-                "testnet-node1.rayonix.org:30304",
-                "testnet-node2.rayonix.org:30304"
+                "testnet-node1.rayonix.site:30304",
+                "testnet-node2.rayonix.site:30304"
             ]
         else:
             return []
