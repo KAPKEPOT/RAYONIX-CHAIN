@@ -480,11 +480,8 @@ class RayonixBlockchain:
                 
         except Exception as e:
             logger.error(f"Blockchain initialization failed: {e}")
-            if self._attempt_blockchain_recovery():
-                logger.info("Blockchain recovery successful")
-            else:
-                logger.error("Blockchain recovery failed, initializing new chain")
-                self._create_genesis_blockchain()
+            raise RuntimeError(f"Blockchain initialization failed: {e}")
+            
 
     def _blockchain_exists(self) -> bool:
         """Check if blockchain data exists"""
@@ -500,27 +497,31 @@ class RayonixBlockchain:
             config_dict = asdict(self.config) if hasattr(self.config, '__dataclass_fields__') else self.config
             
             generator = GenesisBlockGenerator(config_dict)
-            genesis_block = None
-            generation_strategies = [
-                self._generate_standard_genesis,
-                self._generate_minimal_genesis,
-                self._generate_emergency_genesis 
-            ]
-            for strategy in generation_strategies:
-            	try:
-            		genesis_block = strategy(generator, config_dict)
-            		if genesis_block and self._validate_genesis_block_special(genesis_block):
-            			break
-            	except Exception as e:
-            		logger.warning(f"Genesis strategy {strategy.__name__} failed: {e}")
-            		continue
-            if not genesis_block:
-            	raise ValueError("All genesis generation strategies failed")
-            	
-            # Validate and apply genesis block
-            if not self.state_manager.apply_block(genesis_block):
-            	raise ValueError("Failed to apply genesis block")
             
+            # Use standard genesis generation with proper configuration
+            genesis_config = {
+                'premine_amount': self.config.genesis_premine,
+                'foundation_address': self.config.foundation_address,
+                'network_id': self._get_network_id(),
+                'timestamp': int(time.time()),
+                'difficulty': 1,
+                'version': 1,
+                'max_supply': self.config.max_supply,
+                'block_time_target': self.config.block_time_target
+            }
+            genesis_block = generator.generate_genesis_block(genesis_config)
+            
+            if not genesis_block:
+            	raise ValueError("Genesis block generation returned None")
+            	
+            # Validate genesis block structure
+            if not self._validate_genesis_block(genesis_block):
+            	raise ValueError("Generated genesis block failed validation")
+            	
+            # Apply genesis block to state
+            if not self.state_manager.apply_block(genesis_block):
+            	raise ValueError("Failed to apply genesis block to state")
+            	
             # Store genesis block
             self._store_block(genesis_block)
             self.chain_head = genesis_block.hash
@@ -530,10 +531,9 @@ class RayonixBlockchain:
             self.checkpoint_manager.create_checkpoint_if_needed(genesis_block)
             logger.info("Genesis blockchain created successfully")
         except Exception as e:
-        	logger.error(f"Genesis blockchain creation failed: {e}")
-        	
-        	if not self._create_emergency_blockchain():
-        		raise RuntimeError("Failed to create emergency blockchain")
+        		logger.error(f"Genesis blockchain creation failed: {e}")
+        		# Don't attempt recovery - just raise the error
+        		raise RuntimeError(f"Failed to create genesis blockchain: {e}")
         		
     def _generate_standard_genesis(self, generator, config_dict) -> Any:
     	"""Standard genesis generation"""
@@ -550,32 +550,9 @@ class RayonixBlockchain:
     	    'version': 1
     	}
     	return generator.generate_genesis_block(minimal_config)
-    	
-    def _generate_emergency_genesis(self, generator, config_dict) -> Any:
-    	from blockchain.models.block import Block, BlockHeader
-    	from utxo_system.models.transaction import Transaction
-    	
-    	# Create minimal header
-    	header = BlockHeader(
-    	    version=1,
-    	    height=0,
-    	    previous_hash='0' * 64,
-    	    merkle_root='0' * 64,
-    	    timestamp=int(time.time()),
-    	    difficulty=1,
-    	    nonce=0,
-    	    validator='emergency'
-    	)
-    	# Create minimal transaction
-    	emergency_tx = Transaction(inputs=[], outputs=[])
-    	emergency_tx.hash = hashlib.sha256(b'emergency').hexdigest()
-    	
-    	# Create basic block
-    	emergency_block = Block(header=header, transactions=[emergency_tx])
-    	emergency_block.hash = header.calculate_hash()
-    	return emergency_block
+       
    
-    def _validate_genesis_block_special(self, genesis_block: Any) -> bool:
+    def _validate_genesis_block(self, genesis_block: Any) -> bool:
     	"""Special validation for genesis blocks"""
     	try:
     		# Basic structure checks
@@ -588,7 +565,8 @@ class RayonixBlockchain:
     			return False
     		# Genesis-specific validation
     		premine_tx = genesis_block.transactions[0]
-    		if not hasattr(premine_tx, 'metadata') or not premine_tx.metadata.get('is_genesis'):
+    		if not hasattr(premine_tx, 'outputs') or len(premine_tx.outputs) == 0:
+    			
     			return False
     		return True
     	except Exception:
