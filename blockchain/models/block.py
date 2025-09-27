@@ -51,7 +51,7 @@ class BlockHeader:
 @dataclass
 class Block:
     header: BlockHeader
-    transactions: List[Transaction]
+    transactions: List[Any]  # Changed from Transaction to Any to avoid circular import
     hash: str
     chainwork: int
     size: int
@@ -60,9 +60,12 @@ class Block:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert block to dictionary for serialization"""
+        # Import Transaction locally to avoid circular imports
+        from blockchain.models.transaction import Transaction
+        
         return {
             'header': self.header.to_dict(),
-            'transactions': [tx.to_dict() for tx in self.transactions],
+            'transactions': [tx.to_dict() if hasattr(tx, 'to_dict') else tx for tx in self.transactions],
             'hash': self.hash,
             'chainwork': self.chainwork,
             'size': self.size,
@@ -76,7 +79,8 @@ class Block:
     @classmethod
     def from_bytes(cls, data: bytes) -> 'Block':
         """Deserialize block from bytes"""
-        from blockchain.models.transaction import Transaction  # Avoid circular import
+        # Import Transaction locally to avoid circular imports
+        from blockchain.models.transaction import Transaction
         
         block_dict = msgpack.unpackb(data, raw=False)
         header_data = block_dict['header']
@@ -94,7 +98,15 @@ class Block:
             extra_data=header_data.get('extra_data', {})
         )
         
-        transactions = [Transaction.from_dict(tx) for tx in block_dict['transactions']]
+        # Handle transactions - they might be dicts or Transaction objects
+        transactions = []
+        for tx_data in block_dict['transactions']:
+            if isinstance(tx_data, dict) and 'version' in tx_data:
+                # It's a transaction dict, convert to Transaction object
+                transactions.append(Transaction.from_dict(tx_data))
+            else:
+                # It's already a Transaction object or other type
+                transactions.append(tx_data)
         
         return cls(
             header=header,
@@ -110,5 +122,8 @@ class Block:
         return self.hash == self.header.calculate_hash()
         
     def __post_init__(self):
-    	if not self.hash:
-    		self.hash = self.header.calculate_hash()    
+        if not self.hash:
+            self.hash = self.header.calculate_hash()
+        # Calculate size if not provided
+        if not self.size:
+            self.size = len(self.to_bytes())
