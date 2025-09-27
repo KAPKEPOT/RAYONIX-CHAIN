@@ -116,6 +116,14 @@ class GenesisBlockGenerator:
                     import re
                     if not re.match(param_config['pattern'], value):
                         raise ValueError(f"Parameter {key} does not match required pattern")
+            elif param_type == 'float':
+            	if not isinstance(value, (int, float)):
+            		raise ValueError(f"Parameter {key} must be float")
+            	value_float = float(value)
+            	if 'min' in param_config and value_float < param_config['min']:
+            		raise ValueError(f"Parameter {key} must be >= {param_config['min']}")
+            	if 'max' in param_config and value_float > param_config['max']:
+            		raise ValueError(f"Parameter {key} must be <= {param_config['max']}")
     
     def _validate_genesis_config(self, config: Dict[str, Any]) -> None:
         """Validate genesis configuration for consistency and security"""
@@ -458,8 +466,40 @@ class GenesisBlockGenerator:
                 'default': 'Initial blockchain genesis block',
                 'max_length': 1000,
                 'security_level': 'low'
+            },
+            'version':{
+                'description': 'Block version number',
+                'type': 'integer',
+                'default': 1,
+                'min': 1,
+                'max': 10,
+                'security_level': 'low'
+            },
+            'block_reward': {
+                'description': 'Block reward amount',
+                'type': 'integer',
+                'default': 50,
+                'min': 1,
+                'max': 1000000,
+                'security_level': 'medium'
+            },
+            'developer_fee_percent': {
+                'description': 'Developer fee percentage',
+                'type': 'float',
+                'default': 0.05,
+                'min': 0.0,
+                'max': 0.1,
+                'security_level': 'medium'
+            },
+            'security_level': {
+                'description': 'Security level for genesis generation',
+                'type': 'string',
+                'default': 'high',
+                'options': ['low', 'medium', 'high', 'critical'],
+                'security_level': 'medium'
             }
         }
+        return template
     
     def generate_genesis_documentation(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Generate comprehensive documentation for the genesis block"""
