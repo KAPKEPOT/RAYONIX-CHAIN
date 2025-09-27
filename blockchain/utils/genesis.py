@@ -29,13 +29,18 @@ class GenesisBlockGenerator:
             # Create genesis block header with additional security features
             header = self._create_genesis_header(config, [premine_tx])
             
+            # Calculate required properties
+            block_hash = header.calculate_hash()
+            chainwork = self._calculate_initial_chainwork(config)
+            block_size = self._calculate_block_size(header, [premine_tx])
+            
             # Create block with required parameters
             genesis_block = Block(
                 header=header,
                 transactions=[premine_tx],
-                hash=header.calculate_hash(),
-                chainwork=self._calculate_initial_chainwork(config),
-                size=self._calculate_block_size(header, [premine_tx])
+                hash=block_hash,
+                chainwork=chainwork,
+                size=block_size
             )
             
             # Set additional properties safely
