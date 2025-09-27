@@ -549,25 +549,20 @@ class StateManager:
             	state_snapshot['utxo_set'] = self.utxo_set.to_bytes()
             else:
             	state_snapshot['utxo_set'] = pickle.dumps(self.utxo_set.create_snapshot())
-            # For consensus, use snapshot method
             state_snapshot['consensus_state'] = pickle.dumps(self.consensus.create_snapshot())
-            
-            # For contract manager
             if hasattr(self.contract_manager, 'to_bytes'):
             	state_snapshot['contract_states'] = self.contract_manager.to_bytes()
             else:
             	state_snapshot['contract_states'] = pickle.dumps(self.contract_manager.create_snapshot())
             state_snapshot['state_checksum'] = self._calculate_state_hash()
-            
             # Compress state data
             state_data = pickle.dumps(state_snapshot)
             if self.snapshot_compression:
             	state_data = zlib.compress(state_data)
             	
-            # Store in database with bytes keys
             self.database.put(b'state_snapshot', state_data)
-            self.database.put(b'state_checksum', state_snapshot['state_checksum'].encode())
             
+            self.database.put(b'state_checksum', state_snapshot['state_checksum'].encode())
             logger.debug("State persisted successfully")
         except Exception as e:
         	logger.error(f"Failed to persist state: {e}")
