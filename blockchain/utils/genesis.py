@@ -407,6 +407,14 @@ class GenesisBlockGenerator:
                 'max': 65535,
                 'security_level': 'medium'
             },
+            'timestamp':{
+                'description': 'Genesis block timestamp',
+                'type': 'integer',
+                'default': int(time.time()),
+                'min': 1,
+                'max': 2**31-1,
+                'security_level': 'low'
+            },
             'difficulty': {
                 'description': 'Initial mining difficulty',
                 'type': 'integer',
