@@ -29,30 +29,19 @@ class GenesisBlockGenerator:
             # Create genesis block header with additional security features
             header = self._create_genesis_header(config, [premine_tx])
             
-            # Calculate block properties safely
-            chainwork = self._calculate_initial_chainwork(config)
-            block_size = self._calculate_block_size(header, [premine_tx])
-            
-            # Create block with only valid parameters
+            # Create block with required parameters
             genesis_block = Block(
                 header=header,
-                transactions=[premine_tx]
+                transactions=[premine_tx],
+                hash=header.calculate_hash(),
+                chainwork=self._calculate_initial_chainwork(config),
+                size=self._calculate_block_size(header, [premine_tx])
             )
             
-            # Set additional properties as attributes if they exist
-            if hasattr(genesis_block, 'hash'):
-            	genesis_block.hash = header.calculate_hash()
-            
-            # Only set weight if the Block class supports it
+            # Set additional properties safely
             if hasattr(genesis_block, 'weight'):
             	genesis_block.weight = self._calculate_block_weight(header, [premine_tx])
-            	
-            if hasattr(genesis_block, 'chainwork'):
-            	genesis_block.chainwork = chainwork
-            	
-            if hasattr(genesis_block, 'size'):
-            	genesis_block.size = block_size
-            	
+            
             # Set metadata safely
             genesis_block.validation_status = "genesis"
             genesis_block.received_timestamp = config['timestamp']
@@ -65,11 +54,9 @@ class GenesisBlockGenerator:
             cache_key = self._generate_validation_cache_key(genesis_block)
             self._validation_cache[cache_key] = True
             return genesis_block
-            
         except Exception as e:
-            raise GenesisGenerationError(f"Failed to generate genesis block: {e}") from e
-            
-    
+        	raise GenesisGenerationError(f"Failed to generate genesis block: {e}") from e
+
     def _merge_configs(self, custom_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Merge custom config with default config with comprehensive validation"""
         default_config = {
@@ -404,7 +391,7 @@ class GenesisBlockGenerator:
                 'description': 'Address to receive premined coins',
                 'type': 'string',
                 'default': 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX',
-                'pattern': '^[A-Z0-9]{34}$',
+                'pattern': '^[A-Z0-9]{1,50}$',
                 'security_level': 'high'
             },
             'network_id': {
