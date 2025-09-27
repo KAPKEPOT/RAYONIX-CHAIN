@@ -51,11 +51,12 @@ class BlockHeader:
 @dataclass
 class Block:
     header: BlockHeader
-    transactions: List['Transaction']  # Transaction import will be handled later
+    transactions: List[Transaction]
     hash: str
     chainwork: int
     size: int
     received_time: float = field(default_factory=time.time)
+    weight: Optional[int] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert block to dictionary for serialization"""
@@ -107,3 +108,7 @@ class Block:
     def verify_hash(self) -> bool:
         """Verify that the block hash is correct"""
         return self.hash == self.header.calculate_hash()
+        
+    def __post_init__(self):
+    	if not self.hash:
+    		self.hash = self.header.calculate_hash()    
