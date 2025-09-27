@@ -574,7 +574,7 @@ class StateManager:
     def _load_persisted_state(self) -> bool:
         """Load persisted state from database"""
         try:
-            state_data = self.database.get('state_snapshot')
+            state_data = self.database.get(b'state_snapshot')
             if not state_data:
                 return False
             
@@ -588,18 +588,27 @@ class StateManager:
                 return False
             
             # Restore state
-            if hasattr(self.utxo_set, 'from_bytes'):
-            	self.utxo_set.from_bytes(state_snapshot['utxo_set'])
-            # For consensus and contract manager, use available methods
-            if hasattr(self.consensus, 'restore_snapshot'):
-            	# Use snapshot method instead of from_bytes
-            	pass
-            self.state_checksum = state_snapshot['state_checksum']
-            return True
+            try:
+            	if 'utxo_set' in state_snapshot:
+            		if hasattr(self.utxo_set, 'from_bytes'):
+            			self.utxo_set.from_bytes(state_snapshot['utxo_set'])
+            		else:
+            			# Fallback to snapshot restoration
+            			logger.warning("UTXO set from_bytes not available, using snapshot")
+            	# Restore consensus state if available
+            	if 'consensus_state' in state_snapshot and hasattr(self.consensus, 'restore_snapshot'):
+            		consensus_snapshot = pickle.loads(state_snapshot['consensus_state'])
+            		self.consensus.restore_snapshot(consensus_snapshot)
+            	self.state_checksum = state_snapshot.get('state_checksum')
+            	return True
+            	
+            except Exception as restore_error:
+            	logger.error(f"State restoration failed: {restore_error}")
+            	return False
         except Exception as e:
         	logger.error(f"Failed to load persisted state: {e}")
         	return False
-
+   
     def _calculate_state_hash(self) -> str:
         """Calculate comprehensive hash of current state for integrity checking"""
         state_components = {
