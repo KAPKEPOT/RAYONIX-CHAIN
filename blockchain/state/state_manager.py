@@ -563,9 +563,11 @@ class StateManager:
             state_data = pickle.dumps(state_snapshot)
             if self.snapshot_compression:
             	state_data = zlib.compress(state_data)
+            	
             # Store in database with bytes keys
             self.database.put(b'state_snapshot', state_data)
             self.database.put(b'state_checksum', state_snapshot['state_checksum'].encode())
+            
             logger.debug("State persisted successfully")
         except Exception as e:
         	logger.error(f"Failed to persist state: {e}")
