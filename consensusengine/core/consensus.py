@@ -24,13 +24,7 @@ class ProofOfStake:
     """Production-ready Proof-of-Stake consensus engine with BFT features"""
     
     def __init__(self, config: ConsensusConfig = None, network_config=None, **kwargs):
-        """
-        Initialize Proof-of-Stake consensus engine
         
-        Args:
-            config: Consensus configuration
-            **kwargs: Override configuration parameters
-        """
         if config is None:
         	from consensusengine.utils.config.settings import ConsensusConfig
         	self.config = ConsensusConfig(**kwargs)
@@ -56,6 +50,9 @@ class ProofOfStake:
         self.valid_round = -1
         self.locked_value: Optional[str] = None
         self.valid_value: Optional[str] = None
+        self.stakes: Dict[str, int] = {}  # address -> stake amount
+        self.total_stake: int = 0
+        self.current_height: int = 0
         
         # Round states for each height and round
         self.round_states: Dict[Tuple[int, int], RoundState] = {}
@@ -621,44 +618,112 @@ class ProofOfStake:
     	self.current_height = state_data.get('current_height', 0)
     	
     def create_snapshot(self):
-    	"""Create a snapshot of current consensus state"""
-    	return {
-    	    'validators': self.validators.copy(),
-    	    'stakes': self.stakes.copy(),
-    	    'total_stake': self.total_stake,
-    	    'current_height': self.current_height,
-    	    'timestamp': time.time()
-    	}
+        """Create a snapshot of current consensus state"""
+        return {
+            'validators': {k: v.to_dict() if hasattr(v, 'to_dict') else v 
+                          for k, v in self.validators.items()},
+            'stakes': self.stakes.copy(),
+            'total_stake': self.total_stake,
+            'current_height': self.current_height,
+            'timestamp': time.time()
+        }
     	
     def restore_snapshot(self, snapshot):
-    	"""Restore consensus state from snapshot"""
-    	self.validators = snapshot.get('validators', {}).copy()
-    	self.stakes = snapshot.get('stakes', {}).copy()
-    	self.total_stake = snapshot.get('total_stake', 0)
-    	self.current_height = snapshot.get('current_height', 0)
+        """Restore consensus state from snapshot"""
+        try:
+            self.validators = snapshot.get('validators', {})
+            self.stakes = snapshot.get('stakes', {}).copy()
+            self.total_stake = snapshot.get('total_stake', 0)
+            self.current_height = snapshot.get('current_height', 0)
+            
+            # Rebuild active_validators list if needed
+            if hasattr(self, 'active_validators'):
+                self.active_validators = [
+                    v for v in self.validators.values() 
+                    if hasattr(v, 'status') and getattr(v, 'status') == 'active'
+                ]
+        except Exception as e:
+            logger.error(f"Error restoring consensus snapshot: {e}")
+            raise
     	
     def calculate_hash(self) -> str:
-    	"""Calculate hash of consensus state"""
-    	state_data = {
-    	    'validators_hash': hashlib.sha256(str(sorted(self.validators.items())).encode()).hexdigest(),
-    	    'total_stake': self.total_stake,
-    	    'current_height': self.current_height
-    	}
-    	return hashlib.sha256(json.dumps(state_data, sort_keys=True).encode()).hexdigest()
+        """Calculate hash of consensus state"""
+        import hashlib
+        import json
+        
+        state_data = {
+            'validators_hash': hashlib.sha256(
+                str(sorted(self.validators.items())).encode()
+            ).hexdigest(),
+            'stakes_hash': hashlib.sha256(
+                str(sorted(self.stakes.items())).encode()
+            ).hexdigest(),
+            'total_stake': self.total_stake,
+            'current_height': self.current_height
+        }
+        return hashlib.sha256(json.dumps(state_data, sort_keys=True).encode()).hexdigest()
     	
     def verify_integrity(self) -> bool:
-    	"""Verify consensus state integrity"""
-    	try:
-    		# Basic validation
-    		if self.total_stake < 0:
-    			return False
-    		# Validate stakes consistency
-    		calculated_total = sum(self.stakes.values())
-    		if abs(calculated_total - self.total_stake) > 1:
-    			return False
-    		return True
-    	except Exception:
-    		return False
+        """Verify consensus state integrity"""
+        try:
+            # Basic validation
+            if self.total_stake < 0:
+                return False
+            
+            # Validate stakes consistency
+            calculated_total = sum(self.stakes.values())
+            if abs(calculated_total - self.total_stake) > 1:  # Allow small rounding differences
+                logger.warning(f"Stakes inconsistency: calculated={calculated_total}, total={self.total_stake}")
+                return False
+            
+            # Validate validators
+            for validator_addr, validator in self.validators.items():
+                if not hasattr(validator, 'address'):
+                    return False
+            
+            return True
+        except Exception as e:
+            logger.error(f"Consensus integrity verification failed: {e}")
+            return False
+            
+    def add_stake(self, address: str, amount: int) -> bool:
+        """Add stake for a validator"""
+        try:
+            if amount <= 0:
+                return False
+            
+            self.stakes[address] = self.stakes.get(address, 0) + amount
+            self.total_stake += amount
+            
+            # Update validator if exists
+            if address in self.validators:
+                self.validators[address].total_stake = self.stakes[address]
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error adding stake: {e}")
+            return False
+    
+    def remove_stake(self, address: str, amount: int) -> bool:
+        """Remove stake for a validator"""
+        try:
+            if address not in self.stakes or self.stakes[address] < amount:
+                return False
+            
+            self.stakes[address] -= amount
+            self.total_stake -= amount
+            
+            if self.stakes[address] == 0:
+                del self.stakes[address]
+            
+            # Update validator if exists
+            if address in self.validators:
+                self.validators[address].total_stake = self.stakes.get(address, 0)
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error removing stake: {e}")
+            return False           
 
     def shutdown(self):
         """Shutdown the consensus engine"""
