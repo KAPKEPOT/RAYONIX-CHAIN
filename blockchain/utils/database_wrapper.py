@@ -19,40 +19,75 @@ class SafeDatabaseWrapper:
         try:
             key_bytes = self._ensure_bytes(key)
             
-            # Serialize value
-            if isinstance(value, (str, int, float, bool, bytes)):
-                # Use native serialization for basic types
+            # Handle different value types
+            if isinstance(value, str):
+                value_data = value.encode(self.encoding)
+            elif isinstance(value, int):
                 value_data = str(value).encode(self.encoding)
+            elif isinstance(value, bytes):
+                value_data = value
             else:
                 # Use pickle for complex objects
                 value_data = pickle.dumps(value)
             
-            return self.database.put(key_bytes, value_data)
+            # Use appropriate put method based on database type
+            if hasattr(self.database, 'put'):
+                return self.database.put(key_bytes, value_data)
+            elif isinstance(self.database, dict):  # Memory DB
+                self.database[key_bytes] = value_data
+                return True
+            else:
+                # Fallback for SQLite
+                cursor = self.database.cursor()
+                cursor.execute("INSERT OR REPLACE INTO data (key, value) VALUES (?, ?)", 
+                             (key_bytes, value_data))
+                self.database.commit()
+                return True
             
         except Exception as e:
             logger.error(f"Safe put failed for key {key}: {e}")
             return False
     
-    def get(self, key: Union[str, bytes]) -> Optional[Any]:
+    def get(self, key: Union[str, bytes], default: Any = None) -> Optional[Any]:
         """Safe get operation with automatic type handling"""
         try:
             key_bytes = self._ensure_bytes(key)
-            value_data = self.database.get(key_bytes)
+            value_data = None
+            
+            # Use appropriate get method based on database type
+            if hasattr(self.database, 'get'):
+                value_data = self.database.get(key_bytes)
+            elif isinstance(self.database, dict):  # Memory DB
+                value_data = self.database.get(key_bytes)
+            else:
+                # Fallback for SQLite
+                cursor = self.database.cursor()
+                cursor.execute("SELECT value FROM data WHERE key = ?", (key_bytes,))
+                result = cursor.fetchone()
+                value_data = result[0] if result else None
             
             if value_data is None:
-                return None
+                return default
             
             # Try to deserialize based on content
             try:
                 # First try to decode as string
-                return value_data.decode(self.encoding)
+                decoded = value_data.decode(self.encoding)
+                # Try to convert to int if it's a number
+                if decoded.isdigit():
+                    return int(decoded)
+                return decoded
             except UnicodeDecodeError:
                 # Then try pickle
-                return pickle.loads(value_data)
+                try:
+                    return pickle.loads(value_data)
+                except pickle.PickleError:
+                    # Return raw bytes if all else fails
+                    return value_data
                 
         except Exception as e:
             logger.error(f"Safe get failed for key {key}: {e}")
-            return None
+            return default
     
     def _ensure_bytes(self, key: Union[str, bytes]) -> bytes:
         """Ensure key is bytes"""
@@ -64,7 +99,21 @@ class SafeDatabaseWrapper:
         """Safe delete operation"""
         try:
             key_bytes = self._ensure_bytes(key)
-            return self.database.delete(key_bytes)
+            
+            if hasattr(self.database, 'delete'):
+                return self.database.delete(key_bytes)
+            elif isinstance(self.database, dict):  # Memory DB
+                if key_bytes in self.database:
+                    del self.database[key_bytes]
+                    return True
+                return False
+            else:
+                # Fallback for SQLite
+                cursor = self.database.cursor()
+                cursor.execute("DELETE FROM data WHERE key = ?", (key_bytes,))
+                self.database.commit()
+                return cursor.rowcount > 0
+                
         except Exception as e:
             logger.error(f"Safe delete failed for key {key}: {e}")
             return False
