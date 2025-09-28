@@ -16,7 +16,14 @@ class AddressIndexer:
         address_key = self._get_address_key(address)
         write_batch = batch if batch else self.db
         
-        existing_utxos = self._get_utxos_for_address_raw(address_key, write_batch)
+        # FIX: Use the original database for read operations, batch only for writes
+        if batch:
+            # When using batch, read from the main database
+            existing_utxos = self._get_utxos_for_address_raw(address_key, self.db)
+        else:
+            # When not using batch, read from the provided db handle
+            existing_utxos = self._get_utxos_for_address_raw(address_key, write_batch)
+        
         existing_utxos.add(utxo_id)
         write_batch.put(address_key, json.dumps(list(existing_utxos)).encode('utf-8'))
     
@@ -24,7 +31,12 @@ class AddressIndexer:
         address_key = self._get_address_key(address)
         write_batch = batch if batch else self.db
         
-        existing_utxos = self._get_utxos_for_address_raw(address_key, write_batch)
+        # FIX: Use the original database for read operations, batch only for writes
+        if batch:
+            existing_utxos = self._get_utxos_for_address_raw(address_key, self.db)
+        else:
+            existing_utxos = self._get_utxos_for_address_raw(address_key, write_batch)
+        
         existing_utxos.discard(utxo_id)
         
         if existing_utxos:
