@@ -270,17 +270,26 @@ class RayonixBlockchain:
                 # Use LevelDB for production (fallback to SQLite if not available)
                 try:
                     import plyvel
-                    db = plyvel.DB(str(db_path), create_if_missing=True)
+                    raw_db = plyvel.DB(str(db_path), create_if_missing=True)
                     logger.info("LevelDB database initialized successfully")
+                    
+                    # Wrap with SafeDatabaseWrapper for consistent type handling
+                    from blockchain.utils.database_wrapper import SafeDatabaseWrapper
+                    db = SafeDatabaseWrapper(raw_db)
                     return db
+                    
                 except ImportError:
                     logger.warning("LevelDB not available, using SQLite fallback")
                     import sqlite3
                     db_file = db_path / "blockchain.sqlite"
-                    db = sqlite3.connect(str(db_file), check_same_thread=False)
-                    db.execute("PRAGMA journal_mode=WAL")
-                    db.execute("PRAGMA synchronous=NORMAL")
-                    db.execute("PRAGMA cache_size=-64000")  # 64MB cache
+                    raw_db = sqlite3.connect(str(db_file), check_same_thread=False)
+                    raw_db.execute("PRAGMA journal_mode=WAL")
+                    raw_db.execute("PRAGMA synchronous=NORMAL")
+                    raw_db.execute("PRAGMA cache_size=-64000")  # 64MB cache
+                    
+                    # Wrap with SafeDatabaseWrapper
+                    from blockchain.utils.database_wrapper import SafeDatabaseWrapper
+                    db = SafeDatabaseWrapper(raw_db)
                     logger.info("SQLite database initialized successfully")
                     return db
                     
@@ -533,28 +542,33 @@ class RayonixBlockchain:
             genesis_block = generator.generate_genesis_block(genesis_config)
             
             if not genesis_block:
-            	raise ValueError("Genesis block generation returned None")
-            	
+                raise ValueError("Genesis block generation returned None")
+                
             # Validate genesis block structure
             if not self._validate_genesis_block(genesis_block):
-            	raise ValueError("Generated genesis block failed validation")
-            	
+                raise ValueError("Generated genesis block failed validation")
+                
+            # Store genesis block first
+            self._store_block(genesis_block)
+            
+            # Set initial height in database
+            self.database.put(b'current_height', b'0')
+            
             # Apply genesis block to state
             if not self.state_manager.apply_block(genesis_block):
-            	raise ValueError("Failed to apply genesis block to state")
-            	
-            # Store genesis block
-            self._store_block(genesis_block)
+                raise ValueError("Failed to apply genesis block to state")
+                
+            # Update chain head
             self.chain_head = genesis_block.hash
             self.database.put(b'chain_head', genesis_block.hash.encode())
             
             # Create initial checkpoint
             self.checkpoint_manager.create_checkpoint_if_needed(genesis_block)
             logger.info("Genesis blockchain created successfully")
+            
         except Exception as e:
-        		logger.error(f"Genesis blockchain creation failed: {e}")
-        		# Don't attempt recovery - just raise the error
-        		raise RuntimeError(f"Failed to create genesis blockchain: {e}")
+            logger.error(f"Genesis blockchain creation failed: {e}")
+            raise RuntimeError(f"Failed to create genesis blockchain: {e}")
         		
     def _generate_standard_genesis(self, generator, config_dict) -> Any:
     	"""Standard genesis generation"""
