@@ -94,6 +94,69 @@ class ContractManager:
     	logger.info("Contract manager initialization completed")
     	if hasattr(self, 'blockchain'):
     		logger.info("Contract manager fully integrated with blockchain")
+    		
+    def create_snapshot(self) -> Dict[str, Any]:
+    	try:
+    		with self.lock:
+    			snapshot = {
+    			    'contracts': {},
+    			    'timestamp': time.time(),
+    			    'snapshot_id': f"snapshot_{time.time()}_{secrets.token_hex(8)}"
+    			}
+    			# Create deep copies of contract states
+    			for contract_id, contract in self.contracts.items():
+    				snapshot['contracts'][contract_id] = {
+    				    'storage': pickle.dumps(contract.storage),
+    				    'balance': contract.balance,
+    				    'state': contract.state.value if hasattr(contract.state, 'value') else contract.state,
+    				    'version': contract.version
+    				}
+    			logger.debug(f"Created contract snapshot with {len(snapshot['contracts'])} contracts")
+    			return snapshot
+    	except Exception as e:
+    		logger.error(f"Failed to create contract snapshot: {e}")
+    		return {
+    		    'contracts': {},
+    		    'timestamp': time.time(),
+    		    'snapshot_id': f"error_snapshot_{time.time()}"
+    		}
+    		
+    def restore_snapshot(self, snapshot: Dict[str, Any]) -> bool:
+    	try:
+    		with self.lock:
+    			if not snapshot or 'contracts' not in snapshot:
+    				logger.error("Invalid snapshot provided for restoration")
+    				return False
+    			restored_count = 0
+    			for contract_id, contract_data in snapshot['contracts'].items():
+    				try:
+    					if contract_id in self.contracts:
+    						contract = self.contracts[contract_id]
+    						# Restore contract state
+    						if 'storage' in contract_data:
+    							contract.storage = pickle.loads(contract_data['storage'])
+    						if 'balance' in contract_data:
+    							contract.balance = contract_data['balance']
+    						if 'state' in contract_data:
+    							# Handle both enum and string states
+    							state_value = contract_data['state']
+    							if isinstance(state_value, str):
+    								contract.state = ContractState[state_value]
+    							else:
+    								contract.state = ContractState(state_value)
+    						if 'version' in contract_data:
+    							contract.version = contract_data['version']
+    						restored_count += 1
+    						# Persist the restored state to database
+    						self.db.save_contract(contract)
+    				except Exception as e:
+    					logger.error(f"Failed to restore contract {contract_id}: {e}")
+    					continue
+    			logger.info(f"Restored {restored_count} contracts from snapshot")
+    			return restored_count > 0
+    	except Exception as e:
+    		logger.error(f"Failed to restore contract snapshot: {e}")
+    		return False    		
     
     def _load_contracts_from_db(self) -> None:
         """Load contracts from database"""
@@ -117,7 +180,9 @@ class ContractManager:
                     logger.error(f"Failed to load contract {contract_id}: {e}")
         except Exception as e:
             logger.error(f"Error loading contracts from database: {e}")
+            
     
+  
     def _start_background_tasks(self) -> None:
         """Start background maintenance tasks"""
         # Start gas price updater
