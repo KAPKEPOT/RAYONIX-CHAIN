@@ -91,9 +91,9 @@ class ContractManager:
     	
     def initialize(self):
     	"""Initialize contract manager after all references are set"""
-    logger.info("Contract manager initialization completed")
-    if hasattr(self, 'blockchain'):
-    	logger.info("Contract manager fully integrated with blockchain")
+    	logger.info("Contract manager initialization completed")
+    	if hasattr(self, 'blockchain'):
+    		logger.info("Contract manager fully integrated with blockchain")
     
     def _load_contracts_from_db(self) -> None:
         """Load contracts from database"""
