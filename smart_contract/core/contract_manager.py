@@ -73,6 +73,27 @@ class ContractManager:
         
         # Start background tasks
         self._start_background_tasks()
+       
+    def set_blockchain_reference(self, blockchain):
+    	"""Set reference to the blockchain for contract integration"""
+    	self.blockchain = blockchain
+    	logger.info("Blockchain reference set for contract manager")
+    	
+    def set_consensus_engine(self, consensus):
+    	"""Set reference to consensus engine"""
+    	self.consensus = consensus
+    	logger.info("Consensus engine reference set for contract manager")
+    	
+    def set_state_manager(self, state_manager):
+    	"""Set reference to state manager"""
+    	self.state_manager = state_manager
+    	logger.info("State manager reference set for contract manager")
+    	
+    def initialize(self):
+    	"""Initialize contract manager after all references are set"""
+    logger.info("Contract manager initialization completed")
+    if hasattr(self, 'blockchain'):
+    	logger.info("Contract manager fully integrated with blockchain")       
     
     def _load_contracts_from_db(self) -> None:
         """Load contracts from database"""
@@ -442,6 +463,8 @@ class ContractManager:
     def get_contract(self, contract_id: str) -> Optional[SmartContract]:
         """Get contract by ID"""
         return self.contracts.get(contract_id)
+        
+             
     
     def get_contract_stats(self, contract_id: str) -> Optional[Dict[str, Any]]:
         """Get statistics for a contract"""
