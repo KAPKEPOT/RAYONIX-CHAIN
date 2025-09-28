@@ -210,6 +210,8 @@ class RayonixBlockchain:
            
             
             self.contract_manager = self._initialize_contract_manager()
+            if self.contract_manager is None:
+            	raise RuntimeError("Contract manager initialization failed - cannot proceed without contract manager")
             self.wallet = self._initialize_wallet()
             
             # Initialize core managers with dependency injection
@@ -317,6 +319,7 @@ class RayonixBlockchain:
         	raise RuntimeError("Contract manager is required for production deployment")
         except Exception as e:
         	logger.error(f"Contract manager initialization failed: {e}")
+        	raise RuntimeError(f"Contract manager initialization failed: {e}")
   
     def _initialize_wallet(self) -> RayonixWallet:
         """Initialize wallet with comprehensive key management"""
