@@ -390,6 +390,20 @@ class Transaction:
             return block_height >= self.locktime
         else:  # Timestamp
             return median_time_past >= self.locktime
+            
+    def is_contract_call(self) -> bool:
+    	for output in self.outputs:
+    		if hasattr(output, 'script_type') and output.script_type == "contract":
+    			return True
+    		if hasattr(output, 'address') and output.address.startswith('CONTRACT_'):
+    			return True
+    	# Check metadata for contract indication
+    	if self.metadata and self.metadata.get('contract_data'):
+    		return True
+    	# Check for contract call in witness data
+    	if self.witness_data and 'contract_call' in self.witness_data:
+    		return True
+    	return False            
     
     def to_bytes(self) -> bytes:
         """Advanced transaction serialization with multiple formats and compression"""
