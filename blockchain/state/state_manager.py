@@ -546,27 +546,31 @@ class StateManager:
             }
             # Use available serialization methods
             if hasattr(self.utxo_set, 'to_bytes'):
-            	state_snapshot['utxo_set'] = self.utxo_set.to_bytes()
+                state_snapshot['utxo_set'] = self.utxo_set.to_bytes()
             else:
-            	state_snapshot['utxo_set'] = pickle.dumps(self.utxo_set.create_snapshot())
+                state_snapshot['utxo_set'] = pickle.dumps(self.utxo_set.create_snapshot())
             state_snapshot['consensus_state'] = pickle.dumps(self.consensus.create_snapshot())
             if hasattr(self.contract_manager, 'to_bytes'):
-            	state_snapshot['contract_states'] = self.contract_manager.to_bytes()
+                state_snapshot['contract_states'] = self.contract_manager.to_bytes()
             else:
-            	state_snapshot['contract_states'] = pickle.dumps(self.contract_manager.create_snapshot())
+                state_snapshot['contract_states'] = pickle.dumps(self.contract_manager.create_snapshot())
             state_snapshot['state_checksum'] = self._calculate_state_hash()
+            
             # Compress state data
             state_data = pickle.dumps(state_snapshot)
             if self.snapshot_compression:
-            	state_data = zlib.compress(state_data)
-            	
+                state_data = zlib.compress(state_data)
+                
             self.database.put(b'state_snapshot', state_data)
-            
             self.database.put(b'state_checksum', state_snapshot['state_checksum'].encode())
+            
+            # Also store current height
+            self.database.put(b'current_height', str(state_snapshot['block_height']).encode())
+            
             logger.debug("State persisted successfully")
         except Exception as e:
-        	logger.error(f"Failed to persist state: {e}")
-        	raise
+            logger.error(f"Failed to persist state: {e}")
+            raise
 
     def _load_persisted_state(self) -> bool:
         """Load persisted state from database"""
@@ -586,25 +590,34 @@ class StateManager:
             
             # Restore state
             try:
-            	if 'utxo_set' in state_snapshot:
-            		if hasattr(self.utxo_set, 'from_bytes'):
-            			self.utxo_set.from_bytes(state_snapshot['utxo_set'])
-            		else:
-            			# Fallback to snapshot restoration
-            			logger.warning("UTXO set from_bytes not available, using snapshot")
-            	# Restore consensus state if available
-            	if 'consensus_state' in state_snapshot and hasattr(self.consensus, 'restore_snapshot'):
-            		consensus_snapshot = pickle.loads(state_snapshot['consensus_state'])
-            		self.consensus.restore_snapshot(consensus_snapshot)
-            	self.state_checksum = state_snapshot.get('state_checksum')
-            	return True
-            	
+                if 'utxo_set' in state_snapshot:
+                    if hasattr(self.utxo_set, 'from_bytes'):
+                        self.utxo_set.from_bytes(state_snapshot['utxo_set'])
+                    else:
+                        # Fallback to snapshot restoration
+                        logger.warning("UTXO set from_bytes not available, using snapshot")
+                        utxo_snapshot = pickle.loads(state_snapshot['utxo_set'])
+                        self.utxo_set.restore_snapshot(utxo_snapshot)
+                
+                # Restore consensus state if available
+                if 'consensus_state' in state_snapshot and hasattr(self.consensus, 'restore_snapshot'):
+                    consensus_snapshot = pickle.loads(state_snapshot['consensus_state'])
+                    self.consensus.restore_snapshot(consensus_snapshot)
+                
+                # Restore contract states if available
+                if 'contract_states' in state_snapshot and hasattr(self.contract_manager, 'restore_snapshot'):
+                    contract_snapshot = pickle.loads(state_snapshot['contract_states'])
+                    self.contract_manager.restore_snapshot(contract_snapshot)
+                
+                self.state_checksum = state_snapshot.get('state_checksum')
+                return True
+                
             except Exception as restore_error:
-            	logger.error(f"State restoration failed: {restore_error}")
-            	return False
+                logger.error(f"State restoration failed: {restore_error}")
+                return False
         except Exception as e:
-        	logger.error(f"Failed to load persisted state: {e}")
-        	return False
+            logger.error(f"Failed to load persisted state: {e}")
+            return False
    
     def _calculate_state_hash(self) -> str:
         """Calculate comprehensive hash of current state for integrity checking"""
@@ -686,7 +699,17 @@ class StateManager:
 
     def get_current_height(self) -> int:
         """Get current blockchain height"""
-        return self.database.get('current_height', 0)
+        height_bytes = self.database.get(b'current_height')
+        if height_bytes:
+            try:
+                return int(height_bytes.decode('utf-8'))
+            except (ValueError, UnicodeDecodeError):
+                # Try to decode as pickle if string decoding fails
+                try:
+                    return pickle.loads(height_bytes)
+                except:
+                    return 0
+        return 0
 
     def get_state_stats(self) -> Dict[str, Any]:
         """Get comprehensive statistics about the current state"""
