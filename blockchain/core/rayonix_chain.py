@@ -212,6 +212,8 @@ class RayonixBlockchain:
             self.contract_manager = self._initialize_contract_manager()
             if self.contract_manager is None:
             	raise RuntimeError("Contract manager initialization failed - cannot proceed without contract manager")
+            	
+            	
             self.wallet = self._initialize_wallet()
             
             # Initialize core managers with dependency injection
@@ -219,6 +221,7 @@ class RayonixBlockchain:
                 self.database, self.utxo_set, self.consensus, self.contract_manager,
                 state_path=str(self.data_dir / "state")
             )
+            self._setup_contract_manager_references()
             
             self.checkpoint_manager = CheckpointManager(self.database, self.state_manager)
             self.validation_manager = ValidationManager(self.state_manager, config_dict)
@@ -241,6 +244,21 @@ class RayonixBlockchain:
             logger.error(f"Component initialization failed: {e}")
             self.health = NodeHealth.CRITICAL
             raise
+            
+    def _setup_contract_manager_references(self):
+    	try:
+    		if hasattr(self.contract_manager, 'set_blockchain_reference'):
+    			self.contract_manager.set_blockchain_reference(self)
+    		if hasattr(self.contract_manager, 'set_consensus_engine'):
+    			self.contract_manager.set_consensus_engine(self.consensus)
+    		if hasattr(self.contract_manager, 'set_state_manager'):
+    			self.contract_manager.set_state_manager(self.state_manager)
+    		if hasattr(self.contract_manager, 'initialize'):
+    			self.contract_manager.initialize()
+    		logger.info("Contract manager references set successfully")
+    	except Exception as e:
+    		logger.error(f"Failed to set contract manager references: {e}")
+    		raise          
 
     def _initialize_database_with_retry(self, max_retries: int = 3) -> Any:
         """Initialize database with retry logic for production robustness"""
@@ -304,12 +322,12 @@ class RayonixBlockchain:
                 max_workers=getattr(self.config, 'contract_max_workers', 50)
             )
             # Set up integration with blockchain components
-            contract_manager.set_blockchain_reference(self)
-            contract_manager.set_consensus_engine(self.consensus)
-            contract_manager.set_state_manager(self.state_manager)
+           # contract_manager.set_blockchain_reference(self)
+            #contract_manager.set_consensus_engine(self.consensus)
+           # contract_manager.set_state_manager(self.state_manager)
             
             # Initialize contract manager
-            contract_manager.initialize()
+            #contract_manager.initialize()
             
             logger.info("Production contract manager initialized successfully")
             return contract_manager
