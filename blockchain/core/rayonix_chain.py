@@ -555,7 +555,7 @@ class RayonixBlockchain:
             self.database.put(b'current_height', b'0')
             
             # Apply genesis block to state
-            if not self.state_manager.apply_block(genesis_block):
+            if not self.state_manager.apply_genesis_block(genesis_block):
                 raise ValueError("Failed to apply genesis block to state")
                 
             # Update chain head
@@ -568,6 +568,8 @@ class RayonixBlockchain:
             
         except Exception as e:
             logger.error(f"Genesis blockchain creation failed: {e}")
+            if hasattr(e, '__cause__') and e.__cause__:
+            	logger.error(f"Underlying cause: {e.__cause__}")
             raise RuntimeError(f"Failed to create genesis blockchain: {e}")
         		
     def _generate_standard_genesis(self, generator, config_dict) -> Any:
