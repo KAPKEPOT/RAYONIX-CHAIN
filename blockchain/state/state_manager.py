@@ -684,6 +684,53 @@ class StateManager:
                 f.write(data)
         except Exception as e:
             logger.warning(f"Failed to store state file: {e}")
+           
+    def apply_genesis_block(self, block: Block) -> bool:
+    	if block.header.height != 0:
+    		raise ValueError("apply_genesis_block can only be used for genesis block (height 0)")
+    		
+    	with self.atomic_state_transition(StateTransitionType.BLOCK_APPLY, block) as transaction_id:
+    		try:
+    			for tx in block.transactions:
+    				if self._is_genesis_coinbase_transaction(tx):
+    					for i, output in enumerate(tx.outputs):
+    						
+    						utxo_id = f"{tx.hash}:{i}"
+    						if not self.utxo_set.get_utxo(utxo_id):
+    							self._create_genesis_utxo(tx, i, output)
+    				else:
+    					if not self.utxo_set.process_transaction(tx):
+    						raise ValueError(f"Failed to process transaction {tx.hash}")
+    			if not self.consensus.process_block(block):
+    				raise ValueError("Failed to process block in consensus")
+    			self.state_checksum = self._calculate_state_hash()
+    			logger.info(f"Successfully applied genesis block {block.hash}")
+    			return True
+    		except Exception as e:
+    			logger.error(f"Failed to apply genesis block: {e}")
+    			raise
+    			
+    def _is_genesis_coinbase_transaction(self, tx: Any) -> bool:
+    	if not tx.inputs:
+    		return False
+    	first_input = tx.inputs[0]
+    	return (first_input.tx_hash == "0" * 64 and first_input.output_index == -1 and getattr(first_input, 'script_sig', '') == 'genesis_coinbase')
+    	
+    def _create_genesis_utxo(self, tx: Any, output_index: int, output: Any):
+    	from utxo_system.models.utxo import UTXO
+    	utxo = UTXO(
+    	    
+    	    tx_hash=tx.hash,
+    	    output_index=output_index,
+    	    address=output.address,
+    	    amount=output.amount,
+    	    spent=False,
+    	    locktime=getattr(output, 'locktime', 0),
+    	    created_at_block=0
+    	)
+    	
+    	# Add UTXO directly to database
+    	self.utxo_set.add_utxo(utxo)    	                                  
 
     def _attempt_state_recovery(self):
         """Attempt to recover state from available checkpoints"""
