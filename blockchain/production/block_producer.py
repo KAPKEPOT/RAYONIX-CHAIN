@@ -182,10 +182,52 @@ class BlockProducer:
         return MerkleTree(tx_hashes).get_root_hash()
     
     def _calculate_block_work(self, header: BlockHeader) -> int:
-        """Calculate block work value"""
-        # This would be based on your specific consensus algorithm
-        # For PoS, this might be based on stake amount and other factors
-        return 2 ** 256 // (header.difficulty + 1)
+        """Calculate work using stake, time, and network conditions"""
+        try:
+        	validator_stake = self.state_manager.consensus.get_validator_stake(header.validator)
+        	if validator_stake <= 0:
+        		return 0
+        		
+        	# Get network parameters
+        	total_stake = self.state_manager.consensus.get_total_stake()
+        	avg_block_time = self.state_manager.consensus.get_average_block_time()
+        	
+        	# Normalize stake (0.0 to 1.0)
+        	normalized_stake = validator_stake / max(total_stake, 1)
+        	
+        	# Time factor - rewards consistent block production
+        	time_factor = 1.0
+        	if hasattr(self, 'last_block_time'):
+        		expected_interval = self.config.get('block_time_target', 15)
+        		actual_interval = header.timestamp - self.last_block_time
+        		
+        		if actual_interval > 0:
+        			# Penalize blocks that are too fast or too slow
+        			time_deviation = abs(actual_interval - expected_interval) / expected_interval
+        			time_factor = max(0.1, 1.0 - time_deviation)
+        	# Calculate work with multiple factors
+        	base_work = 2 ** 200
+        	stake_component = int(normalized_stake * base_work * 0.7)  # 70% stake weight
+        	time_component = int(time_factor * base_work * 0.3)        # 30% time weight
+        	work_value = (stake_component + time_component) // (header.difficulty + 1)
+        	
+        	# Apply logarithmic scaling to prevent extreme values
+        	scaled_work = self._apply_log_scaling(work_value)
+        	
+        	return max(scaled_work, self.config.get('min_block_work', 1000))
+        except Exception as e:
+        	logger.error(f"Hybrid work calculation failed: {e}")
+        	return 1000  # Fallback minimum work
+    def _apply_log_scaling(self, work_value: int) -> int:
+    	"""Apply logarithmic scaling to prevent work value explosion"""
+    	if work_value <= 0:
+    		return 0
+    	# Use log10 scaling for large values
+    	if work_value > 10**15:
+    		log_value = math.log10(work_value)
+    		scaled_value = int(10 ** (6 + (log_value - 15) * 0.5))  # Compress range
+    		return min(scaled_value, work_value)  # Don't exceed original
+    	return work_value
     
     def _calculate_block_size(self, header: BlockHeader, transactions: List[Transaction]) -> int:
         """Calculate block size in bytes"""
