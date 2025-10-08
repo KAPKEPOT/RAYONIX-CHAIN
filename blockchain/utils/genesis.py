@@ -214,6 +214,7 @@ class GenesisBlockGenerator:
                 'creation_timestamp': config['timestamp'],
                 'metadata_hash': self._calculate_metadata_hash(config.get('genesis_metadata', {})),
                 'is_genesis': True
+                'genesis_height': 1
             }
         )
     
