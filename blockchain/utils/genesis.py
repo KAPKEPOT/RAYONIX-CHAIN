@@ -192,7 +192,7 @@ class GenesisBlockGenerator:
         
         return BlockHeader(
             version=config['version'],
-            height=1,
+            height=0,
             previous_hash='0' * 64,
             merkle_root=merkle_root,
             timestamp=config['timestamp'],
@@ -214,7 +214,7 @@ class GenesisBlockGenerator:
                 'creation_timestamp': config['timestamp'],
                 'metadata_hash': self._calculate_metadata_hash(config.get('genesis_metadata', {})),
                 'is_genesis': True,
-                'genesis_height': 1
+                'genesis_height': 0
             }
         )
     
