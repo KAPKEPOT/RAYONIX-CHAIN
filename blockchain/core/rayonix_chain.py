@@ -573,7 +573,7 @@ class RayonixBlockchain:
             
             # Create initial checkpoint
             self.checkpoint_manager.create_checkpoint_if_needed(genesis_block)
-            logger.info("Genesis blockchain created successfully")
+            logger.info("Genesis blockchain created successfully at height 1")
             
         except Exception as e:
             logger.error(f"Genesis blockchain creation failed: {e}")
