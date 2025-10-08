@@ -192,7 +192,7 @@ class GenesisBlockGenerator:
         
         return BlockHeader(
             version=config['version'],
-            height=0,
+            height=1,
             previous_hash='0' * 64,
             merkle_root=merkle_root,
             timestamp=config['timestamp'],
