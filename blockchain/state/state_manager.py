@@ -686,7 +686,7 @@ class StateManager:
             logger.warning(f"Failed to store state file: {e}")
            
     def apply_genesis_block(self, block: Block) -> bool:
-    	if block.header.height != 1:
+    	if block.header.height != 0:
     		raise ValueError(f"apply_genesis_block can only be used for genesis block (height 1), got height {block.header.height}")
     		
     	with self.atomic_state_transition(StateTransitionType.BLOCK_APPLY, block) as transaction_id:
@@ -715,9 +715,9 @@ class StateManager:
     			self.state_checksum = self._calculate_state_hash()
     			
     			# Set initial height to 1 in database
-    			self.database.put(b'current_height', b'1')
+    			self.database.put(b'current_height', b'0')
     			
-    			logger.info(f"Successfully applied genesis block {block.hash}")
+    			logger.info(f"Successfully applied genesis block {block.hash} at height {block.header.height}")
     			return True
     		except Exception as e:
     			logger.error(f"Failed to apply genesis block: {e}")
@@ -783,17 +783,21 @@ class StateManager:
         	if isinstance(height_value, bytes):
         		try:
         			# Try to decode as string first
-        			return int(height_value.decode('utf-8'))
+        			height_str = height_value.decode('utf-8').strip()
+        			height = int(height_str) if height_str else 0
+        			return max(0, height)
         		except (ValueError, UnicodeDecodeError):
         			# Try pickle decoding for complex objects
         			try:
         				decoded = pickle.loads(height_value)
-        				return int(decoded) if decoded is not None else 0
+        				height = int(decoded) if decoded is not None else 0
+        				return max(0, height)
         			except (pickle.PickleError, ValueError, TypeError):
         				return 0
         	elif isinstance(height_value, (int, str)):
         		# Direct conversion for int or string
-        		return int(height_value)
+        		height = int(height_value)
+        		return max(0, height)
         	else:
         		logger.warning(f"Unexpected height value type: {type(height_value)}")
         		return 0
