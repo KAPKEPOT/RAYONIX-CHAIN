@@ -213,7 +213,7 @@ class GenesisBlockGenerator:
                 'developer_fee_percent': config['developer_fee_percent'],
                 'creation_timestamp': config['timestamp'],
                 'metadata_hash': self._calculate_metadata_hash(config.get('genesis_metadata', {})),
-                'is_genesis': True
+                'is_genesis': True,
                 'genesis_height': 1
             }
         )
