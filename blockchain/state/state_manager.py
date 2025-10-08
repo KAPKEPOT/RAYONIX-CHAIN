@@ -691,6 +691,10 @@ class StateManager:
     		
     	with self.atomic_state_transition(StateTransitionType.BLOCK_APPLY, block) as transaction_id:
     		try:
+    			logger.info(f"Applying genesis block at height {block.header.height}")
+    			
+    			# Process all genesis transactions
+    			processed_count = 0
     			for tx in block.transactions:
     				if self._is_genesis_coinbase_transaction(tx):
     					for i, output in enumerate(tx.outputs):
