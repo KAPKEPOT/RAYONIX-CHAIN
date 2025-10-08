@@ -552,8 +552,275 @@ class ProofOfStake:
                 # Trigger recovery procedures
                 self._start_recovery()
                 
-                
+    def process_block(self, block: Any) -> bool:
+    	try:
+    		with self.consensus_lock:
+    			# Comprehensive block validation
+    			if not self._validate_block_consensus(block):
+    				logger.error(f"Block {block.hash} failed consensus validation at height {block.header.height}")
+    				return False
+    				# Verify block proposer is current round validator
+    				expected_proposer = self.staking_manager.select_proposer(block.header.height, 0)
+    				if not expected_proposer or expected_proposer.address != block.header.validator:
+    					logger.error(f"Block proposer {block.header.validator} not authorized for height {block.header.height}")
+    					return False
+    				# Update consensus state machine
+    				self.current_height = block.header.height
+    				
+    				# Process validator performance metrics
+    				validator_address = block.header.validator
+    				if validator_address in self.validators:
+    					validator = self.validators[validator_address]
+    					validator.last_active = time.time()
+    					validator.signed_blocks += 1
+    					
+    					# Calculate rolling uptime with 1000-block window
+    					total_recent_blocks = validator.missed_blocks + validator.signed_blocks
+    					if total_recent_blocks > 1000:
+    						# Maintain rolling window of 1000 blocks
+    						excess_blocks = total_recent_blocks - 1000
+    						if validator.missed_blocks > excess_blocks:
+    							validator.missed_blocks -= excess_blocks
+    						else:
+    							validator.signed_blocks = 1000 - (excess_blocks - validator.missed_blocks)
+    							validator.missed_blocks = 0
+    					total_blocks = validator.missed_blocks + validator.signed_blocks
+    					if total_blocks > 0:
+    						validator.uptime = (validator.signed_blocks / total_blocks) * 100.0
+    				# Calculate and distribute block rewards
+    				block_reward = self._calculate_block_reward(block.header.height)
+    				transaction_fees = self._calculate_transaction_fees(block.transactions)
+    				total_reward = block_reward + transaction_fees
+    				# Add to epoch reward pool for distribution
+    				self.epoch_state.reward_pool += total_reward
+    				
+    				# Update monetary supply with precise accounting
+    				self.total_supply += total_reward
+    				# Update staking manager state
+    				self.staking_manager.process_block_production(validator_address, block.header.height)
+    				
+    				# Execute slashing conditions for missed blocks
+    				self._check_missed_blocks_slashing(block.header.height)
+    				
+    				# Update network difficulty based on recent block times
+    				
+    				self._adjust_network_difficulty(block.header.timestamp)
+    				
+    				# Persist consensus state changes
+    				self._save_state()
+    				logger.info(f"Successfully processed block {block.hash[:16]} at height {block.header.height}, reward: {total_reward}")
+    				return True
+    	except Exception as e:
+    		logger.error(f"Critical error processing block {block.hash if hasattr(block, 'hash') else 'unknown'}: {e}", exc_info=True)
+    		return False
+    		
+    def revert_block(self, block: Any) -> bool:
+    	"""Production-grade block reversion with complete state rollback"""
+    	try:
+    		with self.consensus_lock:
+    			# Calculate and remove block rewards
+    			block_reward = self._calculate_block_reward(block.header.height)
+    			transaction_fees = self._calculate_transaction_fees(block.transactions)
+    			total_reward = block_reward + transaction_fees
+    			
+    			# Revert reward pool with bounds checking
+    			self.epoch_state.reward_pool = max(0, self.epoch_state.reward_pool - total_reward)
+    			
+    			# Revert total supply with bounds checking
+    			self.total_supply = max(0, self.total_supply - total_reward)
+    			
+    			# Revert validator statistics
+    			validator_address = block.header.validator
+    			if validator_address in self.validators:
+    				validator = self.validators[validator_address]
+    				validator.signed_blocks = max(0, validator.signed_blocks - 1)
+    				
+    				# Recalculate uptime
+    				total_blocks = validator.missed_blocks + validator.signed_blocks
+    				if total_blocks > 0:
+    					validator.uptime = (validator.signed_blocks / total_blocks) * 100.0
+    					
+    			# Revert height
+    			self.current_height = max(0, block.header.height - 1)
+    			
+    			# Revert staking manager state
+    			self.staking_manager.revert_block_production(validator_address, block.header.height)
+    			
+    			# Persist reverted state
+    			self._save_state()
+    			logger.warning(f"Reverted block {block.hash[:16]} at height {block.header.height}")
+    			
+    			return True
+    			
+    	except Exception as e:
+    		logger.error(f"Critical error reverting block {block.hash if hasattr(block, 'hash') else 'unknown'}: {e}", exc_info=True)
+    		return False
+    		
+    def _validate_block_consensus(self, block: Any) -> bool:
+    	try:
+    		# Validate block structure integrity
+    		if not hasattr(block, 'header') or not hasattr(block.header, 'height'):
+    			logger.error("Block missing required header structure")
+    			return False
+    			
+    		# Validate block height sequencing
+    		if block.header.height != self.current_height + 1:
+    			logger.error(f"Block height sequencing violation: expected {self.current_height + 1}, got {block.header.height}")
+    			return False
+    		
+    		# Validate proposer authorization
+    		if not hasattr(block.header, 'validator') or not block.header.validator:
+    			logger.error("Block missing validator identification")
+    			return False
+    			
+    		validator_address = block.header.validator
+    		
+    		# Verify validator exists and is authorized
+    		if validator_address not in self.validators:
+    			logger.error(f"Block validator {validator_address} not in registered validator set")
+    			return False
+    			
+    		validator = self.validators[validator_address]
+    		
+    		# Comprehensive validator status checks
+    		
+    		if validator.status != ValidatorStatus.ACTIVE:
+    			logger.error(f"Block validator {validator_address} status is {validator.status.name}, not ACTIVE")
+    			return False
+    			
+    		if validator.jail_until and time.time() < validator.jail_until:
+    			logger.error(f"Block validator {validator_address} is jailed until {validator.jail_until}")
+    			return False
+    			
+    		if validator.total_stake < self.config.min_stake_amount:
+    			logger.error(f"Block validator {validator_address} has insufficient stake: {validator.total_stake} < {self.config.min_stake_amount}")
+    			return False
+    		
+    		# Validate block timestamp constraints
+    		current_time = time.time()
+    		max_future_tolerance = self.config.get('max_future_block_time', 15)  # 15 seconds
+    		max_past_tolerance = self.config.get('max_past_block_time', 300)     # 5 minutes
+    		
+    		if block.header.timestamp > current_time + max_future_tolerance:
+    			logger.error(f"Block timestamp {block.header.timestamp} exceeds future tolerance limit")
+    			return False
+    		
+    		if block.header.timestamp < current_time - max_past_tolerance:
+    			logger.error(f"Block timestamp {block.header.timestamp} exceeds past tolerance limit")
+    			return False
+    		
+    		# Validate block signature using crypto manager
+    		if hasattr(block.header, 'signature') and block.header.signature:
+    			signing_data = self._get_block_signing_data(block)
+    			if not self.crypto_manager.verify_signature(signing_data, block.header.signature, validator.public_key):
+    				logger.error(f"Block signature verification failed for validator {validator_address}")
+    				return False
+    			
+    			# Validate gas limits and block size
+    			if hasattr(block, 'transactions'):
+    				total_gas = sum(getattr(tx, 'gas_limit', 0) for tx in block.transactions)
+    				max_block_gas = self.config.get('max_block_gas', 8000000)
+    				if total_gas > max_block_gas:
+    					logger.error(f"Block gas limit exceeded: {total_gas} > {max_block_gas}")
+    					return False
+    				
+    				block_size = len(pickle.dumps(block))
+    				max_block_size = self.config.get('max_block_size', 4194304)  # 4MB
+    				if block_size > max_block_size:
+    					logger.error(f"Block size limit exceeded: {block_size} > {max_block_size}")
+    					return False
+    					
+    			# Validate difficulty adjustment
+    			expected_difficulty = self._calculate_expected_difficulty(block.header.height)
+    			if block.header.difficulty != expected_difficulty:
+    				logger.error(f"Block difficulty mismatch: expected {expected_difficulty}, got {block.header.difficulty}")
+    				return False
+    			return True
+    	except Exception as e:
+    		logger.error(f"Consensus validation error: {e}", exc_info=True)
+    		return False
+    		
+    def _calculate_block_reward(self, height: int) -> int:
+    	# Base monetary policy parameters
+    	INITIAL_BLOCK_REWARD = 50 * 10**8  # 50 coins in satoshis
+    	HALVING_INTERVAL = 210000  # Blocks between halvings
+    	MINIMUM_BLOCK_REWARD = 1 * 10**8  # 1 coin minimum
+    	
+    	# Calculate halving period
+    	halvings = height // HALVING_INTERVAL
+    	
+    	# Apply exponential reward reduction
+    	reward = INITIAL_BLOCK_REWARD // (2 ** halvings)
+    	
+    	# Enforce minimum reward
+    	
+    	reward = max(reward, MINIMUM_BLOCK_REWARD)
+    	
+    	# Apply foundation fee (5%)
+    	foundation_fee = reward // 20
+    	net_reward = reward - foundation_fee
+    	
+    	return net_reward
     
+    def _calculate_transaction_fees(self, transactions: List[Any]) -> int:
+    	"""Calculate total transaction fees from block transactions"""
+    	total_fees = 0
+    	for tx in transactions:
+    		if hasattr(tx, 'fee'):
+    			total_fees += tx.fee
+    		elif hasattr(tx, 'inputs') and hasattr(tx, 'outputs'):
+    			# Calculate fee as input sum - output sum
+    			input_sum = sum(getattr(inp, 'amount', 0) for inp in tx.inputs)
+    			output_sum = sum(getattr(out, 'amount', 0) for out in tx.outputs)
+    			total_fees += max(0, input_sum - output_sum)
+    	return total_fees
+    	
+    def _get_block_signing_data(self, block: Any) -> bytes:
+    	"""Generate deterministic signing data for block validation"""
+    	import struct
+    	signing_data = b''
+    	
+    	# Pack core header fields
+    	signing_data += struct.pack('>I', block.header.version)
+    	signing_data += struct.pack('>Q', block.header.height)
+    	signing_data += bytes.fromhex(block.header.previous_hash)
+    	signing_data += bytes.fromhex(block.header.merkle_root)
+    	signing_data += struct.pack('>d', block.header.timestamp)
+    	signing_data += struct.pack('>Q', block.header.difficulty)
+    	signing_data += struct.pack('>Q', block.header.nonce)
+    	signing_data += block.header.validator.encode('utf-8')
+    	
+    	# Include transaction commitments
+    	if hasattr(block, 'transactions'):
+    		for tx in block.transactions:
+    			if hasattr(tx, 'hash'):
+    				signing_data += bytes.fromhex(tx.hash)
+    	return signing_data
+    	
+    def _calculate_expected_difficulty(self, height: int) -> int:
+    	if height == 0:
+    		return 1  # Genesis block difficulty
+    	
+    	# Use moving average of recent block times for difficulty adjustment
+    	recent_blocks = self._get_recent_block_times(height)
+    	if len(recent_blocks) < 10:
+    		return 1
+    	
+    	average_block_time = sum(recent_blocks) / len(recent_blocks)
+    	target_block_time = self.config.get('block_time_target', 30)
+    	
+    	# Adjust difficulty based on block time ratio
+    	time_ratio = average_block_time / target_block_time
+    	current_difficulty = self._get_current_difficulty()
+    	
+    	# Limit adjustment to ±25% per period
+    	adjustment_factor = max(0.75, min(1.25, time_ratio))
+    	new_difficulty = int(current_difficulty * adjustment_factor)
+    	
+    	# Ensure minimum difficulty
+    	
+    	return max(1, new_difficulty)
+  
     def _start_recovery(self):
         """Start consensus recovery procedures"""
         logger.error("Starting consensus recovery")
