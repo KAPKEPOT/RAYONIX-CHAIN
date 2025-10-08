@@ -181,7 +181,108 @@ class ContractManager:
         except Exception as e:
             logger.error(f"Error loading contracts from database: {e}")
             
+    def calculate_hash(self) -> str:
+        """Calculate a hash representing the current state of all contracts"""
+        import hashlib
+        import json
+        
+        with self.lock:
+            # Create a comprehensive hash of all contract data for integrity checking
+            hasher = hashlib.sha256()
+            
+            # Hash contract data in consistent order
+            contract_data = {}
+            for contract_id in sorted(self.contracts.keys()):
+                contract = self.contracts[contract_id]
+                contract_data[contract_id] = {
+                    'storage_hash': self._calculate_storage_hash(contract.storage),
+                    'balance': contract.balance,
+                    'state': contract.state.value if hasattr(contract.state, 'value') else str(contract.state),
+                    'version': contract.version,
+                    'bytecode_size': len(contract.wasm_bytecode) if hasattr(contract, 'wasm_bytecode') else 0
+                }
+            
+            # Add system state to hash
+            system_state = {
+                'total_contracts': len(self.contracts),
+                'total_balance': sum(contract.balance for contract in self.contracts.values()),
+                'call_stack_size': len(self.call_stack),
+                'journal_size': len(self.state_journal),
+                'gas_price': self.gas_price
+            }
+            
+            contract_data['_system'] = system_state
+            
+            # Sort keys for consistent hashing
+            state_string = json.dumps(contract_data, sort_keys=True)
+            hasher.update(state_string.encode('utf-8'))
+            
+            return hasher.hexdigest()
     
+    def _calculate_storage_hash(self, storage: Any) -> str:
+        """Calculate hash of contract storage"""
+        import hashlib
+        import json
+        
+        try:
+            if hasattr(storage, 'to_dict'):
+                storage_data = storage.to_dict()
+            elif hasattr(storage, '__dict__'):
+                storage_data = storage.__dict__
+            else:
+                storage_data = str(storage)
+            
+            # Convert to JSON string with sorted keys for consistency
+            storage_string = json.dumps(storage_data, sort_keys=True)
+            return hashlib.sha256(storage_string.encode('utf-8')).hexdigest()
+        except Exception as e:
+            logger.warning(f"Failed to calculate storage hash: {e}")
+            return "0" * 64  # Return zero hash on failure
+    
+    def verify_integrity(self) -> bool:
+        """Verify the integrity of the contract manager state"""
+        try:
+            with self.lock:
+                # Basic sanity checks
+                if not isinstance(self.contracts, dict):
+                    logger.error("Contracts is not a dictionary")
+                    return False
+                
+                # Verify each contract has basic required attributes
+                for contract_id, contract in self.contracts.items():
+                    if not hasattr(contract, 'contract_id'):
+                        logger.error(f"Contract {contract_id} missing contract_id")
+                        return False
+                    if not hasattr(contract, 'balance'):
+                        logger.error(f"Contract {contract_id} missing balance")
+                        return False
+                    if not hasattr(contract, 'state'):
+                        logger.error(f"Contract {contract_id} missing state")
+                        return False
+                    if contract.contract_id != contract_id:
+                        logger.error(f"Contract ID mismatch: {contract.contract_id} != {contract_id}")
+                        return False
+                
+                # Verify database consistency
+                try:
+                    db_contracts = self.db.load_all_contracts()
+                    if len(db_contracts) != len(self.contracts):
+                        logger.warning(f"Database contract count ({len(db_contracts)}) doesn't match memory count ({len(self.contracts)})")
+                        # This might be normal during synchronization, so don't fail integrity check
+                except Exception as e:
+                    logger.warning(f"Could not verify database consistency: {e}")
+                
+                logger.debug("Contract manager integrity verification passed")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Contract manager integrity verification failed: {e}")
+            return False
+    
+    def get_contract_count(self) -> int:
+        """Get the total number of contracts"""
+        with self.lock:
+            return len(self.contracts)    
   
     def _start_background_tasks(self) -> None:
         """Start background maintenance tasks"""

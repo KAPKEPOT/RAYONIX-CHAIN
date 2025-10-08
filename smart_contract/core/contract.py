@@ -249,6 +249,46 @@ class SmartContract:
             'total_gas_used': self.total_gas_used,
             'average_gas_per_call': self.average_gas_per_call
         }
+        
+    def calculate_hash(self) -> str:
+        """Calculate a hash representing the current state of this contract"""
+        import hashlib
+        import json
+        
+        contract_state = {
+            'contract_id': self.contract_id,
+            'owner': self.owner,
+            'balance': self.balance,
+            'state': self.state.value if hasattr(self.state, 'value') else str(self.state),
+            'version': self.version,
+            'storage_hash': self._calculate_storage_hash(),
+            'execution_count': self.execution_count,
+            'total_gas_used': self.total_gas_used,
+            'bytecode_size': len(self.wasm_bytecode) if hasattr(self, 'wasm_bytecode') else 0
+        }
+        
+        # Sort keys for consistent hashing
+        state_string = json.dumps(contract_state, sort_keys=True)
+        return hashlib.sha256(state_string.encode('utf-8')).hexdigest()
+    
+    def _calculate_storage_hash(self) -> str:
+        """Calculate hash of contract storage"""
+        import hashlib
+        import json
+        
+        try:
+            if hasattr(self.storage, 'to_dict'):
+                storage_data = self.storage.to_dict()
+            elif hasattr(self.storage, '__dict__'):
+                storage_data = self.storage.__dict__
+            else:
+                storage_data = str(self.storage)
+            
+            storage_string = json.dumps(storage_data, sort_keys=True)
+            return hashlib.sha256(storage_string.encode('utf-8')).hexdigest()
+        except Exception as e:
+            logger.warning(f"Failed to calculate storage hash for contract {self.contract_id}: {e}")
+            return "0" * 6       
     
     def __del__(self):
         """Cleanup resources"""
