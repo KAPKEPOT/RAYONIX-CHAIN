@@ -754,18 +754,33 @@ class StateManager:
 
     def get_current_height(self) -> int:
         """Get current blockchain height"""
-        height_bytes = self.database.get(b'current_height')
-        if height_bytes:
-            try:
-                return int(height_bytes.decode('utf-8'))
-            except (ValueError, UnicodeDecodeError):
-                # Try to decode as pickle if string decoding fails
-                try:
-                    return pickle.loads(height_bytes)
-                except:
-                    return 0
-        return 0
-
+        try:
+        	height_value = self.database.get(b'current_height')
+        	if not height_value:
+        		return 0
+        	
+        	# Handle multiple data types safely
+        	if isinstance(height_value, bytes):
+        		try:
+        			# Try to decode as string first
+        			return int(height_value.decode('utf-8'))
+        		except (ValueError, UnicodeDecodeError):
+        			# Try pickle decoding for complex objects
+        			try:
+        				decoded = pickle.loads(height_value)
+        				return int(decoded) if decoded is not None else 0
+        			except (pickle.PickleError, ValueError, TypeError):
+        				return 0
+        	elif isinstance(height_value, (int, str)):
+        		# Direct conversion for int or string
+        		return int(height_value)
+        	else:
+        		logger.warning(f"Unexpected height value type: {type(height_value)}")
+        		return 0
+        except Exception as e:
+        	logger.error(f"Error getting current height: {e}")
+        	return 0
+  
     def get_state_stats(self) -> Dict[str, Any]:
         """Get comprehensive statistics about the current state"""
         current_time = time.time()
