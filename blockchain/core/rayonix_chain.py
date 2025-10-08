@@ -551,6 +551,7 @@ class RayonixBlockchain:
             	# Force correct height
             	genesis_block.header.height = 1
             	genesis_block.hash = genesis_block.header.calculate_hash()  # Recalculate hash
+            	logger.warning("Corrected genesis block height to 1")
             
             # Validate genesis block structure
             if not self._validate_genesis_block(genesis_block):
@@ -601,20 +602,44 @@ class RayonixBlockchain:
     	"""Special validation for genesis blocks"""
     	try:
     		# Basic structure checks
-    		if genesis_block.header.height != 0:
+    		if genesis_block.header.height != 1:
+    			logger.error(f"Invalid genesis block height: {genesis_block.header.height}. Must be 1.")
     			return False
+    			
     		if genesis_block.header.previous_hash != '0' * 64:
+    			logger.error(f"Invalid genesis previous hash: {genesis_block.header.previous_hash}. Must be 64 zeros.")
     			return False
+    			
     		# Check for at least one transaction (the premine)
     		if len(genesis_block.transactions) == 0:
+    			logger.error("Genesis block must have at least one transaction")
     			return False
     		# Genesis-specific validation
     		premine_tx = genesis_block.transactions[0]
     		if not hasattr(premine_tx, 'outputs') or len(premine_tx.outputs) == 0:
     			
     			return False
+    			
+    		# Validate premine amount matches configuration
+    		expected_premine = self.config.genesis_premine
+    		actual_premine = sum(output.amount for output in premine_tx.outputs)
+    		if actual_premine != expected_premine:
+    			logger.error(f"Premine amount mismatch: expected {expected_premine}, got {actual_premine}")
+    			return False
+    		
+    		# Validate block hash integrity
+    		calculated_hash = genesis_block.header.calculate_hash()
+    		if genesis_block.hash != calculated_hash:
+    			logger.error(f"Block hash mismatch: stored {genesis_block.hash}, calculated {calculated_hash}")
+    			return False
+    		
+    		logger.info(f"Genesis block validation PASSED: height=1, hash={genesis_block.hash[:16]}...")
+    		
     		return True
+    		
     	except Exception:
+    		logger.error(f"Genesis block validation exception: {e}")
+    		
     		return False
     		
     def _create_fallback_genesis_blockchain(self) -> bool:
