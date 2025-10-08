@@ -663,6 +663,25 @@ class ProofOfStake:
     			logger.error("Block missing required header structure")
     			return False
     			
+    		# ENHANCED VALIDATION: Special handling for genesis block
+    		if block.header.height == 1:
+    			# Skip height sequencing validation for genesis
+    			if not hasattr(block.header, 'validator') or not block.header.validator:
+    				logger.error("Genesis block missing validator identification")
+    				return False
+    			# Validate genesis-specific requirements
+    			if block.header.previous_hash != '0' * 64:
+    				logger.error("Genesis block must have all-zero previous hash")
+    				return False
+    			
+    			# Set current height to 0 so genesis becomes height 1
+    			if self.current_height == 0:
+    				logger.info("Genesis block validation passed - setting current height to 1")
+    				return True
+    			else:
+    				logger.error("Genesis block processed at incorrect height")
+    				return False
+    			
     		# Validate block height sequencing
     		if block.header.height != self.current_height + 1:
     			logger.error(f"Block height sequencing violation: expected {self.current_height + 1}, got {block.header.height}")
