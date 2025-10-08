@@ -545,11 +545,11 @@ class RayonixBlockchain:
                 raise ValueError("Genesis block generation returned None")
             
             # ENHANCED VALIDATION: Verify genesis block has correct height
-            if genesis_block.header.height != 1:
+            if genesis_block.header.height != 0:
             	logger.warning(f"Adjusting genesis block height from {genesis_block.header.height} to 1")
             	
             	# Force correct height
-            	genesis_block.header.height = 1
+            	genesis_block.header.height = 0
             	genesis_block.hash = genesis_block.header.calculate_hash()  # Recalculate hash
             	logger.warning("Corrected genesis block height to 1")
             
@@ -561,7 +561,7 @@ class RayonixBlockchain:
             self._store_block(genesis_block)
             
             # Set initial height in database
-            self.database.put(b'current_height', b'1')
+            self.database.put(b'current_height', b'0')
             
             # Apply genesis block to state
             if not self.state_manager.apply_genesis_block(genesis_block):
@@ -602,8 +602,8 @@ class RayonixBlockchain:
     	"""Special validation for genesis blocks"""
     	try:
     		# Basic structure checks
-    		if genesis_block.header.height != 1:
-    			logger.error(f"Invalid genesis block height: {genesis_block.header.height}. Must be 1.")
+    		if genesis_block.header.height != 0:
+    			logger.error(f"Invalid genesis block height: {genesis_block.header.height}. Must be 0.")
     			return False
     			
     		if genesis_block.header.previous_hash != '0' * 64:
