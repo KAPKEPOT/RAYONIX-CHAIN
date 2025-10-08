@@ -559,6 +559,11 @@ class ProofOfStake:
     			if not self._validate_block_consensus(block):
     				logger.error(f"Block {block.hash} failed consensus validation at height {block.header.height}")
     				return False
+    			
+    			if block.header.height == 0:
+    				
+    				return self._process_genesis_block(block)
+    				
     				# Verify block proposer is current round validator
     				expected_proposer = self.staking_manager.select_proposer(block.header.height, 0)
     				if not expected_proposer or expected_proposer.address != block.header.validator:
@@ -569,6 +574,7 @@ class ProofOfStake:
     				
     				# Process validator performance metrics
     				validator_address = block.header.validator
+    				
     				if validator_address in self.validators:
     					validator = self.validators[validator_address]
     					validator.last_active = time.time()
@@ -588,32 +594,67 @@ class ProofOfStake:
     					if total_blocks > 0:
     						validator.uptime = (validator.signed_blocks / total_blocks) * 100.0
     				# Calculate and distribute block rewards
-    				block_reward = self._calculate_block_reward(block.header.height)
-    				transaction_fees = self._calculate_transaction_fees(block.transactions)
-    				total_reward = block_reward + transaction_fees
-    				# Add to epoch reward pool for distribution
-    				self.epoch_state.reward_pool += total_reward
-    				
-    				# Update monetary supply with precise accounting
-    				self.total_supply += total_reward
-    				# Update staking manager state
-    				self.staking_manager.process_block_production(validator_address, block.header.height)
-    				
-    				# Execute slashing conditions for missed blocks
-    				self._check_missed_blocks_slashing(block.header.height)
-    				
-    				# Update network difficulty based on recent block times
-    				
-    				self._adjust_network_difficulty(block.header.timestamp)
+    				if block.header.height >= 1:
+    					block_reward = self._calculate_block_reward(block.header.height)
+    					transaction_fees = self._calculate_transaction_fees(block.transactions)
+    					total_reward = block_reward + transaction_fees
+    					
+    					# Add to epoch reward pool for distribution
+    					self.epoch_state.reward_pool += total_reward
+    					
+    					# Update monetary supply with precise accounting
+    					self.total_supply += total_reward
+    					
+    				# Update staking manager state (starting from block 1)
+    				if block.header.height >= 1:
+    					self.staking_manager.process_block_production(validator_address, block.header.height)
+    					
+    					# Execute slashing conditions for missed blocks
+    					self._check_missed_blocks_slashing(block.header.height)
+    					
+    					# Update network difficulty based on recent block times
+    					self._adjust_network_difficulty(block.header.timestamp)
     				
     				# Persist consensus state changes
-    				self._save_state()
-    				logger.info(f"Successfully processed block {block.hash[:16]} at height {block.header.height}, reward: {total_reward}")
+    				logger.info(f"Successfully processed block {block.hash[:16]} at height {block.header.height}")
     				return True
+    				
     	except Exception as e:
     		logger.error(f"Critical error processing block {block.hash if hasattr(block, 'hash') else 'unknown'}: {e}", exc_info=True)
     		return False
     		
+    def _process_genesis_block(self, block: Any) -> bool:
+    	"""Special handling for genesis block at height 0"""
+    	try:
+    		logger.info(f"Processing genesis block at height {block.header.height}")
+    		
+    		# Initialize consensus state with genesis block
+    		self.current_height = 0
+    		self.height = 0
+    		
+    		# Initialize validator set for genesis if needed
+    		if not self.validators:
+    			logger.info("Initializing empty validator set for genesis")
+    			
+    		# Initialize epoch state
+    		self.epoch_state.current_epoch = 0
+    		self.epoch_state.reward_pool = 0
+    		
+    		# Initialize other consensus state
+    		self.round = 0
+    		self.step = ConsensusState.NEW_HEIGHT
+    		self.locked_round = -1
+    		self.valid_round = -1
+    		self.locked_value = None
+    		self.valid_value = None
+    		
+    		logger.info("Genesis block (height 0) consensus processing completed")
+    		return True
+    	
+    	except Exception as e:
+    		logger.error(f"Error processing genesis block: {e}")
+    		return False
+ 
     def revert_block(self, block: Any) -> bool:
     	"""Production-grade block reversion with complete state rollback"""
     	try:
@@ -664,7 +705,7 @@ class ProofOfStake:
     			return False
     			
     		# ENHANCED VALIDATION: Special handling for genesis block
-    		if block.header.height == 1:
+    		if block.header.height == 0:
     			# Skip height sequencing validation for genesis
     			if not hasattr(block.header, 'validator') or not block.header.validator:
     				logger.error("Genesis block missing validator identification")
@@ -676,10 +717,10 @@ class ProofOfStake:
     			
     			# Set current height to 0 so genesis becomes height 1
     			if self.current_height == 0:
-    				logger.info("Genesis block validation passed - setting current height to 1")
+    				logger.info("Genesis block validation passed")
     				return True
     			else:
-    				logger.error("Genesis block processed at incorrect height")
+    				logger.error(f"Genesis block processed at incorrect current height: {self.current_height}")
     				return False
     			
     		# Validate block height sequencing
