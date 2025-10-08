@@ -686,7 +686,7 @@ class StateManager:
             logger.warning(f"Failed to store state file: {e}")
            
     def apply_genesis_block(self, block: Block) -> bool:
-    	if block.header.height != 0:
+    	if block.header.height != 1:
     		raise ValueError("apply_genesis_block can only be used for genesis block (height 0)")
     		
     	with self.atomic_state_transition(StateTransitionType.BLOCK_APPLY, block) as transaction_id:
@@ -704,6 +704,10 @@ class StateManager:
     			if not self.consensus.process_block(block):
     				raise ValueError("Failed to process block in consensus")
     			self.state_checksum = self._calculate_state_hash()
+    			
+    			# Set initial height to 1 in database
+    			self.database.put(b'current_height', b'1')
+    			
     			logger.info(f"Successfully applied genesis block {block.hash}")
     			return True
     		except Exception as e:
