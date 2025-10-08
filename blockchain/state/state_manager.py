@@ -687,7 +687,7 @@ class StateManager:
            
     def apply_genesis_block(self, block: Block) -> bool:
     	if block.header.height != 1:
-    		raise ValueError("apply_genesis_block can only be used for genesis block (height 0)")
+    		raise ValueError(f"apply_genesis_block can only be used for genesis block (height 1), got height {block.header.height}")
     		
     	with self.atomic_state_transition(StateTransitionType.BLOCK_APPLY, block) as transaction_id:
     		try:
@@ -705,7 +705,12 @@ class StateManager:
     				else:
     					if not self.utxo_set.process_transaction(tx):
     						raise ValueError(f"Failed to process transaction {tx.hash}")
+    						
     			if not self.consensus.process_block(block):
+    				logger.error(f"Consensus rejected genesis block at height {block.header.height}")
+    				# Add detailed diagnostics
+    				
+    				self._log_genesis_block_diagnostics(block)
     				raise ValueError("Failed to process block in consensus")
     			self.state_checksum = self._calculate_state_hash()
     			
@@ -718,6 +723,21 @@ class StateManager:
     			logger.error(f"Failed to apply genesis block: {e}")
     			raise
     			
+    def _log_genesis_block_diagnostics(self, block: Block):
+    	"""Log detailed diagnostics for genesis block validation failures"""
+    	logger.info(f"Genesis block diagnostics:")
+    	logger.info(f"  - Block height: {block.header.height}")
+    	logger.info(f"  - Previous hash: {block.header.previous_hash}")
+    	logger.info(f"  - Validator: {block.header.validator}")
+    	logger.info(f"  - Transaction count: {len(block.transactions)}")
+    	logger.info(f"  - Current consensus height: {self.consensus.current_height}")
+    	
+    	# Log first transaction details if available
+    	if block.transactions:
+    		tx = block.transactions[0]
+    		logger.info(f"  - First transaction hash: {tx.hash}")
+    		logger.info(f"  - First transaction outputs: {len(tx.outputs)}")
+
     def _is_genesis_coinbase_transaction(self, tx: Any) -> bool:
     	if not tx.inputs:
     		return False
