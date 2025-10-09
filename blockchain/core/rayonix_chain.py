@@ -29,6 +29,7 @@ from consensusengine.core.consensus import ProofOfStake
 from blockchain.utils.genesis import GenesisBlockGenerator
 from network.core.p2p_network import AdvancedP2PNetwork
 from blockchain.config.consensus_config import ConsensusConfig
+from merkle_system.merkle import MerkleTree, CompactMerkleTree, MerkleTreeConfig, HashAlgorithm, ProofFormat, MerkleTreeFactory, MerkleTreeStats, global_stats, create_merkle_tree_from_file, create_merkle_tree_from_large_file, batch_verify_proofs, batch_verify_proofs_async, create_merkle_mountain_range
 
 logger = logging.getLogger(__name__)
 
@@ -692,8 +693,17 @@ class RayonixBlockchain:
             # Verify state integrity
             if not self.state_manager.verify_state_integrity():
                 logger.warning("State integrity verification failed during load")
-                if not self._recover_blockchain_state():
-                    raise StateRecoveryError("Blockchain state recovery failed")
+                # Use existing checkpoint recovery
+                checkpoints = self.checkpoint_manager.list_checkpoints()
+                if checkpoints:
+                	latest = max(checkpoints, key=lambda x: x.height)
+                	if self.checkpoint_manager.restore_from_checkpoint(latest.name):
+                		logger.info("Recovered from checkpoint")
+                	
+                	else:
+                		# Fall back to genesis
+                		logger.warning("Checkpoint recovery failed, recreating genesis...")
+                		self._create_genesis_blockchain()
             
             logger.info(f"Blockchain state loaded successfully (height: {current_height})")
             
