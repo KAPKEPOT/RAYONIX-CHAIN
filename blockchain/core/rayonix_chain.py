@@ -677,8 +677,13 @@ class RayonixBlockchain:
             chain_head_bytes = self.database.get(b'chain_head')
             if not chain_head_bytes:
                 raise ValueError("Chain head not found")
-            
-            self.chain_head = chain_head_bytes.decode()
+            if isinstance(chain_head_bytes, bytes):
+            	self.chain_head = chain_head_bytes.decode()
+            	
+            else:
+            	self.chain_head = chain_head_bytes
+  
+            #self.chain_head = chain_head_bytes.decode()
             
             # Load current height
             current_height = self.state_manager.get_current_height()
@@ -1029,8 +1034,157 @@ class RayonixBlockchain:
 
     async def _prune_blocks_before(self, height: int) -> int:
         """Prune blocks before specified height"""
-        # Implementation depends on database structure
-        return 0  # Placeholder
+        if height <= 0:
+        	logger.warning(f"Cannot prune blocks before height {height}, must be positive")
+        	return 0
+        
+        current_height = self.state_manager.get_current_height()
+        if height >= current_height:
+        	logger.warning(f"Prune height {height} >= current height {current_height}, no blocks to prune")
+        	return 0
+        	
+        # Safety check: don't prune too aggressively
+        max_prune_depth = current_height - self.config.max_reorganization_depth
+        if height > max_prune_depth:
+        	logger.warning(f"Prune height {height} exceeds safe depth {max_prune_depth}, limiting")
+        	height = max_prune_depth
+        
+        pruned_count = 0
+        batch_size = 100
+        
+        try:
+        	logger.info(f"Starting block pruning for blocks before height {height}")
+        	
+        	# Use checkpoint for safety
+        	checkpoint_name = f"pre_prune_{height}"
+        	self.checkpoint_manager.create_checkpoint(checkpoint_name)
+        	
+        	# Get blocks to prune in batches
+        	for batch_start in range(0, height, batch_size):
+        		batch_end = min(batch_start + batch_size, height)
+        		
+        		batch_pruned = await self._prune_block_batch(batch_start, batch_end)
+        		pruned_count += batch_pruned
+        		
+        		# Small delay to prevent overwhelming the system
+        		await asyncio.sleep(0.01)
+        		
+        		# Update metrics periodically
+        		if batch_start % 1000 == 0:
+        			logger.info(f"Pruned {pruned_count} blocks up to height {batch_start}")
+        			
+        	# Update UTXO set and state
+        	await self._prune_utxo_set(height)
+        	
+        	# Update state manager
+        	self.state_manager.update_pruned_height(height)
+        	
+        	# Create post-prune checkpoint
+        	self.checkpoint_manager.create_checkpoint(f"post_prune_{height}")
+        	
+        	logger.info(f"Successfully pruned {pruned_count} blocks before height {height}")
+        	
+        	# Update metrics
+        	with self.locks['stats']:
+        		self.metrics.total_blocks_pruned += pruned_count
+        	
+        	return pruned_count
+        	
+        except Exception as e:
+        	logger.error(f"Block pruning failed at height {height}: {e}")
+        	
+        	# Attempt recovery from checkpoint
+        	try:
+        		if self.checkpoint_manager.restore_from_checkpoint(checkpoint_name):
+        			logger.info(f"Recovered from checkpoint {checkpoint_name} after pruning failure")
+        			
+        		else:
+        			logger.error("Failed to recover from checkpoint after pruning failure")
+        	except Exception as recovery_error:
+        		logger.error(f"Checkpoint recovery also failed: {recovery_error}")
+        	
+        	raise DatabaseError(f"Block pruning failed: {e}")
+        	
+    async def _prune_block_batch(self, start_height: int, end_height: int) -> int:
+    	"""Prune a batch of blocks"""
+    	pruned_in_batch = 0
+    	
+    	try:
+    		for height in range(start_height, end_height):
+    			# Get block hash from height index
+    			height_key = f"height_{height}".encode()
+    			block_hash_bytes = self.database.get(height_key)
+    			
+    			if not block_hash_bytes:
+    				continue
+    				
+    			block_hash = block_hash_bytes.decode() if isinstance(block_hash_bytes, bytes) else block_hash_bytes
+    			
+    			# Get block data
+    			block_data = self.database.get(block_hash.encode())
+    			
+    			if not block_data:
+    				continue
+    				
+    			# Deserialize block to get transaction information
+    			try:
+    				block = pickle.loads(block_data)
+    				
+    				# Remove block data
+    				self.database.delete(block_hash.encode())
+    				
+    				# Remove height index
+    				self.database.delete(height_key)
+    				
+    				# Remove transaction references if they exist
+    				await self._remove_transaction_references(block)
+    				
+    				pruned_in_batch += 1
+    				
+    			except Exception as e:
+    				logger.warning(f"Failed to process block at height {height}: {e}")
+    				continue
+    				
+    		return pruned_in_batch
+    	
+    	except Exception as e:
+    		logger.error(f"Batch pruning failed for heights {start_height}-{end_height}: {e}")
+    		return 0
+    		
+    async def _prune_utxo_set(self, prune_height: int):
+    	"""Prune UTXO set for blocks before specified height"""
+    	try:
+    		if hasattr(self.utxo_set, 'prune_before_height'):
+    			pruned_utxos = self.utxo_set.prune_before_height(prune_height)
+    			logger.info(f"Pruned {pruned_utxos} UTXOs before height {prune_height}")
+    		
+    		else:
+    			logger.warning("UTXO set does not support pruning")
+    	
+    	except Exception as e:
+    		logger.error(f"UTXO pruning failed: {e}")
+    		# Continue with block pruning even if UTXO pruning fails
+    		
+    async def _remove_transaction_references(self, block: Any):
+    	"""Remove transaction references from database"""
+    	try:
+    		if not hasattr(block, 'transactions'):
+    			return
+    			
+    		for tx in block.transactions:
+    			tx_hash = getattr(tx, 'hash', None)
+    			if tx_hash:
+    				# Remove transaction data if stored separately
+    				tx_key = f"tx_{tx_hash}".encode()
+    				self.database.delete(tx_key)
+    				
+    				# Remove from transaction index if it exists
+    				tx_index_key = f"tx_index_{tx_hash}".encode()
+    				
+    				self.database.delete(tx_index_key)
+    	
+    	except Exception as e:
+    		logger.warning(f"Failed to remove transaction references: {e}")
 
     async def _compact_database(self):
         """Compact database"""
