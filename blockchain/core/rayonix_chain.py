@@ -546,13 +546,12 @@ class RayonixBlockchain:
             
             # ENHANCED VALIDATION: Verify genesis block has correct height
             if genesis_block.header.height != 0:
-            	logger.warning(f"Adjusting genesis block height from {genesis_block.header.height} to 1")
+            	logger.warning(f"Correcting genesis block height from {genesis_block.header.height} to 0")
             	
             	# Force correct height
             	genesis_block.header.height = 0
             	genesis_block.hash = genesis_block.header.calculate_hash()  # Recalculate hash
-            	logger.warning("Corrected genesis block height to 1")
-            
+
             # Validate genesis block structure
             if not self._validate_genesis_block(genesis_block):
                 raise ValueError("Generated genesis block failed validation")
@@ -561,7 +560,11 @@ class RayonixBlockchain:
             self._store_block(genesis_block)
             
             # Set initial height in database
-            self.database.put(b'current_height', b'0')
+            #self.database.put(b'current_height', b'0')
+            
+            # Apply genesis block to state (this will set initial checksum)
+            if not self.state_manager.apply_genesis_block(genesis_block):
+            	raise ValueError("Failed to apply genesis block to state")
             
             # Apply genesis block to state
             if not self.state_manager.apply_genesis_block(genesis_block):
@@ -572,8 +575,8 @@ class RayonixBlockchain:
             self.database.put(b'chain_head', genesis_block.hash.encode())
             
             # Create initial checkpoint
-            self.checkpoint_manager.create_checkpoint_if_needed(genesis_block)
-            logger.info("Genesis blockchain created successfully at height 1")
+            self.checkpoint_manager.create_checkpoint(genesis_block)
+            logger.info("Genesis blockchain created successfully at height 0")
             
         except Exception as e:
             logger.error(f"Genesis blockchain creation failed: {e}")
