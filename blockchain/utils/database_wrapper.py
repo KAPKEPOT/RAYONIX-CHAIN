@@ -68,23 +68,8 @@ class SafeDatabaseWrapper:
             
             if value_data is None:
                 return default
-            
-            # Try to deserialize based on content
-            try:
-                # First try to decode as string
-                decoded = value_data.decode(self.encoding)
-                # Try to convert to int if it's a number
-                if decoded.isdigit():
-                    return int(decoded)
-                return decoded
-            except UnicodeDecodeError:
-                # Then try pickle
-                try:
-                    return pickle.loads(value_data)
-                except pickle.PickleError:
-                    # Return raw bytes if all else fails
-                    return value_data
-                
+            return value_data
+     
         except Exception as e:
             logger.error(f"Safe get failed for key {key}: {e}")
             return default
