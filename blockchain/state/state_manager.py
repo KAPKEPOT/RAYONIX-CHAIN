@@ -140,7 +140,7 @@ class StateManager:
                             self._attempt_state_recovery()
             else:
                 logger.info("No persisted state found, starting fresh")
-                self._persist_state()  # Persist initial state
+                #self._persist_state()  # Persist initial state
                 
         except Exception as e:
             logger.error(f"State initialization failed: {e}")
@@ -686,43 +686,119 @@ class StateManager:
             logger.warning(f"Failed to store state file: {e}")
            
     def apply_genesis_block(self, block: Block) -> bool:
+    	"""Apply genesis block with special handling for initial state integrity"""
     	if block.header.height != 0:
-    		raise ValueError(f"apply_genesis_block can only be used for genesis block (height 1), got height {block.header.height}")
+    		raise ValueError(f"apply_genesis_block can only be used for genesis block (height 0), got height {block.header.height}")
     		
-    	with self.atomic_state_transition(StateTransitionType.BLOCK_APPLY, block) as transaction_id:
-    		try:
-    			logger.info(f"Applying genesis block at height {block.header.height}")
+    	# Use a special genesis transaction that bypasses normal integrity checks
+    	transaction_id = self._start_transaction(StateTransitionType.BLOCK_APPLY, block)
+    	start_time = time.time()
+    	
+    	try:
+    		logger.info(f"Applying genesis block at height {block.header.height}")
+    		
+    		# Disable integrity verification for genesis block application
+    		original_verification_setting = self.enable_state_verification
+    		self.enable_state_verification = False
+    		
+    		# Process all genesis transactions
+    		processed_count = 0
+    		for tx in block.transactions:
+    			if self._is_genesis_coinbase_transaction(tx):
+    				for i, output in enumerate(tx.outputs):
+    					utxo_id = f"{tx.hash}:{i}"
+    					if not self.utxo_set.get_utxo(utxo_id):
+    						self._create_genesis_utxo(tx, i, output)
+    						processed_count += 1
+    			else:
+    				if not self.utxo_set.process_transaction(tx):
+    					raise ValueError(f"Failed to process transaction {tx.hash}")
+    					processed_count += 1
+    					
+    		# Process in consensus with special genesis handling
+    		if not self.consensus.process_block(block):
+    			logger.error(f"Consensus rejected genesis block at height {block.header.height}")
+    			self._log_genesis_block_diagnostics(block)
+    			raise ValueError("Failed to process block in consensus")
+    		
+    		# Calculate and set initial state checksum
+    		self.state_checksum = self._calculate_state_hash()
+    		
+    		# Set initial height to 0 in database
+    		self.database.put(b'current_height', b'0')
+    		
+    		# Store the initial state checksum
+    		if self.state_checksum:
+    			self.database.put(b'state_checksum', self.state_checksum.encode())
+    		
+    		# Persist the initial state
+    		self._persist_state()
+    		
+    		# Re-enable verification
+    		self.enable_state_verification = original_verification_setting
+    		
+    		# Manually commit the transaction since we bypassed normal flow
+    		self._commit_genesis_transaction(transaction_id, block, time.time() - start_time)
+    		
+    		logger.info(f"Successfully applied genesis block {block.hash} at height {block.header.height}")
+    		return True
+    	
+    	except Exception as e:
+    		duration = time.time() - start_time
+    		# Ensure verification is re-enabled even on error
+    		self.enable_state_verification = original_verification_setting
+    		self._rollback_transaction(transaction_id, str(e), duration)
+    		logger.error(f"Failed to apply genesis block: {e}")
+    		raise
+    
+    def _commit_genesis_transaction(self, transaction_id: str, block: Optional[Block], duration: float):
+    	"""Special commit for genesis transaction that bypasses normal integrity checks"""
+    	with self.lock:
+    		if transaction_id not in self.active_transactions:
+    			raise StateIntegrityError(f"Transaction {transaction_id} not active")
+    		
+    		# Find the transaction record
+    		transition = self._find_transition(transaction_id)
+    		if not transition:
+    			raise StateIntegrityError(f"Transaction record not found: {transaction_id}")
     			
-    			# Process all genesis transactions
-    			processed_count = 0
-    			for tx in block.transactions:
-    				if self._is_genesis_coinbase_transaction(tx):
-    					for i, output in enumerate(tx.outputs):
-    						
-    						utxo_id = f"{tx.hash}:{i}"
-    						if not self.utxo_set.get_utxo(utxo_id):
-    							self._create_genesis_utxo(tx, i, output)
-    				else:
-    					if not self.utxo_set.process_transaction(tx):
-    						raise ValueError(f"Failed to process transaction {tx.hash}")
-    						
-    			if not self.consensus.process_block(block):
-    				logger.error(f"Consensus rejected genesis block at height {block.header.height}")
-    				# Add detailed diagnostics
-    				
-    				self._log_genesis_block_diagnostics(block)
-    				raise ValueError("Failed to process block in consensus")
-    			self.state_checksum = self._calculate_state_hash()
+    		# Update transition record without integrity verification
+    		transition.state_after = StateSnapshot(
+    		    utxo_set=self.utxo_set.create_snapshot(),
+    		    consensus_state=self.consensus.create_snapshot(),
+    		    contract_states=self.contract_manager.create_snapshot(),
+    		    timestamp=time.time(),
+    		    state_checksum=self.state_checksum,
+    		    block_height=self.get_current_height(),
+    		    transaction_id=transaction_id
+    		)
+    		transition.state_after.snapshot_hash = self._calculate_snapshot_hash(transition.state_after)
+    		transition.duration = duration
+    		transition.success = True
+    		
+    		# Persist state
+    		self._persist_state()
+    		self.last_persist_time = time.time()
+    		
+    		# Cleanup transaction
+    		self.active_transactions.remove(transaction_id)
+    		if transaction_id in self.transaction_locks:
+    			del self.transaction_locks[transaction_id]
     			
-    			# Set initial height to 1 in database
-    			self.database.put(b'current_height', b'0')
-    			
-    			logger.info(f"Successfully applied genesis block {block.hash} at height {block.header.height}")
-    			return True
-    		except Exception as e:
-    			logger.error(f"Failed to apply genesis block: {e}")
-    			raise
-    			
+    		# Update metrics
+    		self.metrics.successful_transitions += 1
+    		self.metrics.total_transitions += 1
+    		self.metrics.total_processing_time += duration
+    		self.metrics.average_transition_time = (
+    		    self.metrics.total_processing_time,
+    		    
+    		    self.metrics.total_transitions
+    		)
+    		self.metrics.last_transition_time = time.time()
+    		logger.info(f"Committed genesis transaction {transaction_id} in {duration:.3f}s")
+            
+        
+
     def _log_genesis_block_diagnostics(self, block: Block):
     	"""Log detailed diagnostics for genesis block validation failures"""
     	logger.info(f"Genesis block diagnostics:")
