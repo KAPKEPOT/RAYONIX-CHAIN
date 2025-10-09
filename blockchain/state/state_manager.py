@@ -863,17 +863,15 @@ class StateManager:
         			height = int(height_str) if height_str else 0
         			return max(0, height)
         		except (ValueError, UnicodeDecodeError):
-        			# Try pickle decoding for complex objects
-        			try:
-        				decoded = pickle.loads(height_value)
-        				height = int(decoded) if decoded is not None else 0
-        				return max(0, height)
-        			except (pickle.PickleError, ValueError, TypeError):
-        				return 0
+        			return 0
         	elif isinstance(height_value, (int, str)):
         		# Direct conversion for int or string
-        		height = int(height_value)
+        		height = int(height_value) if height_value.strip() else 0
         		return max(0, height)
+        		
+        	elif isinstance(height_value, int):
+        		return max(0, height_value)
+        		
         	else:
         		logger.warning(f"Unexpected height value type: {type(height_value)}")
         		return 0
