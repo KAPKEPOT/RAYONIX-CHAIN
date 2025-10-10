@@ -139,31 +139,65 @@ class RayonixNode:
     
     async def _initialize_wallet_with_blockchain(self):
         """Initialize wallet with proper blockchain reference integration"""
-        from rayonix_wallet.core.wallet import RayonixWallet, create_new_wallet
-        from rayonix_wallet.core.wallet_config import WalletType, AddressType
-        
-        wallet_file = Path(self.config_manager.get('database.db_path', './rayonix_data')) / 'wallet.dat'
-        if wallet_file.exists():
-            try:
-                # Load existing wallet
-                self.wallet = RayonixWallet()
-                if self.wallet.restore(str(wallet_file)):
-                    # Set blockchain reference after successful restore
-                    if self.wallet.set_blockchain_reference(self.rayonix_chain):
-                        logger.info("Wallet loaded and blockchain integration established")
-                    else:
-                        logger.warning("Wallet loaded but blockchain integration failed")
-                else:
-                    logger.warning("Failed to load wallet from file, creating new one")
-                    self._create_new_wallet_with_blockchain()
-                    
-            except Exception as e:
-                logger.error(f"Error loading wallet: {e}")
-                self._create_new_wallet_with_blockchain()
-                
-        else:
-            self._create_new_wallet_with_blockchain()
-    
+        try:
+        	from rayonix_wallet.core.wallet_factory import WalletFactory
+        	from rayonix_wallet.core.types import WalletType, AddressType
+        	
+        	wallet_file = Path(self.config_manager.get('database.db_path', './rayonix_data')) / 'wallet.dat'
+        	network_type = self.config_manager.get('network.network_type', 'testnet')
+        	
+        	if wallet_file.exists():
+        		try:
+        			# Try to load existing wallet
+        			self.wallet = WalletFactory.load_wallet_from_file(str(wallet_file))
+        			logger.info("Wallet loaded successfully from file")
+        			
+        		except Exception as e:
+        			logger.warning(f"Failed to load wallet from {wallet_file}: {e}")
+        			logger.info("Creating new wallet...")
+        			# Create new wallet if loading fails
+        			self.wallet, mnemonic = WalletFactory.create_new_wallet(
+        			    wallet_type=WalletType.HD,
+        			    network=network_type,
+        			    address_type=AddressType.RAYONIX
+        			)
+        			logger.info("New wallet created successfully")
+        			
+        			# Save the new wallet
+        			if self.wallet.backup(str(wallet_file)):
+        				logger.info(f"New wallet saved to {wallet_file}")
+        				logger.debug(f"New wallet mnemonic: {mnemonic}")
+        			else:
+        				logger.warning("Failed to save new wallet to disk")
+        	else:
+        		# Create new wallet
+        		self.wallet, mnemonic = WalletFactory.create_new_wallet(
+        		    wallet_type=WalletType.HD,
+        		    network=network_type,
+        		    address_type=AddressType.RAYONIX
+        		)
+        		logger.info("New wallet created successfully")
+        		# Save the new wallet
+        		if self.wallet.backup(str(wallet_file)):
+        			logger.info(f"New wallet saved to {wallet_file}")
+        			
+        			logger.debug(f"New wallet mnemonic: {mnemonic}")
+        		else:
+        			logger.warning("Failed to save new wallet to disk")
+        			
+        	# Establish blockchain reference
+        	if self.wallet and self.wallet.set_blockchain_reference(self.rayonix_chain):
+        		logger.info("Wallet blockchain integration established successfully")
+        	else:
+        		logger.error("Failed to establish wallet blockchain integration")
+        		self.wallet = None
+        		
+        except Exception as e:
+        	logger.error(f"Wallet initialization failed: {e}")
+        	import traceback
+        	traceback.print_exc()
+        	self.wallet = None
+ 
     def _create_new_wallet_with_blockchain(self):
         """Create new wallet with blockchain integration"""
         try:
