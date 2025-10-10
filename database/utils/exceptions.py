@@ -39,3 +39,9 @@ class ConcurrencyError(DatabaseError):
 class IntegrityError(DatabaseError):
     """Raised when data integrity is compromised"""
     pass
+    
+# Add this to your existing database/utils/exceptions.py file
+
+class DuplicateKeyError(DatabaseError):
+    """Raised when a duplicate key violation occurs"""
+    pass    
