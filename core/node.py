@@ -152,52 +152,69 @@ class RayonixNode:
         			self.wallet = WalletFactory.load_wallet_from_file(str(wallet_file))
         			logger.info("Wallet loaded successfully from file")
         			
+        			# Unlock wallet for backup if needed
+        			if hasattr(self.wallet, 'locked') and self.wallet.locked:
+        				# For new wallets, try empty passphrase or create new one
+        				if not self.wallet.unlock("", timeout=300):
+        					logger.warning("Could not unlock existing wallet, creating new one")
+        					self._create_new_wallet_with_factory(wallet_file, network_type)
+        			
         		except Exception as e:
         			logger.warning(f"Failed to load wallet from {wallet_file}: {e}")
         			logger.info("Creating new wallet...")
         			# Create new wallet if loading fails
-        			self.wallet, mnemonic = WalletFactory.create_new_wallet(
-        			    wallet_type=WalletType.HD,
-        			    network=network_type,
-        			    address_type=AddressType.RAYONIX
-        			)
-        			logger.info("New wallet created successfully")
-        			
-        			# Save the new wallet
-        			if self.wallet.backup(str(wallet_file)):
-        				logger.info(f"New wallet saved to {wallet_file}")
-        				logger.debug(f"New wallet mnemonic: {mnemonic}")
-        			else:
-        				logger.warning("Failed to save new wallet to disk")
+        			self._create_new_wallet_with_factory(wallet_file, network_type)
         	else:
         		# Create new wallet
-        		self.wallet, mnemonic = WalletFactory.create_new_wallet(
-        		    wallet_type=WalletType.HD,
-        		    network=network_type,
-        		    address_type=AddressType.RAYONIX
-        		)
-        		logger.info("New wallet created successfully")
-        		# Save the new wallet
-        		if self.wallet.backup(str(wallet_file)):
-        			logger.info(f"New wallet saved to {wallet_file}")
-        			
-        			logger.debug(f"New wallet mnemonic: {mnemonic}")
-        		else:
-        			logger.warning("Failed to save new wallet to disk")
-        			
+        		self._create_new_wallet_with_factory(wallet_file, network_type)
+        	
         	# Establish blockchain reference
-        	if self.wallet and self.wallet.set_blockchain_reference(self.rayonix_chain):
-        		logger.info("Wallet blockchain integration established successfully")
-        	else:
-        		logger.error("Failed to establish wallet blockchain integration")
-        		self.wallet = None
+        	if self.wallet and hasattr(self.wallet, 'set_blockchain_reference'):
         		
+        		if self.wallet.set_blockchain_reference(self.rayonix_chain):
+        			logger.info("Wallet blockchain integration established successfully")
+        		else:
+        			logger.error("Failed to establish wallet blockchain integration")
+        			self.wallet = None
+        	else:
+        		logger.error("Wallet initialization failed - no valid wallet created")
         except Exception as e:
         	logger.error(f"Wallet initialization failed: {e}")
         	import traceback
         	traceback.print_exc()
         	self.wallet = None
- 
+        	
+    def _create_new_wallet_with_factory(self, wallet_file: Path, network_type: str):
+    	"""Create new wallet using factory pattern"""
+    	try:
+    		from rayonix_wallet.core.wallet_factory import WalletFactory
+    		from rayonix_wallet.core.types import WalletType, AddressType
+    		
+    		self.wallet, mnemonic = WalletFactory.create_new_wallet(
+    		    
+    		    wallet_type=WalletType.HD,
+    		    network=network_type,
+    		    address_type=AddressType.RAYONIX
+    		)
+    		
+    		logger.info("New wallet created successfully")
+    		
+    		# Unlock wallet before backup
+    		if hasattr(self.wallet, 'locked') and self.wallet.locked:
+    			self.wallet.unlock("", timeout=300)
+    			
+    		# Save the new wallet
+    		if self.wallet.backup(str(wallet_file)):
+    			logger.info(f"New wallet saved to {wallet_file}")
+    			logger.info(f"New wallet mnemonic: {mnemonic}")
+    			
+    		else:
+    			logger.warning("Failed to save new wallet to disk")
+    			
+    	except Exception as e:
+    		logger.error(f"Failed to create new wallet: {e}")
+    		
+
     def _create_new_wallet_with_blockchain(self):
         """Create new wallet with blockchain integration"""
         try:
