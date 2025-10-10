@@ -1428,7 +1428,24 @@ class RayonixBlockchain:
     def get_performance_history(self) -> List[NodeMetrics]:
         """Get performance history"""
         return list(self.performance_history)
-
+        
+    def get_block_count(self) -> int:
+    	"""Get current blockchain height"""
+    	try:
+    		if hasattr(self, 'state_manager'):
+    			return self.state_manager.get_current_height()
+    		elif hasattr(self, 'chain_head'):
+    			# Fallback: try to get height from chain head
+    			if self.chain_head:
+    				block_data = self.database.get(self.chain_head.encode())
+    				if block_data:
+    					block = pickle.loads(block_data)
+    					return getattr(block.header, 'height', 0)
+    		return 0
+    	except Exception as e:
+    		logger.error(f"Error getting block count: {e}")
+    		return 0
+  
 class StateRecoveryError(Exception):
     """State recovery failed"""
     pass
