@@ -388,7 +388,7 @@ class AdvancedP2PNetwork:
             from network.config.network_types import MessageType
             
             # Convert string message type to enum
-            message_type_enum = MessageType[message_type.upper()]
+            message_type_enum = getattr(MessageType, message_type.upper())
             
             message = NetworkMessage(
                 message_id=f"{message_type}_{time.time()}",
@@ -409,7 +409,7 @@ class AdvancedP2PNetwork:
             from network.models.network_message import NetworkMessage
             from network.config.network_types import MessageType
             
-            message_type_enum = MessageType[message_type.upper()]
+            message_type_enum = getattr(MessageType, message_type.upper())
             
             message = NetworkMessage(
                 message_id=f"broadcast_{message_type}_{time.time()}",
