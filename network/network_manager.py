@@ -139,15 +139,7 @@ class NetworkManager:
             return {}
         
         try:
-            stats = await self.network.get_stats()
-            return {
-                'total_peers': stats.get('total_peers', 0),
-                'connected_peers': stats.get('connected_peers', 0),
-                'messages_sent': stats.get('messages_sent', 0),
-                'messages_received': stats.get('messages_received', 0),
-                'bytes_sent': stats.get('bytes_sent', 0),
-                'bytes_received': stats.get('bytes_received', 0)
-            }
+            return await self.network.get_stats()
         except Exception as e:
             logger.error(f"Failed to get network stats: {e}")
             return {}

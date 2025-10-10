@@ -232,3 +232,32 @@ class SyncManager:
     def get_sync_status(self) -> Dict:
         """Get current synchronization status"""
         return self.node.state_manager.get_sync_state()
+        
+    def _should_sync(self) -> bool:
+        """Check if synchronization is needed"""
+        # Don't sync if network is disabled
+        if not self.node.get_config_value('network.enabled', True):
+            return False
+        
+        # Don't sync if already syncing
+        if self.syncing:
+            return False
+        
+        # Check if we have network and peers with proper error handling
+        if not self.node.network:
+            return False
+        
+        try:
+            # Use the new method name
+            peers = self.node.network.get_connected_peers()
+            if not peers:
+                return False
+                
+            return True
+            
+        except AttributeError as e:
+            logger.error(f"Network compatibility error: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error checking peers: {e}")
+            return False        
