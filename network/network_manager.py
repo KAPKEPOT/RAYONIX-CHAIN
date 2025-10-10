@@ -17,21 +17,20 @@ class NetworkManager:
     
     async def initialize_network(self) -> bool:
         """Initialize the P2P network"""
-        try:       
+        try:
+            # Extract individual parameters instead of passing a dict
+            network_id = self.node.get_config_value('network.network_id', 1)
+            listen_port = self.node.get_config_value('network.listen_port', 9333)
+            max_connections = self.node.get_config_value('network.max_connections', 50)
             
-            network_config = {
-                'listen_ip': self.node.get_config_value('network.listen_ip', '0.0.0.0'),
-                'listen_port': self.node.get_config_value('network.listen_port', 9333),
-                'max_connections': self.node.get_config_value('network.max_connections', 50),
-                'bootstrap_nodes': self.node.get_config_value('network.bootstrap_nodes', []),
-                'enable_encryption': self.node.get_config_value('network.enable_encryption', True),
-                'enable_compression': self.node.get_config_value('network.enable_compression', True),
-                'connection_timeout': self.node.get_config_value('network.connection_timeout', 30),
-                'message_timeout': self.node.get_config_value('network.message_timeout', 10),
-                'network_id': self.node.get_config_value('network.network_id', 1)
-            }
-            
-            self.network = AdvancedP2PNetwork(network_config)
+            # Create network config object if needed, but pass individual params to constructor
+            self.network = AdvancedP2PNetwork(
+                network_id=network_id,
+                port=listen_port,
+                max_connections=max_connections,
+                node_id=None,  # Let it generate its own
+                config=None    # Don't pass the dict directly
+            )
             
             # Register message handlers
             self._register_message_handlers()
@@ -41,6 +40,8 @@ class NetworkManager:
             
         except Exception as e:
             logger.error(f"Failed to initialize network: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def _register_message_handlers(self):
