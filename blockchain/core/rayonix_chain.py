@@ -1196,6 +1196,41 @@ class RayonixBlockchain:
     	except Exception as e:
     		logger.warning(f"Failed to remove transaction references: {e}")
 
+    
+    @property
+    def mempool(self) -> Dict[str, Any]:
+    	"""Get mempool from transaction manager"""
+    	if hasattr(self, 'transaction_manager') and hasattr(self.transaction_manager, 'mempool'):
+    		return self.transaction_manager.mempool
+    	return {}
+    	
+    def _validate_transaction(self, transaction: Dict) -> bool:
+    	"""Validate transaction using transaction manager"""
+    	try:
+    		if hasattr(self, 'transaction_manager'):
+    			
+    			# Convert dict transaction to Transaction object if needed
+    			from blockchain.models.transaction import Transaction
+    			if isinstance(transaction, dict):
+    				# Convert dict to Transaction object (you'll need to implement this)
+    				tx = Transaction.from_dict(transaction)
+    			else:
+    				tx = transaction
+    			result = self.transaction_manager.validation_manager.validate_transaction(tx)
+    			return result.is_valid
+    			
+    	except Exception as e:
+    		logger.error(f"Transaction validation error: {e}")
+    		return False
+    		
+    def _remove_from_mempool(self, tx_hash: str):
+    	"""Remove transaction from mempool"""
+    	try:
+    		if hasattr(self, 'transaction_manager'):
+    			self.transaction_manager.remove_from_mempool([tx_hash])
+    	except Exception as e:
+    		logger.error(f"Error removing transaction from mempool: {e}")
+    	
     async def _compact_database(self):
         """Compact database"""
         try:
