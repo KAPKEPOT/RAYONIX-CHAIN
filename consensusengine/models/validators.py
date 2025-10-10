@@ -38,6 +38,10 @@ class Validator:
     signed_blocks: int = 0  # Track blocks signed
     delegator_rewards: Dict[str, int] = field(default_factory=dict)  # Track rewards per delegator
     metadata: Dict[str, str] = field(default_factory=dict)  # Additional metadata
+    # New fields for stake management
+    last_stake_change: float = field(default_factory=time.time)  # Track last stake modification
+    unbonding_end_time: Optional[float] = None  # When unbonding period ends
+    min_self_delegation: int = 1000  # Minimum self-delegation requirement
     
     @property
     def total_stake(self) -> int:
@@ -65,6 +69,149 @@ class Validator:
             
         return self.effective_stake > 0
     
+    @property
+    def is_unbonding(self) -> bool:
+        """Check if validator is in unbonding period"""
+        if self.unbonding_end_time and time.time() < self.unbonding_end_time:
+            return True
+        return self.status == ValidatorStatus.UNBONDING
+
+    def can_accept_stakes(self) -> bool:
+        """
+        Check if validator can accept new stakes
+        
+        Returns:
+            bool: True if validator can accept new stakes, False otherwise
+        """
+        try:
+            # Validators can only accept stakes when active or pending
+            if self.status not in [ValidatorStatus.ACTIVE, ValidatorStatus.PENDING]:
+                logger.debug(f"Validator {self.address} cannot accept stakes: status={self.status.name}")
+                return False
+            
+            # Check if validator is jailed
+            if self.jail_until and time.time() < self.jail_until:
+                logger.debug(f"Validator {self.address} cannot accept stakes: currently jailed")
+                return False
+            
+            # Check if validator is in unbonding period
+            if self.is_unbonding:
+                logger.debug(f"Validator {self.address} cannot accept stakes: in unbonding period")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking if validator {self.address} can accept stakes: {e}")
+            return False
+
+    def can_unstake(self, amount: int) -> bool:
+        """
+        Check if validator can unstake the given amount
+        
+        Args:
+            amount: Amount to unstake
+            
+        Returns:
+            bool: True if validator can unstake, False otherwise
+        """
+        try:
+            # Basic validation
+            if amount <= 0:
+                logger.warning(f"Invalid unstake amount: {amount}")
+                return False
+            
+            # Check if validator is jailed
+            if self.status == ValidatorStatus.JAILED:
+                logger.debug(f"Validator {self.address} cannot unstake: currently jailed")
+                return False
+            
+            # Check if validator has sufficient stake
+            if amount > self.staked_amount:
+                logger.warning(f"Validator {self.address} cannot unstake {amount}: only {self.staked_amount} available")
+                return False
+            
+            # Check cooldown period (24 hours between stake changes)
+            current_time = time.time()
+            if current_time - self.last_stake_change < 86400:  # 24 hours
+                logger.debug(f"Validator {self.address} cannot unstake: in cooldown period")
+                return False
+            
+            # Check minimum self-delegation requirement after unstake
+            remaining_stake = self.staked_amount - amount
+            if remaining_stake < self.min_self_delegation and remaining_stake > 0:
+                logger.warning(f"Validator {self.address} cannot unstake: would violate minimum self-delegation")
+                return False
+            
+            # Check if validator is in unbonding period
+            if self.is_unbonding:
+                logger.debug(f"Validator {self.address} cannot unstake: already in unbonding period")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking if validator {self.address} can unstake: {e}")
+            return False
+
+    def can_accept_delegations(self) -> bool:
+        """
+        Check if validator can accept new delegations
+        
+        Returns:
+            bool: True if validator can accept new delegations, False otherwise
+        """
+        try:
+            # Only active validators can accept delegations
+            if self.status != ValidatorStatus.ACTIVE:
+                logger.debug(f"Validator {self.address} cannot accept delegations: status={self.status.name}")
+                return False
+            
+            # Check if validator is jailed
+            if self.jail_until and time.time() < self.jail_until:
+                logger.debug(f"Validator {self.address} cannot accept delegations: currently jailed")
+                return False
+            
+            # Check if validator is in unbonding period
+            if self.is_unbonding:
+                logger.debug(f"Validator {self.address} cannot accept delegations: in unbonding period")
+                return False
+            
+            # Check if validator meets minimum self-delegation
+            if self.staked_amount < self.min_self_delegation:
+                logger.debug(f"Validator {self.address} cannot accept delegations: insufficient self-delegation")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking if validator {self.address} can accept delegations: {e}")
+            return False
+
+    def can_undelegate(self) -> bool:
+        """
+        Check if delegations can be removed from this validator
+        
+        Returns:
+            bool: True if delegations can be removed, False otherwise
+        """
+        try:
+            # Cannot remove delegations from jailed validators
+            if self.status == ValidatorStatus.JAILED:
+                logger.debug(f"Cannot undelegate from validator {self.address}: currently jailed")
+                return False
+            
+            # Check if validator is in unbonding period
+            if self.is_unbonding:
+                logger.debug(f"Cannot undelegate from validator {self.address}: in unbonding period")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking if delegations can be removed from validator {self.address}: {e}")
+            return False
+
     def update_uptime(self, signed: bool, window_size: int = 100) -> None:
         """
         Update validator uptime statistics
@@ -109,6 +256,10 @@ class Validator:
             logger.warning(f"Invalid delegation amount: {amount}")
             return False
         
+        if not self.can_accept_delegations():
+            logger.warning(f"Validator {self.address} cannot accept new delegations")
+            return False
+        
         current_delegation = self.delegators.get(delegator_address, 0)
         self.delegators[delegator_address] = current_delegation + amount
         self.total_delegated += amount
@@ -129,6 +280,10 @@ class Validator:
         """
         if delegator_address not in self.delegators:
             logger.warning(f"No delegation found for {delegator_address}")
+            return False
+        
+        if not self.can_undelegate():
+            logger.warning(f"Cannot remove delegation from validator {self.address}")
             return False
         
         current_delegation = self.delegators[delegator_address]
@@ -160,7 +315,12 @@ class Validator:
             logger.warning(f"Invalid stake amount: {amount}")
             return False
         
+        if not self.can_accept_stakes():
+            logger.warning(f"Validator {self.address} cannot accept new stakes")
+            return False
+        
         self.staked_amount += amount
+        self.last_stake_change = time.time()
         logger.debug(f"Added stake to validator {self.address}: {amount}")
         return True
     
@@ -178,11 +338,19 @@ class Validator:
             logger.warning(f"Invalid unstake amount: {amount}")
             return False
         
-        if amount > self.staked_amount:
-            logger.warning(f"Attempt to remove more than staked: {amount} > {self.staked_amount}")
+        if not self.can_unstake(amount):
+            logger.warning(f"Validator {self.address} cannot unstake {amount}")
             return False
         
         self.staked_amount -= amount
+        self.last_stake_change = time.time()
+        
+        # If stake drops below minimum, mark for unbonding
+        if self.staked_amount < self.min_self_delegation and self.staked_amount > 0:
+            self.status = ValidatorStatus.UNBONDING
+            self.unbonding_end_time = time.time() + 86400 * 21  # 21-day unbonding period
+            logger.warning(f"Validator {self.address} entered unbonding period due to low self-delegation")
+        
         logger.debug(f"Removed stake from validator {self.address}: {amount}")
         return True
     
@@ -250,6 +418,10 @@ class Validator:
             self.total_delegated -= (amount - remaining_slash)
         
         self.slashing_count += 1
+        
+        # Update last stake change time
+        self.last_stake_change = time.time()
+        
         logger.warning(f"Validator {self.address} slashed by {amount}")
         return True
     
@@ -291,13 +463,16 @@ class Validator:
             'missed_blocks': self.missed_blocks,
             'signed_blocks': self.signed_blocks,
             'delegator_rewards': self.delegator_rewards.copy(),
-            'metadata': self.metadata.copy()
+            'metadata': self.metadata.copy(),
+            'last_stake_change': self.last_stake_change,
+            'unbonding_end_time': self.unbonding_end_time,
+            'min_self_delegation': self.min_self_delegation
         }
     
     @classmethod
     def from_dict(cls, data: Dict) -> 'Validator':
         """Deserialize validator from dictionary"""
-        return cls(
+        validator = cls(
             address=data['address'],
             public_key=data['public_key'],
             staked_amount=data['staked_amount'],
@@ -317,6 +492,13 @@ class Validator:
             delegator_rewards=data.get('delegator_rewards', {}),
             metadata=data.get('metadata', {})
         )
+        
+        # Set new fields with defaults if not present
+        validator.last_stake_change = data.get('last_stake_change', time.time())
+        validator.unbonding_end_time = data.get('unbonding_end_time')
+        validator.min_self_delegation = data.get('min_self_delegation', 1000)
+        
+        return validator
     
     def validate(self) -> bool:
         """Validate validator data integrity"""
@@ -336,6 +518,12 @@ class Validator:
             return False
         
         if self.uptime < 0 or self.uptime > 100:
+            return False
+        
+        if self.last_stake_change < 0:
+            return False
+        
+        if self.min_self_delegation < 0:
             return False
         
         return True
