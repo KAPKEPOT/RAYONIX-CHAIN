@@ -605,8 +605,8 @@ class StakingManager:
     			)
     			
     			# Select top validators based on configuration
-    			max_validators = self.config.get('max_validators', 100)
-    			min_stake = self.config.get('min_stake_amount', 1000)
+    			max_validators = getattr(self.config, 'max_validators', 100)
+    			min_stake = getattr(self.config, 'min_stake_amount', 1000)
     			
     			for validator in sorted_validators:
     				# Check if validator meets requirements
