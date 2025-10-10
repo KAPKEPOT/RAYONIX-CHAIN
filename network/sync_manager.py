@@ -170,7 +170,7 @@ class SyncManager:
                 try:
                     response = await self.node.network.send_message(
                         peer['id'], 
-                        'get_block_height', 
+                        'GET_BLOCKS', 
                         {}
                     )
                     if response and 'height' in response:
@@ -203,7 +203,7 @@ class SyncManager:
                 try:
                     response = await self.node.network.send_message(
                         peer['id'],
-                        'get_blocks',
+                        'GET_BLOCKS',
                         {
                             'start_height': start_height,
                             'end_height': end_height

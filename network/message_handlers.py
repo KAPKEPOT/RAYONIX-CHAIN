@@ -2,6 +2,7 @@
 
 import logging
 from typing import Dict, Any
+from network.config.network_types import MessageType  # Add this import
 
 logger = logging.getLogger("rayonix_node.network")
 
@@ -19,19 +20,19 @@ async def handle_block_message(message_data: Dict[str, Any], context: Any) -> bo
             return False
         
         # Check if we already have this block
-        existing_block = context.rayonix_coin.get_block_by_hash(block.get('hash'))
+        existing_block = context.rayonix_chain.get_block_by_hash(block.get('hash'))
         if existing_block:
             logger.debug(f"Already have block {block.get('hash')}")
             return True
         
         # Process the block
-        success = context.rayonix_coin._process_block(block)
+        success = context.rayonix_chain._process_block(block)
         if success:
             logger.info(f"Processed new block {block.get('hash')} from network")
             
             # Update sync state
             context.state_manager.update_sync_state(
-                current_block=context.rayonix_coin.get_block_count()
+                current_block=context.rayonix_chain.get_block_count()
             )
             
             return True

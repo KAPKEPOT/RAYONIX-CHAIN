@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import Dict, List, Optional
 from network.core.p2p_network import AdvancedP2PNetwork
+from network.config.network_types import MessageType  # Add this import
 
 logger = logging.getLogger("rayonix_node.network")
 
@@ -57,11 +58,12 @@ class NetworkManager:
             handle_ping_message
         )
         
-        self.network.register_message_handler('block', handle_block_message)
-        self.network.register_message_handler('transaction', handle_transaction_message)
-        self.network.register_message_handler('peer_list', handle_peer_list_message)
-        self.network.register_message_handler('sync_request', handle_sync_request_message)
-        self.network.register_message_handler('ping', handle_ping_message)
+        # Use MessageType enum values directly
+        self.network.register_message_handler(MessageType.BLOCK, handle_block_message)
+        self.network.register_message_handler(MessageType.TRANSACTION, handle_transaction_message)
+        self.network.register_message_handler(MessageType.PEER_LIST, handle_peer_list_message)
+        self.network.register_message_handler(MessageType.SYNC_REQUEST, handle_sync_request_message)
+        self.network.register_message_handler(MessageType.PING, handle_ping_message)
     
     async def connect_to_bootstrap_nodes(self):
         """Connect to bootstrap nodes"""
