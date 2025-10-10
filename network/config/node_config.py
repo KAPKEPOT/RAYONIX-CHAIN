@@ -5,7 +5,7 @@ from network.config.network_types import NetworkType
 @dataclass
 class NodeConfig:
     """Network node configuration"""
-    network_type: NetworkType = NetworkType.MAINNET
+    network_type: NetworkType = NetworkType.TESTNET
     listen_ip: str = "0.0.0.0"
     listen_port: int = 30303
     public_ip: Optional[str] = None
@@ -28,3 +28,6 @@ class NodeConfig:
     ban_duration: int = 3600  # 1 hour in seconds
     dht_bootstrap_nodes: List[Tuple[str, int]] = field(default_factory=list)
     dns_seeds: List[str] = field(default_factory=list)
+    udp_port: int = 30304
+    websocket_port: int = 30305
+    http_port: int = 30306
