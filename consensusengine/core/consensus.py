@@ -62,7 +62,7 @@ class ProofOfStake:
         self.epoch_state = EpochState(self.config.epoch_blocks)
         
         # Manager instances
-        self.database = AdvancedDatabase(self.config.db_path)
+        self.db_manager = DatabaseManager(self.config.db_path)
         self.timeout_manager = TimeoutManager()
         self.crypto_manager = CryptoManager()
         self.staking_manager = StakingManager(self)
