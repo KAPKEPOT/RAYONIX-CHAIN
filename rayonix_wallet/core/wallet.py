@@ -282,6 +282,9 @@ class RayonixWallet:
             logger.error(f"Failed to create HD wallet: {e}")
             raise
     
+    def create_new_wallet(self) -> str:
+    	return self.initialize_new_wallet()
+    	
     def _generate_mnemonic(self) -> str:
         """Generate BIP39 mnemonic phrase"""
         try:
