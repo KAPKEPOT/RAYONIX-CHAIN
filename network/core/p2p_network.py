@@ -1,5 +1,3 @@
-[file name]: p2p_network.py
-[file content begin]
 import asyncio
 import logging
 import ssl
