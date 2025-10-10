@@ -5,7 +5,9 @@ from typing import Callable, Any, Dict, List
 from network.interfaces.processor_interface import IMessageProcessor
 from network.exceptions import MessageError
 from network.models.network_message import NetworkMessage
-from network.config.network_types import MessageType
+from network.config.network_types import MessageType, ProtocolType, ConnectionState
+from network.models.peer_info import PeerInfo
+
 
 logger = logging.getLogger("MessageProcessor")
 
