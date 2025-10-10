@@ -1,9 +1,12 @@
 import threading
 import time
+import logging
 from typing import List, Dict, Optional
 from rayonix_wallet.core.types import Transaction, AddressInfo
 from rayonix_wallet.core.exceptions import SyncError
 from database.core.database import AdvancedDatabase
+
+logger = logging.getLogger(__name__)
 
 class WalletSynchronizer:
     """Blockchain synchronization service"""
@@ -47,8 +50,9 @@ class WalletSynchronizer:
     def synchronize(self, force_full_sync: bool = False) -> bool:
         """Synchronize wallet with blockchain"""
         try:
-            if not hasattr(self.wallet, 'blockchain_interface'):
-                raise SyncError("Blockchain interface not available")
+            if not hasattr(self.wallet, 'blockchain_interface') or self.wallet.blockchain_interface is None:
+                logger.warning("Blockchain interface not available for synchronization")
+                return False
             
             # Get current blockchain height
             current_height = self.wallet.blockchain_interface.get_block_height()
