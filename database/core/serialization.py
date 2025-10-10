@@ -37,6 +37,53 @@ class SerializationFormat(Enum):
     PROTOBUF = auto()
     AVRO = auto()
     PICKLE = auto()
+    
+class JSONSerializer:
+    """JSON serialization with extended data type support"""
+    
+    def __init__(self, encoding='utf-8', ensure_ascii=False, indent=None):
+        self.encoding = encoding
+        self.ensure_ascii = ensure_ascii
+        self.indent = indent
+    
+    def serialize(self, value: Any) -> bytes:
+        """Serialize value to JSON bytes"""
+        try:
+            return json.dumps(
+                value, 
+                ensure_ascii=self.ensure_ascii, 
+                indent=self.indent,
+                default=self._default_encoder,
+                separators=(',', ':') if not self.indent else None
+            ).encode(self.encoding)
+        except (TypeError, ValueError, OverflowError) as e:
+            logger.error(f"JSON serialization error for value: {type(value)}")
+            raise SerializationError(f"JSON serialization failed: {e}")
+    
+    def deserialize(self, data: bytes) -> Any:
+        """Deserialize JSON bytes to value"""
+        try:
+            return json.loads(data.decode(self.encoding), parse_float=Decimal)
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
+            logger.error(f"JSON deserialization error for data: {data[:100]}")
+            raise SerializationError(f"JSON deserialization failed: {e}")
+    
+    def _default_encoder(self, obj):
+        """Handle non-serializable objects"""
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        elif isinstance(obj, Decimal):
+            return str(obj)
+        elif isinstance(obj, uuid.UUID):
+            return str(obj)
+        elif isinstance(obj, bytes):
+            return obj.hex()
+        elif isinstance(obj, set):
+            return list(obj)
+        elif hasattr(obj, '__dict__'):
+            return {k: v for k, v in obj.__dict__.items() if not k.startswith('_')}
+        else:
+            return str(obj)    
 
 class JSONSerializer(JSONSerializer):
     """Enhanced JSON serializer with better error handling and type support"""
