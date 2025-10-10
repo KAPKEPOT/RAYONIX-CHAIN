@@ -293,4 +293,3 @@ class AdvancedP2PNetwork:
                     await self.message_processor.send_message(connection_id, message)
                 except Exception as e:
                     logger.debug(f"Failed to broadcast to {connection_id}: {e}")
-[file content end]
