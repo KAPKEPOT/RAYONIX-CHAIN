@@ -130,7 +130,13 @@ class AdvancedP2PNetwork:
             # Start protocol handlers
             await self.tcp_handler.start_server()
             await self.udp_handler.start_server()
-            await self.websocket_handler.start_server()
+            
+            # Only start WebSocket if port is different from TCP/UDP
+            if self.config.websocket_port != self.config.listen_port:
+            	await self.websocket_handler.start_server()
+            else:
+            	logger.warning("WebSocket port conflicts with TCP port, skipping WebSocket")
+            #await self.websocket_handler.start_server()
             await self.http_handler.start_server()
             
             # Start core components
