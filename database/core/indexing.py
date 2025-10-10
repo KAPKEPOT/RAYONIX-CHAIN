@@ -244,9 +244,9 @@ class FunctionalBTreeIndex:
                     if not self.sparse:
                         return []  # Skip if sparse and field is missing
                     else:
-                        continue
-                field_values.append(field_value)
-            
+                        field_value = "__NULL__"
+            field_values.append(field_value)
+                
             return field_values if not self.config.compound else [tuple(field_values)]
         
         # Handle non-dict objects
@@ -254,13 +254,21 @@ class FunctionalBTreeIndex:
             field_values = []
             for field in self.config.fields:
                 field_value = getattr(value, field, None)
-                if field_value is None and not self.sparse:
-                    return []
+                if field_value is None:
+                    if not self.sparse:
+                    	return []
+                    else:
+                    	field_value = "__NULL__"
                 field_values.append(field_value)
+                
             return field_values if not self.config.compound else [tuple(field_values)]
-        
+            
+        # Handle case where value is not a dict/object but we need to index it
+        elif self.config.fields and len(self.config.fields) == 1:
+        	return [value]
         return []
-    
+
+
     def _create_index_key(self, index_value: Any, original_key: Optional[bytes] = None) -> bytes:
         """Create index key with proper encoding"""
         # Convert value to bytes with type prefix for proper ordering

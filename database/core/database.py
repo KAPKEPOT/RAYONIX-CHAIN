@@ -155,6 +155,7 @@ class AdvancedDatabase:
         try:
             if self.config.compression == CompressionType.ZLIB:
             	try:
+            		from database.core.compression import ZlibCompression
             		self.compression = ZlibCompression(self.config.compression_level)
             		logger.info("Zlib compression initialized successfully")
             	except CompressionError as e:
@@ -164,6 +165,8 @@ class AdvancedDatabase:
             		
             elif self.config.compression == CompressionType.LZ4:
             	try:
+            		import lz4.frame
+            		from database.core.compression import LZ4Compression
             		self.compression = LZ4Compression()
             		logger.info("LZ4 compression initialized successfully")
             	except (CompressionError, ImportError) as e:
@@ -173,6 +176,7 @@ class AdvancedDatabase:
             		
             elif self.config.compression == CompressionType.SNAPPY:
             	try:
+            		from database.core.compression import SnappyCompression
             		self.compression = SnappyCompression()
             		logger.info("Snappy compression initialized successfully")
             	except (CompressionError, ImportError) as e:
@@ -182,6 +186,7 @@ class AdvancedDatabase:
             		
             elif self.config.compression == CompressionType.ZSTD:
             	try:
+            		from database.core.compression import ZstdCompression
             		self.compression = ZstdCompression(self.config.compression_level)
             		logger.info("Zstd compression initialized successfully")
             	except (CompressionError, ImportError) as e:
