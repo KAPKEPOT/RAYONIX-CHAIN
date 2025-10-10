@@ -1,3 +1,5 @@
+[file name]: p2p_network.py
+[file content begin]
 import asyncio
 import logging
 import ssl
@@ -27,17 +29,36 @@ class AdvancedP2PNetwork:
     """Main P2P network class"""
     
     def __init__(self, network_id: int = 1, port: int = 30303, max_connections: int = 50, node_id: str = None, config: Optional[NodeConfig] = None):
-    	# Use provided parameters or create config from them
+        # Use provided parameters or create config from them
         if config is None:
-        	from network.config.node_config import NodeConfig
-        	config = NodeConfig(
-        	    listen_port=port,
-        	    max_connections=max_connections,
-        	    
-        	)    	
-  	
-        self.config = config or NodeConfig()
-        self.node_id = self._generate_node_id()
+            config = NodeConfig(
+                network_type=NetworkType.TESTNET,
+                listen_port=port,
+                max_connections=max_connections,
+                listen_ip="0.0.0.0",
+                public_ip=None,
+                public_port=None,
+                max_peers=1000,
+                connection_timeout=30,
+                message_timeout=10,
+                ping_interval=60,
+                bootstrap_nodes=[],
+                enable_nat_traversal=True,
+                enable_encryption=False,  # Disable for initial testing
+                enable_compression=True,
+                enable_dht=True,
+                enable_gossip=True,
+                enable_syncing=True,
+                max_message_size=10 * 1024 * 1024,  # 10MB
+                rate_limit_per_peer=1000,
+                ban_threshold=-100,
+                ban_duration=3600,
+                dht_bootstrap_nodes=[],
+                dns_seeds=[]
+            )
+        
+        self.config = config
+        self.node_id = node_id or self._generate_node_id()
         self.magic = self._get_magic_number(network_id)  # Network magic number
         
         # Core components
@@ -59,7 +80,7 @@ class AdvancedP2PNetwork:
         self.http_handler = HTTPHandler(self, self.config, self.ssl_context)
         self.udp_protocol = UDPProtocol(self.udp_handler)
         
-        # State
+        # State - Initialize with empty dicts using string keys
         self.is_running = False
         self.start_time = 0
         self.peers: Dict[str, PeerInfo] = {}
@@ -71,13 +92,13 @@ class AdvancedP2PNetwork:
         self.metrics_task = None
         
     def _get_magic_number(self, network_id: int) -> bytes:
-    	"""Get magic number based on network ID"""
-    	magic_numbers = {
-    	    1: b'RAYX',  # Mainnet
-    	    2: b'RAYT',  # Testnet
-    	    3: b'RAYD',  # Devnet
-    	}
-    	return magic_numbers.get(network_id, b'RAYX')
+        """Get magic number based on network ID"""
+        magic_numbers = {
+            1: b'RAYX',  # Mainnet
+            2: b'RAYT',  # Testnet
+            3: b'RAYD',  # Devnet
+        }
+        return magic_numbers.get(network_id, b'RAYX')
     
     def _generate_node_id(self) -> str:
         """Generate unique node ID"""
@@ -274,3 +295,4 @@ class AdvancedP2PNetwork:
                     await self.message_processor.send_message(connection_id, message)
                 except Exception as e:
                     logger.debug(f"Failed to broadcast to {connection_id}: {e}")
+[file content end]
