@@ -582,9 +582,188 @@ class StakingManager:
                                       len(self.consensus_engine.epoch_state.pending_delegations) + \
                                       len(self.consensus_engine.epoch_state.pending_undelegations)
                 return results
-    
-    # ... (rest of the methods remain similar but with enhanced error handling and logging)
 
+    def update_validator_set(self) -> Dict[str, Any]:
+    	"""Update the active validator set based on current stakes and performance"""
+    	with self.lock:
+    		try:
+    			results = {
+    			    'validators_added': 0,
+    			    'validators_removed': 0,
+    			    'active_validators': 0,
+    			    'total_voting_power': 0
+    			}
+    			
+    			# Clear current active validators
+    			self.consensus_engine.active_validators.clear()
+    			
+    			# Sort validators by effective stake (descending)
+    			sorted_validators = sorted(
+    			    self.consensus_engine.validators.values(),
+    			    key=lambda v: v.effective_stake,
+    			    reverse=True
+    			)
+    			
+    			# Select top validators based on configuration
+    			max_validators = self.config.get('max_validators', 100)
+    			min_stake = self.config.get('min_stake_amount', 1000)
+    			
+    			for validator in sorted_validators:
+    				# Check if validator meets requirements
+    				if (validator.is_active and validator.effective_stake >= min_stake and len(self.consensus_engine.active_validators) < max_validators):
+    					self.consensus_engine.active_validators.append(validator)
+    					results['validators_added'] += 1
+    					# Calculate voting power
+    					validator.calculate_voting_power(self.consensus_engine.total_stake)
+    					results['total_voting_power'] += validator.voting_power
+    					
+    			results['active_validators'] = len(self.consensus_engine.active_validators)
+    			
+    			# Update total stake in consensus engine
+    			self._update_total_stake()
+    			logger.info(f"Validator set updated: {results['active_validators']} active validators, " f"total voting power: {results['total_voting_power']}")
+    			return results
+    		
+    		except Exception as e:
+    			logger.error(f"Error updating validator set: {e}")
+    			
+    			return {
+    			    'validators_added': 0,
+    			    'validators_removed': 0,
+    			    'active_validators': 0,
+    			    'total_voting_power': 0,
+    			    'error': str(e)
+    			}
+    			
+    def _update_total_stake(self):
+    	"""Update total stake in the consensus engine"""
+    	try:
+    		total_stake = sum(validator.total_stake for validator in self.consensus_engine.validators.values())
+    		self.consensus_engine.total_stake = total_stake
+    		
+    		# Also update stakes dictionary for backward compatibility
+    		self.consensus_engine.stakes.clear()
+    		for validator in self.consensus_engine.validators.values():
+    			self.consensus_engine.stakes[validator.address] = validator.total_stake
+    		
+    	except Exception as e:
+    		logger.error(f"Error updating total stake: {e}")
+    		
+    def get_total_stake(self) -> int:
+    	"""Get total stake in the system"""
+    	with self.lock:
+    		return self.consensus_engine.total_stake
+    		
+    def select_proposer(self, height: int, round: int) -> Optional[Any]:
+    	"""Select proposer for the given height and round"""
+    	with self.lock:
+    		try:
+    			if not self.consensus_engine.active_validators:
+    				return None
+    				
+    			# Use deterministic algorithm based on height and round
+    			total_voting_power = sum(v.voting_power for v in self.consensus_engine.active_validators)
+    			if total_voting_power == 0:
+    				return None
+    			
+    			# Create a deterministic seed
+    			seed = f"{height}_{round}_{total_voting_power}"
+    			seed_hash = hashlib.sha256(seed.encode()).hexdigest()
+    			seed_int = int(seed_hash[:16], 16)
+    			
+    			# Weighted random selection based on voting power
+    			target = seed_int % total_voting_power
+    			current_sum = 0
+    			
+    			for validator in self.consensus_engine.active_validators:
+    				current_sum += validator.voting_power
+    				if current_sum > target:
+    					return validator
+    					
+    			# Fallback to first validator
+    			return self.consensus_engine.active_validators[0] if self.consensus_engine.active_validators else None
+    		
+    		except Exception as e:
+    			logger.error(f"Error selecting proposer: {e}")
+    			
+    def distribute_epoch_rewards(self, reward_pool: int) -> Dict[str, Any]:
+    	"""Distribute epoch rewards to validators and delegators"""
+    	with self.lock:
+    		try:
+    			results = {
+    			    'total_distributed': 0,
+    			    'validators_rewarded': 0,
+    			    'delegators_rewarded': 0,
+    			    'foundation_fee': 0
+    			}
+    			
+    			if reward_pool <= 0 or not self.consensus_engine.active_validators:
+    				return results
+    				
+    			# Calculate foundation fee (5%)
+    			foundation_fee = reward_pool // 20
+    			net_rewards = reward_pool - foundation_fee
+    			results['foundation_fee'] = foundation_fee
+    			total_voting_power = sum(v.voting_power for v in self.consensus_engine.active_validators)
+    			
+    			if total_voting_power == 0:
+    				return results
+    				
+    			# Distribute rewards proportionally to voting power
+    			for validator in self.consensus_engine.active_validators:
+    				if validator.voting_power > 0:
+    					# Calculate validator's share
+    					validator_share = (net_rewards * validator.voting_power) // total_voting_power
+    					
+    					if validator_share > 0:
+    						# Apply commission
+    						commission = (validator_share * validator.commission_rate) // 1
+    						validator_reward = validator_share - commission
+    						delegator_rewards = validator_share - validator_reward
+    						
+    						# Add to validator's total rewards
+    						validator.total_rewards += validator_reward
+    						results['total_distributed'] += validator_reward
+    						results['validators_rewarded'] += 1
+    						
+    						# Distribute to delegators if any
+    						if delegator_rewards > 0 and validator.total_delegated > 0:
+    							self._distribute_delegator_rewards(validator, delegator_rewards)
+    							results['delegators_rewarded'] += len(validator.delegators)
+    							results['total_distributed'] += delegator_rewards
+    			
+    			logger.info(f"Epoch rewards distributed: {results}")
+    			return results
+    			
+    		except Exception as e:
+    			logger.error(f"Error distributing epoch rewards: {e}")
+    			return {
+    			    'total_distributed': 0,
+    			    'validators_rewarded': 0,
+    			    'delegators_rewarded': 0,
+    			    'foundation_fee': 0,
+    			    'error': str(e)
+    			}
+    			
+    def _distribute_delegator_rewards(self, validator: Any, total_delegator_rewards: int):
+    	"""Distribute rewards to delegators proportionally"""
+    	try:
+    		for delegator_address, delegation_amount in validator.delegators.items():
+    			if delegation_amount > 0:
+    				# Calculate delegator's share
+    				delegator_share = (total_delegator_rewards * delegation_amount) // validator.total_delegated
+    				if delegator_share > 0:
+    					# Update delegator rewards tracking
+    					if delegator_address not in validator.delegator_rewards:
+    						validator.delegator_rewards[delegator_address] = 0
+    					
+    					validator.delegator_rewards[delegator_address] += delegator_share
+    				
+    		logger.debug(f"Distributed {total_delegator_rewards} rewards to {len(validator.delegators)} delegators")
+    		
+    	except Exception as e:
+    		logger.error(f"Error distributing delegator rewards: {e}")
+ 
     def get_operation_status(self, operation_id: str) -> Optional[Dict[str, Any]]:
         """Get the status of a specific staking operation"""
         with self.lock:
