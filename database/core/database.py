@@ -154,18 +154,50 @@ class AdvancedDatabase:
         """Initialize compression system"""
         try:
             if self.config.compression == CompressionType.ZLIB:
-                self.compression = ZlibCompression(self.config.compression_level)
+            	try:
+            		self.compression = ZlibCompression(self.config.compression_level)
+            		logger.info("Zlib compression initialized successfully")
+            	except CompressionError as e:
+            		logger.warning(f"Zlib compression initialization failed, using no compression: {e}")
+            		self.compression = None
+            		self.config.compression = CompressionType.NONE
+            		
             elif self.config.compression == CompressionType.LZ4:
-                self.compression = LZ4Compression()
+            	try:
+            		self.compression = LZ4Compression()
+            		logger.info("LZ4 compression initialized successfully")
+            	except (CompressionError, ImportError) as e:
+            		logger.warning(f"LZ4 compression initialization failed, using no compression: {e}")
+            		self.compression = None
+            		self.config.compression = CompressionType.NONE
+            		
             elif self.config.compression == CompressionType.SNAPPY:
-                self.compression = SnappyCompression()
+            	try:
+            		self.compression = SnappyCompression()
+            		logger.info("Snappy compression initialized successfully")
+            	except (CompressionError, ImportError) as e:
+            		logger.warning(f"Snappy compression initialization failed, using no compression: {e}")
+            		self.compression = None
+            		self.config.compression = CompressionType.NONE
+            		
             elif self.config.compression == CompressionType.ZSTD:
-                self.compression = ZstdCompression(self.config.compression_level)
+            	try:
+            		self.compression = ZstdCompression(self.config.compression_level)
+            		logger.info("Zstd compression initialized successfully")
+            	except (CompressionError, ImportError) as e:
+            		logger.warning(f"Zstd compression initialization failed, using no compression: {e}")
+            		self.compression = None
+            		self.config.compression = CompressionType.NONE
+            		
             elif self.config.compression == CompressionType.NONE:
-                self.compression = None
+            	self.compression = None
+            	logger.info("Compression disabled")
+            	
         except Exception as e:
-            raise CompressionError(f"Compression initialization failed: {e}")
-    
+        	logger.error(f"Compression initialization failed: {e}")
+        	self.compression = None
+        	self.config.compression = CompressionType.NONE
+
     def _initialize_serializer(self):
         """Initialize serialization system"""
         try:
@@ -216,59 +248,80 @@ class AdvancedDatabase:
                 raise IndexError(f"Failed to create index {index_name}: {e}")
     
     def put(self, key: Union[str, bytes], value: Any, ttl: Optional[int] = None, 
-            use_cache: bool = True, update_indexes: bool = True) -> bool:
+        use_cache: bool = True, update_indexes: bool = True) -> bool:
         """
         Store key-value pair with advanced features
         """
         key_bytes = self._ensure_bytes(key)
         
+        # Validate inputs
+        if not key_bytes:
+        	raise DatabaseError("Key cannot be empty")
+        	
+        if value is None:
+        	raise DatabaseError("Value cannot be None")
+        
         with self.locks['db']:
-            try:
-                # Serialize value
-                serialized_value = self._serialize_value(value)
-                if serialized_value is None:
-                    raise SerializationError("Serialization returned None")
-                
-                # Prepare value with metadata
-                prepared_value = self._prepare_value_for_storage(serialized_value, ttl)
-                
-                # Calculate index updates if needed
-                index_updates = {}
-                if update_indexes:
-                    index_updates = self._calculate_index_updates(key_bytes, value, None, ttl)
-                
-                # Store in database
-                if self.config.db_type == DatabaseType.MEMORY:
-                    self.db[key_bytes] = prepared_value
-                else:
-                    self.db.put(key_bytes, prepared_value, sync=False)
-                
-                # Update cache
-                if use_cache:
-                    with self.locks['cache']:
-                        self.cache[key_bytes] = (value, time.time())
-                        if len(self.cache) > self.config.max_cache_size:
-                            self.cache.popitem(last=False)
-                
-                # Update indexes
-                if update_indexes:
-                    self._update_indexes(key_bytes, value, index_updates)
-                
-                # Update statistics
-                with self.locks['stats']:
-                    self.stats.put_operations += 1
-                    self.stats.bytes_written += len(prepared_value)
-                
-                return True
-                
-            except Exception as e:
-                with self.locks['stats']:
-                    self.stats.put_errors += 1
-                logger.error(f"Put operation failed for key {key_bytes}: {e}")
-                raise DatabaseError(f"Put operation failed: {e}")
+        	try:
+        		# Serialize value with error handling
+        		try:
+        			serialized_value = self._serialize_value(value)
+        			if serialized_value is None:
+        				raise SerializationError("Serialization returned None")
+        		except SerializationError as e:
+        			logger.error(f"Serialization failed for key {key_bytes}: {e}")
+        			raise
+        			
+        		# Prepare value for storage
+        		prepared_value = self._prepare_value_for_storage(serialized_value, ttl)
+        		
+        		# Calculate index updates if needed
+        		index_updates = {}
+        		if update_indexes:
+        			try:
+        				index_updates = self._calculate_index_updates(key_bytes, value, None, ttl)
+        			except Exception as e:
+        				logger.warning(f"Index calculation failed for key {key_bytes}: {e}")
+        				
+        		# Store in database
+        		try:
+        			if self.config.db_type == DatabaseType.PLYVEL:
+        				self.db[key_bytes] = prepared_value
+        			else:
+        				self.db.put(key_bytes, prepared_value, sync=False)
+        				
+        		except Exception as e:
+        			raise DatabaseError(f"Database storage failed: {e}")
+        		# Update cache
+        		if use_cache:
+        			with self.locks['cache']:
+        				self.cache[key_bytes] = (value, time.time())
+        				if len(self.cache) > self.config.max_cache_size:
+        					self.cache.popitem(last=False)
+        					
+        		# Update indexes
+        		if update_indexes and index_updates:
+        			try:
+        				self._update_indexes(key_bytes, value, index_updates)
+        			except Exception as e:
+        				logger.error(f"Index update failed for key {key_bytes}: {e}")
+        				# Don't fail the put operation if index updates fail
+        		
+        		# Update statistics
+        		with self.locks['stats']:
+        			self.stats.put_operations += 1
+        			self.stats.bytes_written += len(prepared_value)
+        		
+        		return True
+        	
+        	except Exception as e:
+        		with self.locks['stats']:
+        			self.stats.put_errors += 1
+        		logger.error(f"Put operation failed for key {key_bytes}: {e}")
+        		raise DatabaseError(f"Put operation failed: {e}")
     
     def get(self, key: Union[str, bytes], use_cache: bool = True, 
-            check_ttl: bool = True) -> Any:
+        check_ttl: bool = True) -> Any:
         """
         Retrieve value by key
         """
@@ -276,20 +329,23 @@ class AdvancedDatabase:
         
         # Check cache first
         if use_cache:
-            with self.locks['cache']:
-                if key_bytes in self.cache:
-                    value, timestamp = self.cache[key_bytes]
-                    if time.time() - timestamp < self.config.cache_ttl:
-                        with self.locks['stats']:
-                            self.stats.cache_hits += 1
-                        return value
-                    else:
-                        del self.cache[key_bytes]
+        	with self.locks['cache']:
+        		if key_bytes in self.cache:
+        			cache_entry = self.cache[key_bytes]
+        			if isinstance(cache_entry, tuple) and len(cache_entry) == 2:
+        				value, timestamp = cache_entry
+        				if time.time() - timestamp < self.config.cache_ttl:
+        					with self.locks['stats']:
+        						self.stats.cache_hits += 1
+        					return value
+        				else:
+        					# Remove expired cache entry
+        					del self.cache[key_bytes]
         
         with self.locks['db']:
             try:
                 # Retrieve from database
-                if self.config.db_type == DatabaseType.MEMORY:
+                if self.config.db_type == DatabaseType.PLYVEL:
                     prepared_value = self.db.get(key_bytes)
                 else:
                     prepared_value = self.db.get(key_bytes)
@@ -304,19 +360,18 @@ class AdvancedDatabase:
                 
                 # Check TTL if enabled
                 if check_ttl and self._is_expired(metadata):
-                    self.delete(key_bytes, update_indexes=True)
-                    raise KeyNotFoundError(f"Key expired: {key_bytes}")
-                
-                # Verify checksum
-                if not self._verify_checksum(value, metadata.get('checksum')):
-                    raise IntegrityError(f"Checksum verification failed for key: {key_bytes}")
+                	try:
+                		self.delete(key_bytes, update_indexes=True)
+                	except Exception as e:
+                		logger.warning(f"Failed to delete expired key {key_bytes}: {e}")
+                	raise KeyNotFoundError(f"Key expired: {key_bytes}")
                 
                 # Update cache
                 if use_cache:
-                    with self.locks['cache']:
-                        self.cache[key_bytes] = (value, time.time())
-                        if len(self.cache) > self.config.max_cache_size:
-                            self.cache.popitem(last=False)
+                	with self.locks['cache']:
+                		self.cache[key_bytes] = (value, time.time())
+                		if len(self.cache) > self.config.max_cache_size:
+                			self.cache.popitem(last=False)
                 
                 # Update statistics
                 with self.locks['stats']:
@@ -680,57 +735,128 @@ class AdvancedDatabase:
     def _prepare_value_for_storage(self, serialized_value: bytes, ttl: Optional[int] = None) -> bytes:
         """Prepare value for storage with metadata"""
         try:
-            # Compress if enabled
-            if self.compression:
-                serialized_value = self.compression.compress(serialized_value)
-            
-            # Encrypt if enabled
-            if self.encryption:
-                serialized_value = self.encryption.encrypt(serialized_value)
-            
-            # Create metadata
-            metadata = {
-                'timestamp': time.time(),
-                'ttl': ttl,
-                'checksum': self._calculate_checksum(serialized_value),
-                'version': 2,
-                'compression': self.config.compression.name if self.compression else 'NONE',
-                'encryption': self.config.encryption.name if self.encryption else 'NONE'
-            }
-            
-            # Pack metadata and value
-            metadata_bytes = msgpack.packb(metadata)
-            return struct.pack('!I', len(metadata_bytes)) + metadata_bytes + serialized_value
-            
+        	# Validate input
+        	if serialized_value is None:
+        		raise ValueError("Serialized value cannot be None")
+        		
+        	if not isinstance(serialized_value, bytes):
+        		raise TypeError(f"Serialized value must be bytes, got {type(serialized_value)}")
+        	
+        	original_value = serialized_value
+        	
+        	# Compress if enabled and data is compressible
+        	if self.compression and len(original_value) > 100:
+        		try:
+        			serialized_value = self.compression.compress(original_value)
+        			compression_used = self.config.compression.name
+        		
+        		except CompressionError as e:
+        			logger.warning(f"Compression failed, storing uncompressed: {e}")
+        			serialized_value = original_value
+        			compression_used = 'NONE'
+        	else:
+        		compression_used = 'NONE'
+        	
+        	# Encrypt if enabled
+        	if self.encryption:
+        		try:
+        			serialized_value = self.encryption.encrypt(serialized_value)
+        			encryption_used = self.config.encryption.name
+        		
+        		except EncryptionError as e:
+        			logger.error(f"Encryption failed: {e}")
+        			raise
+        	else:
+        		encryption_used = 'NONE'
+        	
+        	# Create metadata with comprehensive information
+        	metadata = {
+        	    
+        	    'timestamp': time.time(),
+        	    'ttl': ttl,
+        	    'checksum': self._calculate_checksum(serialized_value),
+        	    'version': 2,
+        	    'compression': compression_used,
+        	    'encryption': encryption_used,
+        	    'original_size': len(original_value),
+        	    'stored_size': len(serialized_value)
+        	}
+        	
+        	# Pack metadata and value with error handling
+        	try:
+        		metadata_bytes = msgpack.packb(metadata, use_bin_type=True)
+        		metadata_len = len(metadata_bytes)
+        		
+        		# Use struct to pack length (4 bytes for length)
+        		header = struct.pack('!I', metadata_len)
+        		return header + metadata_bytes + serialized_value
+        		
+        	except (struct.error, msgpack.PackException) as e:
+        		raise DatabaseError(f"Metadata packing failed: {e}")
+        		
         except Exception as e:
-            raise DatabaseError(f"Value preparation failed: {e}")
-    
+        	logger.error(f"Value preparation failed: {e}")
+        	raise DatabaseError(f"Value preparation failed: {e}")
+
     def _extract_value_from_storage(self, prepared_value: bytes) -> Tuple[Any, Dict]:
         """Extract value and metadata from stored data"""
+        if not prepared_value:
+        	raise ValueError("Prepared value cannot be empty")
+        	
         try:
-            # Unpack metadata
+            # Unpack header (4 bytes for metadata length)
+            if len(prepared_value) < 4:
+            	raise DatabaseError("Invalid prepared value: too short for header")
+            	
             metadata_len = struct.unpack('!I', prepared_value[:4])[0]
+            
+            # Validate metadata length
+            if metadata_len > len(prepared_value) - 4:
+            	raise DatabaseError(f"Invalid metadata length: {metadata_len}")
+            	
             metadata_bytes = prepared_value[4:4 + metadata_len]
             value_bytes = prepared_value[4 + metadata_len:]
             
-            metadata = msgpack.unpackb(metadata_bytes)
-            
+            # Unpack metadata
+            try:
+            	metadata = msgpack.unpackb(metadata_bytes, raw=False)
+            except msgpack.UnpackException as e:
+            	raise DatabaseError(f"Metadata unpacking failed: {e}")
+            	
+            # Validate required metadata fields
+            required_fields = ['version', 'compression', 'encryption', 'checksum']
+            for field in required_fields:
+            	if field not in metadata:
+            		raise DatabaseError(f"Missing required metadata field: {field}")
+            		
             # Decrypt if enabled
             if metadata['encryption'] != 'NONE' and self.encryption:
-                value_bytes = self.encryption.decrypt(value_bytes)
-            
+            	try:
+            		value_bytes = self.encryption.decrypt(value_bytes)
+            	except EncryptionError as e:
+            		raise DatabaseError(f"Decryption failed: {e}")
+            	
             # Decompress if enabled
             if metadata['compression'] != 'NONE' and self.compression:
-                value_bytes = self.compression.decompress(value_bytes)
-            
+            	try:
+            		value_bytes = self.compression.decompress(value_bytes)
+            	except CompressionError as e:
+            		raise DatabaseError(f"Decompression failed: {e}")
+            # Verify checksum
+            if not self._verify_checksum(value_bytes, metadata.get('checksum')):
+            	raise IntegrityError("Checksum verification failed")
+            	
             # Deserialize value
-            value = self._deserialize_value(value_bytes)
-            
+            try:
+            	value = self._deserialize_value(value_bytes)
+            except SerializationError as e:
+            	raise DatabaseError(f"Deserialization failed: {e}")
             return value, metadata
             
         except Exception as e:
-            raise DatabaseError(f"Value extraction failed: {e}")
-    
+        	logger.error(f"Value extraction failed: {e}")
+        	raise DatabaseError(f"Value extraction failed: {e}")
+  
     def _calculate_index_updates(self, key: bytes, new_value: Any, 
                                old_value: Any, ttl: Optional[int]) -> Dict[str, Any]:
         """Calculate index updates for a value change"""

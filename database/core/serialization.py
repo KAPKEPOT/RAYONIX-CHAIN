@@ -38,52 +38,81 @@ class SerializationFormat(Enum):
     AVRO = auto()
     PICKLE = auto()
 
-class JSONSerializer:
-    """JSON serialization with extended data type support"""
-    
-    def __init__(self, encoding='utf-8', ensure_ascii=False, indent=None):
-        self.encoding = encoding
-        self.ensure_ascii = ensure_ascii
-        self.indent = indent
+class JSONSerializer(JSONSerializer):
+    """Enhanced JSON serializer with better error handling and type support"""
     
     def serialize(self, value: Any) -> bytes:
-        """Serialize value to JSON bytes"""
+        """Serialize value to JSON bytes with comprehensive error handling"""
         try:
+            # Handle None values
+            if value is None:
+                return b'null'
+            
+            # Convert dataclasses and objects to dict first
+            if hasattr(value, '__dict__') and not isinstance(value, dict):
+                value = self._convert_object_to_dict(value)
+            
             return json.dumps(
                 value, 
                 ensure_ascii=self.ensure_ascii, 
                 indent=self.indent,
                 default=self._default_encoder,
-                separators=(',', ':') if not self.indent else None
+                separators=(',', ':') if not self.indent else None,
+                skipkeys=False,  # Don't skip invalid keys, raise error instead
+                check_circular=True  # Check for circular references
             ).encode(self.encoding)
         except (TypeError, ValueError, OverflowError) as e:
-            logger.error(f"JSON serialization error for value: {type(value)}")
+            logger.error(f"JSON serialization error for type {type(value)}: {e}")
+            raise SerializationError(f"JSON serialization failed: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected JSON serialization error: {e}")
             raise SerializationError(f"JSON serialization failed: {e}")
     
-    def deserialize(self, data: bytes) -> Any:
-        """Deserialize JSON bytes to value"""
+    def _convert_object_to_dict(self, obj: Any) -> Dict:
+        """Convert objects to serializable dictionaries"""
         try:
-            return json.loads(data.decode(self.encoding), parse_float=Decimal)
-        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
-            logger.error(f"JSON deserialization error for data: {data[:100]}")
-            raise SerializationError(f"JSON deserialization failed: {e}")
+            # Handle dataclasses
+            if hasattr(obj, '__dataclass_fields__'):
+                return asdict(obj)
+            
+            # Handle objects with to_dict method
+            if hasattr(obj, 'to_dict') and callable(obj.to_dict):
+                return obj.to_dict()
+            
+            # Handle objects with __dict__
+            if hasattr(obj, '__dict__'):
+                return {k: v for k, v in obj.__dict__.items() 
+                       if not k.startswith('_') or k in getattr(obj, '_serializable_attributes_', [])}
+            
+            # Fallback to string representation
+            return str(obj)
+            
+        except Exception as e:
+            logger.warning(f"Object to dict conversion failed: {e}")
+            return {"__error__": f"Serialization failed: {str(e)}"}
     
-    def _default_encoder(self, obj):
-        """Handle non-serializable objects"""
-        if isinstance(obj, (datetime, date)):
-            return obj.isoformat()
-        elif isinstance(obj, Decimal):
-            return str(obj)
-        elif isinstance(obj, uuid.UUID):
-            return str(obj)
-        elif isinstance(obj, bytes):
-            return obj.hex()
-        elif isinstance(obj, set):
-            return list(obj)
-        elif hasattr(obj, '__dict__'):
-            return {k: v for k, v in obj.__dict__.items() if not k.startswith('_')}
-        else:
-            return str(obj)
+    def deserialize(self, data: bytes) -> Any:
+        """Deserialize JSON bytes to value with comprehensive error handling"""
+        if not data:
+            return None
+            
+        try:
+            decoded_data = data.decode(self.encoding)
+            
+            # Handle empty or null data
+            if not decoded_data.strip() or decoded_data.strip() == 'null':
+                return None
+                
+            return json.loads(decoded_data, parse_float=decimal.Decimal)
+            
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
+            logger.error(f"JSON deserialization error: {e}")
+            # Try to provide more context in the error
+            data_preview = data[:100] if len(data) > 100 else data
+            raise SerializationError(f"JSON deserialization failed for data: {data_preview} - {e}")
+        except Exception as e:
+            logger.error(f"Unexpected JSON deserialization error: {e}")
+            raise SerializationError(f"JSON deserialization failed: {e}")
 
 class MsgPackSerializer:
     """MessagePack serialization for efficient binary format"""

@@ -39,21 +39,15 @@ class CompressionStats:
     total_decompressions: int = 0
 
 class ZlibCompression:
-    """Zlib compression implementation with advanced features"""
+    """Fixed Zlib compression implementation"""
     
     def __init__(self, level: Optional[int] = 6, strategy: int = zlib.Z_DEFAULT_STRATEGY,
                  mem_level: int = 8, wbits: int = 15):
         """
-        Initialize Zlib compressor
-        
-        Args:
-            level: Compression level (0-9, 0=no compression, 9=maximum)
-            strategy: Compression strategy (Z_DEFAULT_STRATEGY, Z_FILTERED, Z_HUFFMAN_ONLY, etc.)
-            mem_level: Memory usage level (1-9, 1=min memory, 9=max memory)
-            wbits: Window bits size (+9 to +15 for raw deflate, -9 to -15 for zlib)
+        Initialize Zlib compressor with proper parameter validation
         """
-        if not 0 <= level <= 9:
-            raise CompressionError(f"Invalid compression level: {level}. Must be between 0-9")
+        if not -1 <= level <= 9:  # -1 is default, 0-9 are compression levels
+            raise CompressionError(f"Invalid compression level: {level}. Must be between -1 and 9")
         if not 1 <= mem_level <= 9:
             raise CompressionError(f"Invalid memory level: {mem_level}. Must be between 1-9")
         
@@ -65,7 +59,7 @@ class ZlibCompression:
         self._lock = threading.RLock()
     
     def compress(self, data: bytes) -> bytes:
-        """Compress data using zlib with statistics"""
+        """Compress data using zlib with proper parameter handling"""
         if not data:
             return b''
         
@@ -73,7 +67,17 @@ class ZlibCompression:
         
         try:
             with self._lock:
-                compressed = zlib.compress(data, self.level, self.wbits, self.mem_level, self.strategy)
+                # FIXED: zlib.compress only takes data and level parameters
+                # Create compressor object for advanced parameters
+                compressor = zlib.compressobj(
+                    level=self.level,
+                    method=zlib.DEFLATED,
+                    wbits=self.wbits,
+                    memLevel=self.mem_level,
+                    strategy=self.strategy
+                )
+                
+                compressed = compressor.compress(data) + compressor.flush()
                 
                 # Update statistics
                 self.stats.compressed_size += len(compressed)
@@ -96,7 +100,7 @@ class ZlibCompression:
             raise CompressionError(f"Zlib compression unexpected error: {e}")
     
     def decompress(self, data: bytes) -> bytes:
-        """Decompress zlib data with statistics"""
+        """Decompress zlib data with proper error handling"""
         if not data:
             return b''
         
@@ -104,7 +108,9 @@ class ZlibCompression:
         
         try:
             with self._lock:
-                decompressed = zlib.decompress(data, self.wbits)
+                # Create decompressor object for advanced parameters
+                decompressor = zlib.decompressobj(self.wbits)
+                decompressed = decompressor.decompress(data) + decompressor.flush()
                 
                 # Update statistics
                 self.stats.decompression_time += time.perf_counter() - start_time
@@ -116,15 +122,6 @@ class ZlibCompression:
             raise CompressionError(f"Zlib decompression failed: {e}")
         except Exception as e:
             raise CompressionError(f"Zlib decompression unexpected error: {e}")
-    
-    def get_stats(self) -> CompressionStats:
-        """Get compression statistics"""
-        return self.stats
-    
-    def reset_stats(self):
-        """Reset statistics"""
-        with self._lock:
-            self.stats = CompressionStats(CompressionAlgorithm.ZLIB)
 
 class LZ4Compression:
     """LZ4 compression implementation with high-speed compression"""
