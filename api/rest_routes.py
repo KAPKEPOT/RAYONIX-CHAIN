@@ -2,25 +2,32 @@
 
 import json
 from aiohttp import web
+import logging
 
 from utils.validators import validate_rayonix_address
 
+logger = logging.getLogger("rayonix_node.api")
+
 def setup_rest_routes(app, node):
     """Setup REST API routes"""
+    
+    if not app:
+        raise ValueError("Application instance cannot be None")
     
     @app.get('/api/v1/blockchain/status')
     async def get_blockchain_status(request):
         """Get blockchain status"""
         try:
             status = {
-                "height": node.rayonix_coin.get_block_count(),
-                "difficulty": node.rayonix_coin.get_difficulty(),
+                "height": node.rayonix_chain.get_block_count(),
+                "difficulty": node.rayonix_chain.get_difficulty(),
                 "hashrate": 0,  # Would calculate based on difficulty
-                "mempool_size": len(node.rayonix_coin.mempool),
+                "mempool_size": len(node.rayonix_chain.mempool),
                 "network": node.config_manager.get('network.network_type')
             }
             return web.json_response(status)
         except Exception as e:
+            logger.error(f"Error getting blockchain status: {e}")
             return web.json_response({"error": str(e)}, status=500)
     
     @app.get('/api/v1/blockchain/block/{block_hash_or_height}')
@@ -29,15 +36,16 @@ def setup_rest_routes(app, node):
         try:
             block_id = request.match_info['block_hash_or_height']
             if block_id.isdigit():
-                block = node.rayonix_coin.get_block_by_height(int(block_id))
+                block = node.rayonix_chain.get_block_by_height(int(block_id))
             else:
-                block = node.rayonix_coin.get_block_by_hash(block_id)
+                block = node.rayonix_chain.get_block_by_hash(block_id)
             
             if not block:
                 return web.json_response({"error": "Block not found"}, status=404)
             
             return web.json_response(block)
         except Exception as e:
+            logger.error(f"Error getting block {request.match_info['block_hash_or_height']}: {e}")
             return web.json_response({"error": str(e)}, status=500)
     
     @app.get('/api/v1/blockchain/transaction/{tx_hash}')
@@ -45,13 +53,14 @@ def setup_rest_routes(app, node):
         """Get transaction by hash"""
         try:
             tx_hash = request.match_info['tx_hash']
-            transaction = node.rayonix_coin.get_transaction(tx_hash)
+            transaction = node.rayonix_chain.get_transaction(tx_hash)
             
             if not transaction:
                 return web.json_response({"error": "Transaction not found"}, status=404)
             
             return web.json_response(transaction)
         except Exception as e:
+            logger.error(f"Error getting transaction {request.match_info['tx_hash']}: {e}")
             return web.json_response({"error": str(e)}, status=500)
     
     @app.get('/api/v1/wallet/balance')
@@ -64,6 +73,7 @@ def setup_rest_routes(app, node):
             balance = node.wallet.get_balance()
             return web.json_response({"balance": balance})
         except Exception as e:
+            logger.error(f"Error getting wallet balance: {e}")
             return web.json_response({"error": str(e)}, status=500)
     
     @app.get('/api/v1/wallet/addresses')
@@ -76,6 +86,7 @@ def setup_rest_routes(app, node):
             addresses = node.wallet.get_addresses()
             return web.json_response({"addresses": addresses})
         except Exception as e:
+            logger.error(f"Error getting wallet addresses: {e}")
             return web.json_response({"error": str(e)}, status=500)
     
     @app.post('/api/v1/wallet/send')
@@ -109,6 +120,7 @@ def setup_rest_routes(app, node):
             
             return web.json_response({"tx_hash": tx_hash})
         except Exception as e:
+            logger.error(f"Error sending transaction: {e}")
             return web.json_response({"error": str(e)}, status=500)
     
     @app.get('/api/v1/node/status')
@@ -118,6 +130,7 @@ def setup_rest_routes(app, node):
             status = node.state_manager.get_state_summary()
             return web.json_response(status)
         except Exception as e:
+            logger.error(f"Error getting node status: {e}")
             return web.json_response({"error": str(e)}, status=500)
     
     @app.get('/api/v1/node/peers')
@@ -130,4 +143,7 @@ def setup_rest_routes(app, node):
             peers = await node.network.get_peers()
             return web.json_response({"peers": peers})
         except Exception as e:
+            logger.error(f"Error getting peers: {e}")
             return web.json_response({"error": str(e)}, status=500)
+    
+    logger.info("REST routes setup completed successfully")
