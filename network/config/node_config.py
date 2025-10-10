@@ -5,7 +5,7 @@ from network.config.network_types import NetworkType
 @dataclass
 class NodeConfig:
     """Network node configuration"""
-    network_type: NetworkType = NetworkType.TESTNET
+    network_type: NetworkType = NetworkType.MAINNET
     listen_ip: str = "0.0.0.0"
     listen_port: int = 30303
     public_ip: Optional[str] = None
