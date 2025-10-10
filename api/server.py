@@ -4,7 +4,7 @@ import aiohttp
 from aiohttp import web
 import logging
 import asyncio
-
+from fastapi import FastAPI
 from api.rest_routes import setup_rest_routes
 from api.jsonrpc_methods import setup_jsonrpc_methods
 
@@ -17,7 +17,8 @@ class RayonixAPIServer:
         self.node = node
         self.host = host
         self.port = port
-        self.app = web.Application()
+        #self.app = web.Application()
+        self.app = FastAPI()
         self.runner = None
         self.site = None
         
