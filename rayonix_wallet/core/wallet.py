@@ -69,7 +69,7 @@ class RayonixWallet:
         
         mnemonic, wallet_id = self.create_hd_wallet()
         return mnemonic
-    
+
     def _generate_wallet_id(self) -> str:
         """Generate unique wallet ID"""
         import hashlib
@@ -621,6 +621,15 @@ class RayonixWallet:
         if not self.addresses:
             return None
         return list(self.addresses.keys())[0]
+        
+    def set_blockchain_interface(self, blockchain_interface):
+    	"""Set blockchain interface for synchronization"""
+    	self.blockchain_interface = blockchain_interface
+    	logger.info("Blockchain interface set successfully")
+    	
+    	# Start synchronizer if we have blockchain reference
+    	if hasattr(self, 'synchronizer'):
+    		self.synchronizer.start()
     
     def close(self):
         """Cleanly close wallet"""
