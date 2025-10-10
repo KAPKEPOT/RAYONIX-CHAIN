@@ -34,7 +34,7 @@ class NetworkConfigSchema(BaseModel):
 
 class DatabaseConfigSchema(BaseModel):
     db_path: str = Field(default="./rayonix_data")
-    db_engine: DatabaseEngine = Field(default=DatabaseEngine.SQLITE)
+    db_engine: DatabaseEngine = Field(default=DatabaseEngine.PLYVEL)
     connection_string: str = Field(default="")
     max_connections: int = Field(default=10, ge=1, le=100)
     connection_timeout: int = Field(default=30, ge=1, le=300)
