@@ -255,6 +255,30 @@ class RayonixNode:
         task.add_done_callback(self.background_tasks.discard)
         return task
     
+    async def _verify_network_compatibility(self):
+        """Verify that network implementation has all required methods"""
+        required_methods = [
+            'start', 'stop', 'get_peers', 'get_connected_peers', 
+            'get_stats', 'connect_to_peer', 'disconnect_peer',
+            'send_message', 'broadcast_message'
+        ]
+        
+        if not self.network:
+            logger.warning("No network instance available for compatibility check")
+            return False
+        
+        missing_methods = []
+        for method in required_methods:
+            if not hasattr(self.network, method) or not callable(getattr(self.network, method)):
+                missing_methods.append(method)
+        
+        if missing_methods:
+            logger.error(f"Network implementation missing required methods: {missing_methods}")
+            return False
+        
+        logger.info("Network compatibility check passed")
+        return True
+    
     async def start(self):
         """Start the node"""
         if self.running:
@@ -263,6 +287,12 @@ class RayonixNode:
         
         try:
             logger.info("Starting RAYONIX Node...")
+            
+            # Verify network compatibility before starting
+            if self.network and not await self._verify_network_compatibility():
+                logger.error("Network compatibility check failed. Node cannot start.")
+                return False
+            
             self.running = True
             self.shutdown_event.clear()
             
