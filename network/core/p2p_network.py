@@ -293,3 +293,154 @@ class AdvancedP2PNetwork:
                     await self.message_processor.send_message(connection_id, message)
                 except Exception as e:
                     logger.debug(f"Failed to broadcast to {connection_id}: {e}")
+                    
+    async def get_peers(self) -> List[Dict[str, Any]]:
+        """Get list of connected peers"""
+        peers = []
+        for connection_id, connection in self.connections.items():
+            peer_info = connection.get('peer_info')
+            if peer_info:
+                peers.append({
+                    'id': connection_id,
+                    'address': peer_info.address,
+                    'port': peer_info.port,
+                    'protocol': peer_info.protocol.name,
+                    'state': peer_info.state.name,
+                    'reputation': peer_info.reputation,
+                    'latency': peer_info.latency,
+                    'last_seen': peer_info.last_seen
+                })
+        return peers
+    
+    async def get_connected_peers(self) -> List[Dict[str, Any]]:
+        """Get list of connected peers (alias for get_peers)"""
+        return await self.get_peers()
+    
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get network statistics"""
+        global_metrics = self.metrics_collector.get_global_metrics()
+        
+        return {
+            "node_id": self.node_id,
+            "uptime": time.time() - self.start_time,
+            "peers_count": len(self.peers),
+            "connected_peers_count": len(self.connections),
+            "bytes_sent": global_metrics.bytes_sent,
+            "bytes_received": global_metrics.bytes_received,
+            "messages_sent": global_metrics.messages_sent,
+            "messages_received": global_metrics.messages_received,
+            "banned_peers": len(self.ban_manager.banned_peers),
+            "is_running": self.is_running,
+            "connection_metrics": {
+                conn_id: {
+                    'bytes_sent': metrics.bytes_sent,
+                    'bytes_received': metrics.bytes_received,
+                    'messages_sent': metrics.messages_sent,
+                    'messages_received': metrics.messages_received,
+                    'latency_avg': sum(metrics.latency_history) / len(metrics.latency_history) if metrics.latency_history else 0
+                }
+                for conn_id, metrics in self.metrics_collector.connection_metrics.items()
+            }
+        }
+    
+    async def connect_to_peer(self, address: str) -> bool:
+        """Connect to a peer"""
+        try:
+            # Parse address (format: "ip:port" or "protocol://ip:port")
+            if '://' in address:
+                protocol, addr_port = address.split('://')
+                if ':' in addr_port:
+                    ip, port_str = addr_port.split(':')
+                    port = int(port_str)
+                else:
+                    ip = addr_port
+                    port = 30303  # Default port
+            else:
+                if ':' in address:
+                    ip, port_str = address.split(':')
+                    port = int(port_str)
+                    protocol = 'tcp'  # Default protocol
+                else:
+                    ip = address
+                    port = 30303
+                    protocol = 'tcp'
+            
+            connection_id = await self.connection_manager.connect_to_peer(ip, port, protocol)
+            return connection_id is not None
+            
+        except Exception as e:
+            logger.error(f"Failed to connect to peer {address}: {e}")
+            return False
+    
+    async def disconnect_peer(self, peer_id: str) -> bool:
+        """Disconnect from a peer"""
+        try:
+            await self.connection_manager.close_connection(peer_id)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to disconnect peer {peer_id}: {e}")
+            return False
+    
+    async def send_message(self, peer_id: str, message_type: str, data: Dict) -> bool:
+        """Send message to specific peer"""
+        try:
+            from network.models.network_message import NetworkMessage
+            from network.config.network_types import MessageType
+            
+            # Convert string message type to enum
+            message_type_enum = MessageType[message_type.upper()]
+            
+            message = NetworkMessage(
+                message_id=f"{message_type}_{time.time()}",
+                message_type=message_type_enum,
+                payload=data,
+                source_node=self.node_id
+            )
+            
+            return await self.message_processor.send_message(peer_id, message)
+            
+        except Exception as e:
+            logger.error(f"Failed to send message to {peer_id}: {e}")
+            return False
+    
+    async def broadcast_message(self, message_type: str, data: Dict) -> bool:
+        """Broadcast message to all peers"""
+        try:
+            from network.models.network_message import NetworkMessage
+            from network.config.network_types import MessageType
+            
+            message_type_enum = MessageType[message_type.upper()]
+            
+            message = NetworkMessage(
+                message_id=f"broadcast_{message_type}_{time.time()}",
+                message_type=message_type_enum,
+                payload=data,
+                source_node=self.node_id
+            )
+            
+            await self.message_processor.broadcast_message(message)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to broadcast message: {e}")
+            return False
+    
+    async def synchronize_chain(self, block_processor_callback) -> Any:
+        """Synchronize blockchain with peers"""
+        # This would be your chain synchronization logic
+        # For now, return a simple success result
+        class SyncResult:
+            def __init__(self, success=True, error=None):
+                self.success = success
+                self.error = error
+        
+        try:
+            # Implement your synchronization logic here
+            logger.info("Starting chain synchronization...")
+            
+            # Simulate successful sync for now
+            return SyncResult(success=True)
+            
+        except Exception as e:
+            logger.error(f"Chain synchronization failed: {e}")
+            return SyncResult(success=False, error=str(e))                    

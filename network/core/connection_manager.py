@@ -194,3 +194,35 @@ class ConnectionManager(IConnectionManager):
         """Update connection activity timestamp"""
         if connection_id in self.connections:
             self.connections[connection_id]['last_activity'] = time.time()
+            
+    def get_connected_peers_count(self) -> int:
+        """Get number of connected peers"""
+        return len(self.connections)
+    
+    def get_connection_ids(self) -> List[str]:
+        """Get list of all connection IDs"""
+        return list(self.connections.keys())
+    
+    async def get_connection_info(self, connection_id: str) -> Optional[Dict[str, Any]]:
+        """Get detailed connection information"""
+        if connection_id not in self.connections:
+            return None
+        
+        connection = self.connections[connection_id]
+        peer_info = connection.get('peer_info')
+        
+        if not peer_info:
+            return None
+        
+        return {
+            'connection_id': connection_id,
+            'address': peer_info.address,
+            'port': peer_info.port,
+            'protocol': peer_info.protocol.name,
+            'state': peer_info.state.name,
+            'reputation': peer_info.reputation,
+            'latency': peer_info.latency,
+            'last_seen': peer_info.last_seen,
+            'connection_time': time.time() - connection['created_at'],
+            'last_activity': connection['last_activity']
+        }            
