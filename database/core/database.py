@@ -809,9 +809,11 @@ class AdvancedDatabase:
             	raise DatabaseError("Invalid prepared value: too short for header")
             	
             metadata_len = struct.unpack('!I', prepared_value[:4])[0]
+            max_reasonable_size = 10 * 1024 * 1024  # 10MB max for metadata
             
             # Validate metadata length
-            if metadata_len > len(prepared_value) - 4:
+            if metadata_len > len(prepared_value) - 4 or metadata_len > max_reasonable_size:
+            	logger.error(f"Corrupted metadata length: {metadata_len}")
             	raise DatabaseError(f"Invalid metadata length: {metadata_len}")
             	
             metadata_bytes = prepared_value[4:4 + metadata_len]
@@ -874,9 +876,8 @@ class AdvancedDatabase:
                 except Exception as e:
                 	logger.error(f"Index calculation failed for {index_name}: {e}")
                 	# Continue with other indexes instead of failing completely
-            return updates
-                
-    
+        return updates
+           
     def _update_indexes(self, key: bytes, value: Any, updates: Dict[str, Any]):
         """Update indexes with calculated updates"""
         with self.locks['indexes']:
