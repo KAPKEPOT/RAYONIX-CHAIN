@@ -10,10 +10,9 @@ class NetworkType(str, Enum):
     REGTEST = "regtest"
 
 class DatabaseEngine(str, Enum):
-    SQLITE = "sqlite"
-    POSTGRESQL = "postgresql"
-    MYSQL = "mysql"
-
+    PLYVEL = "plyvel"
+    MEMORY = "memory"
+    
 class ConsensusType(str, Enum):
     POS = "pos"
     POW = "pow"

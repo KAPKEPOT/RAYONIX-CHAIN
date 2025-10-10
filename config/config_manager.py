@@ -37,7 +37,7 @@ class NetworkConfig:
 @dataclass
 class DatabaseConfig:
     db_path: str = "./rayonix_data"
-    db_engine: str = "sqlite"
+    db_engine: str = "plyvel"
     connection_string: str = ""
     max_connections: int = 10
     connection_timeout: int = 30
