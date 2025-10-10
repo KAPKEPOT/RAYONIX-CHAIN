@@ -8,6 +8,7 @@ from typing import Optional
 from rayonix_wallet.core.exceptions import BackupError
 from rayonix_wallet.crypto.encryption import EncryptionManager
 from rayonix_wallet.utils.secure import SecureString
+from rayonix_wallet.core.types import AddressInfo, Transaction, WalletState
 
 class BackupManager:
     """Backup and restore functionality"""
