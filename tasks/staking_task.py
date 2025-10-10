@@ -104,12 +104,12 @@ class StakingTask:
                 return None
             
             # Validate stake transaction
-            if not self.node.rayonix_coin._validate_transaction(stake_tx):
+            if not self.node.rayonix_chain._validate_transaction(stake_tx):
                 logger.warning("Invalid stake transaction created")
                 return None
             
             # Add to mempool
-            if not self.node.rayonix_coin._add_to_mempool(stake_tx):
+            if not self.node.rayonix_chain._add_to_mempool(stake_tx):
                 logger.warning("Failed to add stake transaction to mempool")
                 return None
             
