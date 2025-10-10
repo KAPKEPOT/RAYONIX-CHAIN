@@ -1,88 +1,152 @@
-# api/server.py - RayonixAPIServer class
+# api/server.py - RayonixAPIServer class using FastAPI
 
-import aiohttp
-from aiohttp import web
 import logging
 import asyncio
-from fastapi import FastAPI
+import uvicorn
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+import json
+
 from api.rest_routes import setup_rest_routes
 from api.jsonrpc_methods import setup_jsonrpc_methods
 
 logger = logging.getLogger("rayonix_node.api")
 
 class RayonixAPIServer:
-    """API server for RAYONIX blockchain node with JSON-RPC and REST endpoints"""
+    """API server for RAYONIX blockchain node with JSON-RPC and REST endpoints using FastAPI"""
     
     def __init__(self, node: 'RayonixNode', host: str = "127.0.0.1", port: int = 8545):
         self.node = node
         self.host = host
         self.port = port
-        #self.app = web.Application()
-        self.app = FastAPI()
-        self.runner = None
-        self.site = None
         
-        # Setup routes and handlers
+        # Initialize FastAPI application
+        self.app = FastAPI(
+            title="RAYONIX Blockchain Node API",
+            description="REST and JSON-RPC API for RAYONIX blockchain node",
+            version="1.0.0",
+            docs_url="/docs",
+            redoc_url="/redoc"
+        )
+        
+        self.server = None
+        self.config = None
+        
+        # Setup middleware and routes
+        self.setup_middleware()
         self.setup_routes()
+    
+    def setup_middleware(self):
+        """Setup FastAPI middleware"""
+        # Add CORS middleware
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
     
     def setup_routes(self):
         """Setup all API routes"""
         try:
             # Setup JSON-RPC endpoint
-            self.app.router.add_post('/jsonrpc', self.handle_jsonrpc)
+            @self.app.post("/jsonrpc")
+            async def handle_jsonrpc(request: Request):
+                return await self.handle_jsonrpc_request(request)
             
             # Setup REST API routes
             setup_rest_routes(self.app, self.node)
-            logger.info("API routes setup completed successfully")
+            
+            # Add health check endpoint
+            @self.app.get("/health")
+            async def health_check():
+                return {"status": "healthy", "service": "rayonix-node"}
+            
+            logger.info("FastAPI routes setup completed successfully")
             
         except Exception as e:
             logger.error(f"Failed to setup API routes: {e}")
             raise
     
-    async def handle_jsonrpc(self, request):
-        """Handle JSON-RPC requests"""
+    async def handle_jsonrpc_request(self, request: Request):
+        """Handle JSON-RPC requests with FastAPI"""
         try:
             from jsonrpcserver import async_dispatch
             
-            request_data = await request.text()
-            response = await async_dispatch(request_data, context=self.node)
-            return web.Response(text=response, content_type="application/json")
+            # Get request body
+            body = await request.body()
+            request_text = body.decode('utf-8')
+            
+            # Dispatch to JSON-RPC methods
+            response = await async_dispatch(request_text, context=self.node)
+            
+            return JSONResponse(content=json.loads(response))
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in JSON-RPC request: {e}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32700,
+                        "message": "Parse error",
+                        "data": str(e)
+                    },
+                    "id": None
+                }
+            )
         except Exception as e:
             logger.error(f"JSON-RPC request handling failed: {e}")
-            return web.Response(
-                text=json.dumps({"error": "Internal server error"}),
-                status=500,
-                content_type="application/json"
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "jsonrpc": "2.0",
+                    "error": {
+                        "code": -32603,
+                        "message": "Internal error",
+                        "data": str(e)
+                    },
+                    "id": None
+                }
             )
     
     async def start(self):
-        """Start the API server"""
+        """Start the API server using uvicorn"""
         try:
-            self.runner = web.AppRunner(self.app)
-            await self.runner.setup()
+            # Configure uvicorn
+            self.config = uvicorn.Config(
+                app=self.app,
+                host=self.host,
+                port=self.port,
+                log_level="info",
+                access_log=False,  # We handle our own logging
+            )
             
-            self.site = web.TCPSite(self.runner, self.host, self.port)
-            await self.site.start()
+            # Create server instance
+            self.server = uvicorn.Server(self.config)
             
-            logger.info(f"API server started on {self.host}:{self.port}")
-            return True
+            # Start the server
+            logger.info(f"Starting FastAPI server on {self.host}:{self.port}")
+            await self.server.serve()
             
         except Exception as e:
-            logger.error(f"Failed to start API server: {e}")
+            logger.error(f"Failed to start FastAPI server: {e}")
             return False
+        
+        return True
     
     async def stop(self):
         """Stop the API server gracefully"""
         try:
-            if self.site:
-                await self.site.stop()
-                logger.debug("API site stopped")
-            
-            if self.runner:
-                await self.runner.cleanup()
-                logger.debug("API runner cleaned up")
-            
-            logger.info("API server stopped successfully")
+            if self.server:
+                logger.info("Stopping FastAPI server...")
+                self.server.should_exit = True
+                # Give it a moment to shutdown
+                await asyncio.sleep(1)
+                logger.info("FastAPI server stopped successfully")
             
         except Exception as e:
-            logger.error(f"Error stopping API server: {e}")
+            logger.error(f"Error stopping FastAPI server: {e}")
