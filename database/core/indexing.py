@@ -251,6 +251,9 @@ class FunctionalBTreeIndex:
         
         # Handle non-dict objects
         elif hasattr(value, '__dict__'):
+            if not self.config.fields:
+            	return []
+            	
             field_values = []
             for field in self.config.fields:
                 field_value = getattr(value, field, None)
