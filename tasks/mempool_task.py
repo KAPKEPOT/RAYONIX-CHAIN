@@ -35,7 +35,7 @@ class MempoolTask:
     
     async def _process_transactions(self):
         """Process transactions in the mempool"""
-        mempool = self.node.rayonix_coin.mempool
+        mempool = self.node.rayonix_chain.mempool
         if not mempool:
             return
         
@@ -53,9 +53,9 @@ class MempoolTask:
             
             try:
                 # Check if transaction is still valid
-                if not self.node.rayonix_coin._validate_transaction(transaction):
+                if not self.node.rayonix_chain._validate_transaction(transaction):
                     logger.debug(f"Removing invalid transaction: {transaction.get('hash')}")
-                    self.node.rayonix_coin._remove_from_mempool(transaction.get('hash'))
+                    self.node.rayonix_chain._remove_from_mempool(transaction.get('hash'))
                     continue
                 
                 # Attempt to include in next block if mining/staking
@@ -76,7 +76,7 @@ class MempoolTask:
     
     async def _cleanup_mempool(self):
         """Clean up old or invalid transactions from mempool"""
-        mempool = self.node.rayonix_coin.mempool
+        mempool = self.node.rayonix_chain.mempool
         if not mempool:
             return
         
@@ -91,13 +91,13 @@ class MempoolTask:
                 # Remove transactions older than 24 hours
                 tx_time = transaction.get('timestamp', 0)
                 if current_time - tx_time > 86400:  # 24 hours
-                    self.node.rayonix_coin._remove_from_mempool(tx_hash)
+                    self.node.rayonix_chain._remove_from_mempool(tx_hash)
                     removed_count += 1
                     continue
                 
                 # Remove invalid transactions
-                if not self.node.rayonix_coin._validate_transaction(transaction):
-                    self.node.rayonix_coin._remove_from_mempool(tx_hash)
+                if not self.node.rayonix_chain._validate_transaction(transaction):
+                    self.node.rayonix_chain._remove_from_mempool(tx_hash)
                     removed_count += 1
                     continue
                     
@@ -132,7 +132,7 @@ class MempoolTask:
     
     def get_mempool_stats(self) -> Dict:
         """Get mempool statistics"""
-        mempool = self.node.rayonix_coin.mempool
+        mempool = self.node.rayonix_chain.mempool
         return {
             'transaction_count': len(mempool) if mempool else 0,
             'total_size': sum(len(str(tx).encode('utf-8')) for tx in mempool.values()) if mempool else 0,
