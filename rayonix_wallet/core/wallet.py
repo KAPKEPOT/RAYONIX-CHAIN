@@ -481,12 +481,45 @@ class RayonixWallet:
         
         return self.transaction_manager.send_transaction(to_address, amount, fee_rate, memo)
     
-    def backup(self, backup_path: str) -> bool:
+    def backup(self, backup_path: str, passphrase: Optional[str] = None) -> bool:
         """Backup wallet to encrypted file"""
-        if self.locked:
-            raise WalletError("Wallet must be unlocked for backup")
-        
-        return self.backup_manager.backup(backup_path)
+        try:
+        	if self.locked:
+        		if not self.unlock(passphrase or "", timeout=300):
+        			logger.warning("Wallet is locked and cannot be unlocked for backup")
+        			return self._create_limited_backup(backup_path)
+        			
+        	if not passphrase and hasattr(self.config, 'passphrase'):
+        		passphrase = self.config.passphrase
+        		
+        	if not passphrase:
+        		logger.warning("No passphrase provided, using default backup")
+        		return self._create_limited_backup(backup_path)
+        		
+        	# Rest of the original backup logic...
+        	with tempfile.TemporaryDirectory() as temp_dir:
+        		wallet_data = self._export_wallet_data()
+        		
+        		metadata = {
+        		    'wallet_id': self.wallet_id,
+        		    'backup_date': datetime.utcnow().isoformat(),
+        		    'version': '1.0',
+        		    'network': self.config.network,
+        		    'wallet_type': self.config.wallet_type.name,
+        		    'address_type': self.config.address_type.name
+        		}
+        		
+        		with open(os.path.join(temp_dir, 'wallet_data.json'), 'w') as f:
+        			json.dump(wallet_data, f, indent=2)
+        		with open(os.path.join(temp_dir, 'metadata.json'), 'w') as f:
+        			json.dump(metadata, f, indent=2)
+        		
+        		self._create_encrypted_archive(temp_dir, backup_path, passphrase)
+        		return True
+        		
+        except Exception as e:
+        	logger.error(f"Backup failed: {e}")
+        	return False
     
     def restore(self, backup_path: str, passphrase: str) -> bool:
         """Restore wallet from backup"""
