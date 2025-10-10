@@ -249,12 +249,19 @@ class SyncManager:
         
         try:
             # Use the new method name
-            peers = self.node.network.get_connected_peers()
-            if not peers:
-                return False
-                
-            return True
-            
+            if hasattr(self.node.network, 'get_connected_peers'):
+                import inspect
+                if inspect.iscoroutinefunction(self.node.network.get_connected_peers):
+                	return True
+                	
+                else:
+                	peers = self.node.network.get_connected_peers()
+                	return bool(peers)
+                	
+            else:
+            	# Fallback to get_peers if available
+            	return hasattr(self.node.network, 'get_peers')
+  
         except AttributeError as e:
             logger.error(f"Network compatibility error: {e}")
             return False

@@ -24,13 +24,33 @@ class NetworkManager:
             listen_port = self.node.get_config_value('network.listen_port', 9333)
             max_connections = self.node.get_config_value('network.max_connections', 50)
             
+            # Use different ports for different protocols to avoid conflicts
+            tcp_port = listen_port
+            udp_port = listen_port + 1
+            websocket_port = listen_port + 2
+            http_port = listen_port + 3
+            
             # Create network config object if needed, but pass individual params to constructor
+            from network.config.node_config import NodeConfig
+            from network.config.network_types import NetworkType
+            
+            config = NodeConfig(
+                network_type=NetworkType.TESTNET,
+                listen_port=tcp_port,  # TCP uses main port
+                udp_port=udp_port,  # UDP uses different port
+                websocket_port=websocket_port,  # WebSocket uses different port
+                http_port=http_port,  # HTTP uses different port
+                max_connections=max_connections,
+                listen_ip="0.0.0.0",
+                enable_encryption=True,
+                enable_compression=True
+            )
             self.network = AdvancedP2PNetwork(
                 network_id=network_id,
-                port=listen_port,
+                port=tcp_port,  # Pass TCP port as main port
                 max_connections=max_connections,
                 node_id=None,  # Let it generate its own
-                config=None    # Don't pass the dict directly
+                config=config
             )
             
             # Register message handlers
