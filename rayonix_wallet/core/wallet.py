@@ -520,6 +520,26 @@ class RayonixWallet:
         except Exception as e:
         	logger.error(f"Backup failed: {e}")
         	return False
+        	
+    def _create_limited_backup(self, backup_path: str) -> bool:
+    	"""Create a limited backup without private keys"""
+    	try:
+    		limited_data = {
+    		    'wallet_id': self.wallet_id,
+    		    'addresses': [asdict(addr) for addr in self.addresses.values()],
+    		    'state': asdict(self.state),
+    		    'config': asdict(self.config),
+    		    'backup_type': 'limited',
+    		    'backup_date': datetime.utcnow().isoformat()
+    		}
+    		
+    		with open(backup_path, 'w') as f:
+    			json.dump(limited_data, f, indent=2)
+    		logger.info(f"Created limited backup at {backup_path}")
+    		return True
+    	except Exception as e:
+    		logger.error(f"Limited backup failed: {e}")
+    		return False
     
     def restore(self, backup_path: str, passphrase: str) -> bool:
         """Restore wallet from backup"""
