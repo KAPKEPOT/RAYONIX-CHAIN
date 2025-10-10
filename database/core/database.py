@@ -286,7 +286,7 @@ class AdvancedDatabase:
         		# Store in database
         		try:
         			if self.config.db_type == DatabaseType.PLYVEL:
-        				self.db[key_bytes] = prepared_value
+        				self.db.put(key_bytes, prepared_value, sync=False)
         			else:
         				self.db.put(key_bytes, prepared_value, sync=False)
         				
