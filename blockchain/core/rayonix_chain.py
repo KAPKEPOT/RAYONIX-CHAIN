@@ -180,26 +180,22 @@ class RayonixBlockchain:
             config_dict = self._config_to_dict()
             
             # Initialize database with retry logic
-            self.database = self._initialize_database_with_retry()
+            #self.database = self._initialize_database_with_retry()
             
             # Initialize core components
             db_path = str(self.data_dir / 'utxo_db')
             self.utxo_set = UTXOSet(db_path)
             
             from consensusengine.utils.config.factory import ConfigFactory
+
+            # Create configurations using your robust factory
+            self.consensus_config = ConfigFactory.create_safe_consensus_config(**config_dict)
+            self.network_config = ConfigFactory.create_network_config(**config_dict)
             
-            # Get configuration parameters from instance or use defaults
-            consensus_params = getattr(self, 'consensus_config', {})
-            network_params = getattr(self, 'network_config', {})
+            logger.info("Configurations created successfully using ConfigFactory")
             
-            logger.info(f"Consensus params: {list(consensus_params.keys())}")
-            logger.info(f"Network params: {list(network_params.keys())}")
-            
-            # Create configurations with safe fallback
-            consensus_config = ConfigFactory.create_safe_consensus_config(**consensus_params)
-            network_config = ConfigFactory.create_network_config(**network_params)
-            
-            logger.info("Configurations created successfully")
+            # Initialize database
+            self.database = self._initialize_database_with_retry()
             
             # Import consensus engine here to avoid circular imports
             from consensusengine.core.consensus import ProofOfStake
