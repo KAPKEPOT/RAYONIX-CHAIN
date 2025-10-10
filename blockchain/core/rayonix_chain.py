@@ -200,8 +200,8 @@ class RayonixBlockchain:
             # Import consensus engine here to avoid circular imports
             from consensusengine.core.consensus import ProofOfStake
             self.consensus = ProofOfStake(
-                config=consensus_config,
-                network_config=network_config
+                config=self.consensus_config,
+                network_config=self.network_config
             )
             logger.info("Consensus engine initialized successfully")
            
