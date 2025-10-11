@@ -31,6 +31,7 @@ class RayonixNode:
             self.network = dependencies.network
             self.contract_manager = dependencies.contract_manager
             self.database = dependencies.database
+            self.state_manager = NodeStateManager()
         else:
             self.deps = NodeDependencies(
                 config_manager=None,
