@@ -8,10 +8,10 @@ import signal
 import sys
 from pathlib import Path
 
-from rayonix-node.core.node import RayonixNode
-from rayonix-node.cli.interactive import run_interactive_mode
-from rayonix-node.cli.command_handler import setup_cli_handlers
-from rayonix-node.utils.helpers import configure_logging
+from rayonix_node.core.node import RayonixNode
+from rayonix_node.cli.interactive import run_interactive_mode
+from rayonix_node.cli.command_handler import setup_cli_handlers
+from rayonix_node.utils.helpers import configure_logging
 
 logger = logging.getLogger("rayonix_node")
 
