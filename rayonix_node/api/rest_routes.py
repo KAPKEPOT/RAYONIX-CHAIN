@@ -58,7 +58,7 @@ async def get_blockchain_status(request: Request):
             "height": node.rayonix_chain.get_block_count(),
             "difficulty": node.rayonix_chain.get_difficulty(),
             "hashrate": 0,
-            "mempool_size": len(node.rayonix_chain.mempool),
+            "mempool_size": len(node.rayonix_chain.mempool) if hasattr(node.rayonix_chain, 'mempool') else 0,
             "network": node.config_manager.get('network.network_type')
         }
         return status

@@ -3,7 +3,7 @@
 import json
 import time
 import hashlib
-from jsonrpcserver import method
+from jsonrpcserver import method, Result, Success, Error
 from typing import Dict, List  # Add this import
 
 from rayonix_node.utils.validators import validate_rayonix_address
@@ -63,9 +63,9 @@ async def getblockcount(context) -> Dict:
     """JSON-RPC method to get current block count"""
     try:
         block_count = context.rayonix_chain.get_block_count()
-        return {"result": block_count, "error": None}
+        return Success(block_count)
     except Exception as e:
-        return {"error": str(e)}
+        return Error(str(e))
 
 @method
 async def getblockhash(context, height: int) -> Dict:
@@ -169,9 +169,9 @@ async def getinfo(context) -> Dict:
             "relayfee": 0.0001,
             "errors": ""
         }
-        return {"result": info, "error": None}
+        return Success(info)
     except Exception as e:
-        return {"error": str(e)}
+        return Error(str(e))
 
 def setup_jsonrpc_methods():
     """Setup all JSON-RPC methods"""
