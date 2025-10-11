@@ -591,6 +591,77 @@ class SlashingManager:
             
             self.monitoring_metrics['total_slashed'] += slashing_params['slash_amount']
 
+    def check_jailed_validators(self):
+    	"""Check and release jailed validators whose jail period has expired"""
+    	try:
+    		current_time = time.time()
+    		released_count = 0
+    		
+    		for validator_address in list(self.jailed_validators):
+    			validator = self.consensus_engine.validators.get(validator_address)
+    			if validator and hasattr(validator, 'jail_until'):
+    				if current_time >= validator.jail_until:
+    					# Release validator from jail
+    					validator.jail_until = None
+    					validator.status = ValidatorStatus.ACTIVE
+    					self.jailed_validators.discard(validator_address)
+    					released_count += 1
+    					logger.info(f"Released validator {validator_address} from jail")
+    		
+    		if released_count > 0:
+    			logger.info(f"Released {released_count} validators from jail")
+    	
+    	except Exception as e:
+    		logger.error(f"Error checking jailed validators: {e}")
+    		
+    def check_unavailability(self):
+    	"""Check validator availability and apply slashing for downtime"""
+    	try:
+    		current_height = self.consensus_engine.height
+    		slashing_events = []
+    		
+    		for validator_address, validator in self.consensus_engine.validators.items():
+    			if validator.status != ValidatorStatus.ACTIVE:
+    				continue
+    			
+    			# Calculate missed blocks ratio
+    			total_blocks = validator.missed_blocks + validator.signed_blocks
+    			if total_blocks >= 100:
+    				missed_ratio = validator.missed_blocks / total_blocks
+    				
+    				# Apply slashing if missed ratio exceeds threshold
+    				if missed_ratio > 0.05:
+    					evidence = SlashingEvidence(
+    					    evidence_id=self._generate_id(),
+    					    evidence_type=EvidenceType.UNAVAILABILITY,
+    					    validator_address=validator_address,
+    					    reporter_address="system",
+    					    data={
+    					        'missed_blocks': validator.missed_blocks,
+    					        'total_blocks': total_blocks,
+    					        'missed_ratio': missed_ratio,
+    					        'window_start': current_height - 100,
+    					        'window_end': current_height
+    					    },
+    					    timestamp=time.time(),
+    					    block_height=current_height
+    					)
+    					# Process the evidence
+    					
+    					success, slash_amount = self._process_single_evidence(evidence)
+    					if success:
+    						slashing_events.append({
+    						    'validator': validator_address,
+    						    'amount': slash_amount,
+    						    'reason': 'unavailability'
+    						})
+    						
+    		if slashing_events:
+    			logger.warning(f"Applied unavailability slashing to {len(slashing_events)} validators")
+    	
+    	except Exception as e:
+    		logger.error(f"Error checking unavailability: {e}")
+
     def _consider_reporter_reward(self, reporter: str, slash_amount: int):
         """Calculate and distribute reporter reward"""
         reward_percentage = self.config.reporter_reward_percentage  # Typically 5%
