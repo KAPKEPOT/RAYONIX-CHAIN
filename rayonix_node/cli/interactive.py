@@ -19,7 +19,7 @@ class RayonixInteractiveCLI(cmd.Cmd):
         self.intro = "RAYONIX Blockchain Node CLI\nType 'help' for available commands"
         
         # Setup command handler
-        from cli.command_handler import CommandHandler
+        from rayonix_node.cli.command_handler import CommandHandler
         self.command_handler = CommandHandler(node)
         
         # Load command history
