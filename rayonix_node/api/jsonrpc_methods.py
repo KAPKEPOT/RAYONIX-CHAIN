@@ -62,19 +62,31 @@ async def createrawtransaction(context, inputs: List[Dict], outputs: List[Dict])
 async def getblockcount(context) -> Dict:
     """JSON-RPC method to get current block count"""
     try:
-        block_count = context.rayonix_chain.get_block_count()
-        return Success(block_count)
+        if hasattr(context.rayonix_chain, 'get_block_count'):
+        	block_count = context.rayonix_chain.get_block_count()
+        	return Success(block_count)
+        else:
+        	return Error(-32601, "Method not available")
+        	
     except Exception as e:
-        return Error(str(e))
-
+    	logger.error(f"Error in getblockcount: {e}")
+    	return Error(-32603, f"Internal error: {str(e)}")
+ 
 @method
-async def getblockhash(context, height: int) -> Dict:
+async def getblockhash(context, height: int) -> Result:
     """JSON-RPC method to get block hash by height"""
     try:
-        block_hash = context.rayonix_chain.get_block_hash(height)
-        return {"result": block_hash, "error": None}
+        if hasattr(context.rayonix_chain, 'get_block_hash'):
+        	block_hash = context.rayonix_chain.get_block_hash(height)
+        	if block_hash:
+        		return Success(block_hash)
+        	else:
+        		return Error(-32602, f"Block at height {height} not found")
+        else:
+        	return Error(-32601, "Method not available")
     except Exception as e:
-        return {"error": str(e)}
+    	logger.error(f"Error in getblockhash: {e}")
+    	return Error(-32603, f"Internal error: {str(e)}")
 
 @method
 async def getblock(context, hash_or_height) -> Dict:
@@ -153,14 +165,29 @@ async def listtransactions(context, count: int = 10, skip: int = 0) -> Dict:
 async def getinfo(context) -> Dict:
     """JSON-RPC method to get node information"""
     try:
+        # Get block count safely
+        block_count = 0
+        if hasattr(context.rayonix_chain, 'get_block_count'):
+        	block_count = context.rayonix_chain.get_block_count()
+        
+        # Get difficulty safely
+        difficulty = 1
+        if hasattr(context.rayonix_chain, 'get_difficulty'):
+        	difficulty = context.rayonix_chain.get_difficulty()
+        	
+        # Get wallet balance safely
+        balance = 0
+        if hasattr(context, 'wallet') and context.wallet and hasattr(context.wallet, 'get_balance'):
+        	balance = context.wallet.get_balance()
+        	
         info = {
             "version": "1.0.0",
             "protocolversion": 1,
-            "blocks": context.rayonix_chain.get_block_count(),
-            "connections": context.state_manager.get_sync_state().get('peers_connected', 0),
-            "difficulty": context.rayonix_chain.get_difficulty(),
-            "testnet": context.config_manager.get('network.network_type') == 'testnet',
-            "balance": context.wallet.get_balance() if context.wallet else 0,
+            "blocks": block_count,
+            "connections": getattr(context.state_manager, 'peers_connected', 0),
+            "difficulty": difficulty,
+            "testnet": getattr(context.config_manager, 'network_type', 'testnet') == 'testnet',
+            "balance": balance,
             "walletversion": 1,
             "timeoffset": 0,
             "keypoololdest": 0,
