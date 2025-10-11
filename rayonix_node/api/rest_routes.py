@@ -1,7 +1,7 @@
 # api/rest_routes.py - REST API route handlers for FastAPI
 
 import logging
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
