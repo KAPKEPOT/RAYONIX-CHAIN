@@ -22,8 +22,6 @@ from concurrent.futures import ThreadPoolExecutor
 from rayonix_node.core.node import RayonixNode
 from rayonix_node.utils.helpers2 import configure_logging, setup_pid_file, remove_pid_file
 from rayonix_node.utils.daemonize import daemonize_process
-from rayonix_node.core.state_manager import NodeStateManager
-from rayonix_node.api.server import RayonixAPIServer
 
 logger = logging.getLogger("rayonix_daemon")
 
@@ -136,7 +134,7 @@ class HealthMonitor:
             
             # Check network
             if (self.node.node and self.node.node.network and 
-                self.node.node.config_manager.get('network.enabled', True)):
+            self.node.node.config_manager.get('network.enabled', True)):
                 try:
                     peers = await self.node.node.network.get_peers()
                     health_status['components']['network'] = {
