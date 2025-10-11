@@ -253,3 +253,44 @@ def get_size(obj: Any) -> int:
         return sum(get_size(key) + get_size(value) for key, value in obj.items())
     else:
         return 0  # Unknown type
+        
+def configure_logging(
+    level: str = "INFO", 
+    log_file: Optional[str] = None, 
+    component: str = "rayonix",  # Add component parameter
+    **kwargs  # Accept additional kwargs for compatibility
+) -> None:
+    """
+    Configure logging for the RAYONIX node
+    """
+    log_format = f"%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    
+    # Basic configuration
+    logging.basicConfig(
+        level=getattr(logging, level.upper(), logging.INFO),
+        format=log_format,
+        handlers=[]
+    )
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter(log_format))
+    
+    # File handler if specified
+    handlers = [console_handler]
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter(log_format))
+        handlers.append(file_handler)
+    
+    # Apply configuration
+    logging.getLogger().handlers = handlers
+    
+    # Set specific log levels for noisy libraries
+    logging.getLogger("aiohttp").setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    
+    # Set up the component logger if specified
+    if component:
+        logger = logging.getLogger(component)
+        logger.setLevel(getattr(logging, level.upper(), logging.INFO))
