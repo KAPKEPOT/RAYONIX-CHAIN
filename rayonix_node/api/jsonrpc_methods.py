@@ -6,7 +6,7 @@ import hashlib
 from jsonrpcserver import method
 from typing import Dict, List  # Add this import
 
-from utils.validators import validate_rayonix_address
+from rayonix_node.utils.validators import validate_rayonix_address
 
 @method
 async def sendrawtransaction(context, hex_tx: str) -> Dict:
