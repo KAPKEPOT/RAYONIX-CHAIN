@@ -19,11 +19,11 @@ async def sendrawtransaction(context, hex_tx: str) -> Dict:
             return {"error": "Invalid transaction hex encoding"}
         
         # Validate transaction
-        if not context.rayonix_coin._validate_transaction(tx_data):
+        if not context.rayonix_chain._validate_transaction(tx_data):
             return {"error": "Invalid transaction"}
         
         # Add to mempool
-        context.rayonix_coin._add_to_mempool(tx_data)
+        context.rayonix_chain._add_to_mempool(tx_data)
         
         # Broadcast to network if available
         if context.network:
@@ -62,7 +62,7 @@ async def createrawtransaction(context, inputs: List[Dict], outputs: List[Dict])
 async def getblockcount(context) -> Dict:
     """JSON-RPC method to get current block count"""
     try:
-        block_count = context.rayonix_coin.get_block_count()
+        block_count = context.rayonix_chain.get_block_count()
         return {"result": block_count, "error": None}
     except Exception as e:
         return {"error": str(e)}
@@ -71,7 +71,7 @@ async def getblockcount(context) -> Dict:
 async def getblockhash(context, height: int) -> Dict:
     """JSON-RPC method to get block hash by height"""
     try:
-        block_hash = context.rayonix_coin.get_block_hash(height)
+        block_hash = context.rayonix_chain.get_block_hash(height)
         return {"result": block_hash, "error": None}
     except Exception as e:
         return {"error": str(e)}
@@ -81,9 +81,9 @@ async def getblock(context, hash_or_height) -> Dict:
     """JSON-RPC method to get block by hash or height"""
     try:
         if isinstance(hash_or_height, int):
-            block = context.rayonix_coin.get_block_by_height(hash_or_height)
+            block = context.rayonix_chain.get_block_by_height(hash_or_height)
         else:
-            block = context.rayonix_coin.get_block_by_hash(hash_or_height)
+            block = context.rayonix_chain.get_block_by_hash(hash_or_height)
         
         if not block:
             return {"error": "Block not found"}
@@ -96,7 +96,7 @@ async def getblock(context, hash_or_height) -> Dict:
 async def gettransaction(context, tx_hash: str) -> Dict:
     """JSON-RPC method to get transaction by hash"""
     try:
-        transaction = context.rayonix_coin.get_transaction(tx_hash)
+        transaction = context.rayonix_chain.get_transaction(tx_hash)
         if not transaction:
             return {"error": "Transaction not found"}
         
@@ -113,7 +113,7 @@ async def getbalance(context, address: str = None) -> Dict:
             if not validate_rayonix_address(address):
                 return {"error": "Invalid address format"}
             
-            balance = context.rayonix_coin.get_address_balance(address)
+            balance = context.rayonix_chain.get_address_balance(address)
         else:
             # Get wallet balance if no address specified
             if not context.wallet:
@@ -156,9 +156,9 @@ async def getinfo(context) -> Dict:
         info = {
             "version": "1.0.0",
             "protocolversion": 1,
-            "blocks": context.rayonix_coin.get_block_count(),
+            "blocks": context.rayonix_chain.get_block_count(),
             "connections": context.state_manager.get_sync_state().get('peers_connected', 0),
-            "difficulty": context.rayonix_coin.get_difficulty(),
+            "difficulty": context.rayonix_chain.get_difficulty(),
             "testnet": context.config_manager.get('network.network_type') == 'testnet',
             "balance": context.wallet.get_balance() if context.wallet else 0,
             "walletversion": 1,
