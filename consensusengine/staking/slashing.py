@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from cryptography.exceptions import InvalidSignature
 import secrets
-from consensus.core.state import ValidatorStatus
+from consensusengine.core.state import ValidatorStatus
 
 logger = logging.getLogger('SlashingManager')
 
