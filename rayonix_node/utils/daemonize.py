@@ -271,7 +271,7 @@ class DaemonContext:
         logger.info(f"Received signal {signum}, initiating shutdown...")
         
         # Import here to avoid circular imports
-        from .helpers import remove_pid_file
+        from rayonix_node.utils.helpers2 import remove_pid_file
         
         # Remove PID file
         if self.pidfile:
