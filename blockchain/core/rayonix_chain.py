@@ -1420,6 +1420,44 @@ class RayonixBlockchain:
         
         validator_address = list(self.wallet.addresses.keys())[0]
         return self.consensus.register_validator(validator_address, stake_amount)
+        
+    def get_difficulty(self) -> int:
+    	"""Get current blockchain difficulty"""
+    	try:
+    		if hasattr(self, 'chain_head') and self.chain_head:
+    			block_data = self.database.get(self.chain_head.encode())
+    			if block_data:
+    				block = pickle.loads(block_data)
+    				return getattr(block.header, 'difficulty', 1)
+    		return 1
+    	except Exception as e:
+    		logger.error(f"Error getting difficulty: {e}")
+    		return 1
+    		
+    def get_address_balance(self, address: str) -> int:
+    	"""Get balance for a specific address"""
+    	try:
+    		return self.state_manager.utxo_set.get_balance(address)
+    	except Exception as e:
+    		logger.error(f"Error getting balance for {address}: {e}")
+    		return 0
+    		
+    def get_block_by_height(self, height: int) -> Optional[Any]:
+    	"""Get block by height"""
+    	return self.get_block(height)
+    	
+    def get_block_by_hash(self, block_hash: str) -> Optional[Any]:
+    	"""Get block by hash"""
+    	return self.get_block(block_hash)
+    	
+    def get_block_hash(self, height: int) -> Optional[str]:
+    	"""Get block hash by height"""
+    	try:
+    		block = self.get_block(height)
+    		return block.hash if block else None
+    	except Exception as e:
+    		logger.error(f"Error getting block hash for height {height}: {e}")
+    		return None
 
     def get_node_metrics(self) -> NodeMetrics:
         """Get current node metrics"""
