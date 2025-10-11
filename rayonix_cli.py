@@ -21,21 +21,51 @@ from rayonix_node.utils.helpers import configure_logging
 logger = logging.getLogger("rayonix_cli")
 
 class RayonixRPCClient:
-    """RPC client for communicating with rayonixd daemon"""
+    """Production-grade RPC client with enterprise features"""
     
     def __init__(self, api_url: str = "http://127.0.0.1:8545", timeout: int = 30):
         self.api_url = api_url.rstrip('/')
         self.timeout = timeout
+        
+        # Production session with connection pooling and retries
         self.session = requests.Session()
         
-        # Setup session for better connection handling
+        # Production HTTP adapter with connection pooling
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=100,
+            max_retries=3,
+            pool_block=True
+        )
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+        
+        # Production headers
         self.session.headers.update({
             'Content-Type': 'application/json',
-            'User-Agent': 'Rayonix-CLI/1.0.0'
+            'User-Agent': 'Rayonix-CLI/1.0.0',
+            'Accept': 'application/json'
         })
-    
+        
+        # Health check on initialization
+        self._health_check()
+
+    def _health_check(self):
+        """Verify daemon connectivity on startup"""
+        try:
+            response = self.session.get(
+                f"{self.api_url}/health",
+                timeout=5
+            )
+            if response.status_code == 200:
+                logger.info(f"Connected to RAYONIX daemon at {self.api_url}")
+            else:
+                logger.warning(f"Daemon health check returned {response.status_code}")
+        except Exception as e:
+            logger.warning(f"Initial health check failed: {e}")
+
     def call_jsonrpc(self, method: str, params: List[Any] = None, request_id: int = 1) -> Dict[str, Any]:
-        """Make JSON-RPC call to daemon"""
+        """Production JSON-RPC with comprehensive error handling"""
         payload = {
             "jsonrpc": "2.0",
             "method": method,
@@ -44,21 +74,36 @@ class RayonixRPCClient:
         }
         
         try:
+            # Production request with timeout and retry
             response = self.session.post(
                 f"{self.api_url}/jsonrpc",
                 json=payload,
                 timeout=self.timeout
             )
             response.raise_for_status()
-            return response.json()
+            
+            result = response.json()
+            
+            # Validate JSON-RPC response format
+            if 'error' in result and result['error']:
+                error_msg = result['error'].get('message', 'Unknown RPC error')
+                raise Exception(f"RPC Error: {error_msg}")
+                
+            return result
+            
         except requests.exceptions.ConnectionError:
-            raise Exception(f"Cannot connect to daemon at {self.api_url}. Is rayonixd running?")
+            raise Exception(f"Cannot connect to daemon at {self.api_url}. Ensure rayonixd is running and API is enabled.")
         except requests.exceptions.Timeout:
-            raise Exception(f"Request timeout after {self.timeout}s")
+            raise Exception(f"Request timeout after {self.timeout}s - daemon may be overloaded")
         except requests.exceptions.HTTPError as e:
-            raise Exception(f"HTTP error: {e}")
+            if e.response.status_code == 401:
+                raise Exception("Authentication required - check API credentials")
+            elif e.response.status_code == 403:
+                raise Exception("Access forbidden - check API permissions")
+            else:
+                raise Exception(f"HTTP error {e.response.status_code}: {e}")
         except Exception as e:
-            raise Exception(f"RPC call failed: {e}")
+            raise Exception(f"RPC communication failed: {e}")
     
     def call_rest_api(self, endpoint: str, method: str = "GET", data: Dict = None) -> Any:
         """Make REST API call to daemon"""

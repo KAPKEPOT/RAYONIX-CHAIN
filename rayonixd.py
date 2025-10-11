@@ -375,23 +375,65 @@ class RayonixDaemon:
     async def _initialize_node(self) -> bool:
         """Initialize the blockchain node with configuration"""
         try:
-            # Initialize node components
-            if not await self.node.initialize_components(
-                self.config.config_path, 
+            logger.info("Initializing RAYONIX Node with production configuration...")
+            
+            # Create node with proper dependency injection
+            self.node = RayonixNode()
+            
+            # Initialize with comprehensive error handling
+            success = await self.node.initialize_components(
+                self.config.config_path,
                 self.config.encryption_key
-            ):
-                return False
+            )
+            if not success:
+            	logger.error("Node component initialization failed")
+            	return False
+            	
+            # Apply production configuration overrides
+            await self._apply_production_config()
             
-            # Apply command line configuration overrides
-            await self._apply_config_overrides()
-            
-            # Verify critical components are ready
-            return await self._verify_components()
+            # Validate all critical components
+            if not await self._validate_components():
+            	logger.error("Production component validation failed")
+            	return False
+            	
+            logger.info("RAYONIX Node initialized successfully for production")
+            return True
             
         except Exception as e:
-            logger.error(f"Node initialization failed: {e}")
-            return False
-    
+        	logger.error(f"Production node initialization failed: {e}")
+        	import traceback
+        	traceback.print_exc()
+        	return False
+        	
+    async def _apply_production_config(self):
+    	# Ensure API is enabled for CLI communication
+    	if self.config.no_api:
+    		logger.warning("API disabled - CLI will not function")
+    		
+    	# Set production timeouts
+    	if self.node.config_manager:
+    		self.node.config_manager.set('api.timeout', 30)
+    		self.node.config_manager.set('network.connection_timeout', 60)
+    		
+    async def _validate_components(self) -> bool:
+    	components = [
+    	    ('config_manager', self.node.config_manager),
+    	    ('rayonix_chain', self.node.rayonix_chain),
+    	    ('state_manager', self.node.state_manager)
+    	]
+    	
+    	for name, component in components:
+    		if not component:
+    			logger.error(f"Production component missing: {name}")
+    			return False
+    			
+    	# Validate API server if enabled
+    	if (self.node.config_manager.get('api.enabled', True) and not self.node.api_server):
+    		logger.error("API server required but not initialized")
+    		return False
+    	return True
+  
     async def _apply_config_overrides(self):
         """Apply command line configuration overrides"""
         if self.config.network:
