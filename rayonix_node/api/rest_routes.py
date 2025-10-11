@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
-from utils.validators import validate_rayonix_address
+from rayonix_node.utils.validators import validate_rayonix_address
 
 logger = logging.getLogger("rayonix_node.api")
 
