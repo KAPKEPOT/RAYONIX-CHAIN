@@ -56,7 +56,7 @@ class NetworkManager:
             # Register message handlers
             self._register_message_handlers()
             
-            logger.info("P2P network initialized successfully")
+            logger.info(f"P2P network initialized successfully - TCP:{tcp_port}, UDP:{udp_port}, WS:{websocket_port}, HTTP:{http_port}")
             return True
             
         except Exception as e:
