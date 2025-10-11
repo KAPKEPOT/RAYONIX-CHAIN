@@ -677,7 +677,28 @@ class RayonixDaemon:
         finally:
             # Ensure process exits
             sys.exit(0)
-
+            
+    def check_status():
+    	"""Check if daemon is running"""
+    	from rayonix_node.utils.helpers2 import PIDManager
+    	pid_file = './rayonix_data/run/rayonixd.pid'
+    	
+    	try:
+    		if PIDManager._is_process_running_from_file(pid_file):
+    			print("✅ rayonixd is running")
+    			
+    			return True
+    		else:
+    			print("❌ rayonixd is not running")
+    			# Clean up stale PID file
+    			import os
+    			if os.path.exists(pid_file):
+    				os.remove(pid_file)
+    			return False
+    	except Exception as e:
+    		print(f"❌ Error checking status: {e}")
+    		return False
+   
 def parse_arguments():
     """Parse command line arguments for production daemon"""
     parser = argparse.ArgumentParser(
