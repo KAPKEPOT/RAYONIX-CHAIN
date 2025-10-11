@@ -356,7 +356,12 @@ class RayonixDaemon:
             os.umask(0o022)
             
             # Perform daemonization
-            daemonize_process()
+            daemonize_process(
+                stdout='/tmp/rayonix_stdout.log',
+                stderr='/tmp/rayonix_stderr.log',
+                pidfile=self.pid_file
+                
+            )
             
             # Reconfigure logging for daemon mode
             configure_logging(
