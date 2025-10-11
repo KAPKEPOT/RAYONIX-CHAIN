@@ -34,76 +34,109 @@ class RayonixInteractiveCLI(cmd.Cmd):
     
     def default(self, line):
         """Handle unknown commands"""
-        asyncio.create_task(self._execute_command(line))
+        # Run async commands in the event loop
+        result = asyncio.run(self._execute_command(line))
+        if result:
+            print(result)
     
     async def _execute_command(self, command_line):
-        """Execute command and print result"""
+        """Execute command and return result"""
         try:
             result = await self.command_handler.execute_command(command_line)
-            if result:
-                print(result)
+            return result
         except Exception as e:
-            print(f"Error: {e}")
+            return f"Error: {e}"
     
     def do_help(self, arg):
         """Show help information"""
-        asyncio.create_task(self._execute_command(f"help {arg}"))
+        result = asyncio.run(self._execute_command(f"help {arg}"))
+        if result:
+            print(result)
     
     def do_status(self, arg):
         """Show node status"""
-        asyncio.create_task(self._execute_command("status"))
+        result = asyncio.run(self._execute_command("status"))
+        if result:
+            print(result)
     
     def do_balance(self, arg):
         """Show wallet balance"""
-        asyncio.create_task(self._execute_command("balance"))
+        result = asyncio.run(self._execute_command("balance"))
+        if result:
+            print(result)
     
     def do_send(self, arg):
         """Send coins to address"""
-        asyncio.create_task(self._execute_command(f"send {arg}"))
+        result = asyncio.run(self._execute_command(f"send {arg}"))
+        if result:
+            print(result)
     
     def do_address(self, arg):
         """Generate new address"""
-        asyncio.create_task(self._execute_command("address"))
+        result = asyncio.run(self._execute_command("address"))
+        if result:
+            print(result)
     
     def do_peers(self, arg):
         """Show connected peers"""
-        asyncio.create_task(self._execute_command("peers"))
+        result = asyncio.run(self._execute_command("peers"))
+        if result:
+            print(result)
     
     def do_connect(self, arg):
         """Connect to peer"""
-        asyncio.create_task(self._execute_command(f"connect {arg}"))
+        result = asyncio.run(self._execute_command(f"connect {arg}"))
+        if result:
+            print(result)
     
     def do_disconnect(self, arg):
         """Disconnect from peer"""
-        asyncio.create_task(self._execute_command(f"disconnect {arg}"))
+        result = asyncio.run(self._execute_command(f"disconnect {arg}"))
+        if result:
+            print(result)
     
     def do_block(self, arg):
         """Show block information"""
-        asyncio.create_task(self._execute_command(f"block {arg}"))
+        result = asyncio.run(self._execute_command(f"block {arg}"))
+        if result:
+            print(result)
     
     def do_transaction(self, arg):
         """Show transaction information"""
-        asyncio.create_task(self._execute_command(f"transaction {arg}"))
+        result = asyncio.run(self._execute_command(f"transaction {arg}"))
+        if result:
+            print(result)
     
     def do_mempool(self, arg):
         """Show mempool information"""
-        asyncio.create_task(self._execute_command("mempool"))
+        result = asyncio.run(self._execute_command("mempool"))
+        if result:
+            print(result)
     
     def do_stake(self, arg):
         """Show staking information"""
-        asyncio.create_task(self._execute_command("stake"))
+        result = asyncio.run(self._execute_command("stake"))
+        if result:
+            print(result)
     
     def do_stop(self, arg):
         """Stop the node"""
-        asyncio.create_task(self._execute_command("stop"))
+        result = asyncio.run(self._execute_command("stop"))
+        if result:
+            print(result)
+        return True  # Exit after stop
     
     def do_restart(self, arg):
         """Restart the node"""
-        asyncio.create_task(self._execute_command("restart"))
+        result = asyncio.run(self._execute_command("restart"))
+        if result:
+            print(result)
     
     def do_config(self, arg):
         """Show or modify configuration"""
-        asyncio.create_task(self._execute_command(f"config {arg}"))
+        result = asyncio.run(self._execute_command(f"config {arg}"))
+        if result:
+            print(result)
     
     def do_exit(self, arg):
         """Exit the CLI"""
@@ -130,24 +163,21 @@ async def run_interactive_mode(node):
     history_file = os.path.join(data_dir, '.cli_history')
     history_manager = HistoryManager(history_file)
     
-    # Create and run CLI
+    # Create and run CLI - THIS BLOCKS UNTIL USER EXITS
     cli = RayonixInteractiveCLI(node, history_manager)
     
     try:
-        # Run CLI in a separate thread to not block the event loop
-        def run_cli():
-            cli.cmdloop()
-        
-        # Start CLI in thread
-        cli_thread = threading.Thread(target=run_cli, daemon=True)
-        cli_thread.start()
-        
-        # Keep the main event loop running
-        while node.running and cli_thread.is_alive():
-            await asyncio.sleep(0.1)
+        # Run CLI in main thread - this will block and show the prompt
+        print("\n" + "="*50)
+        print("RAYONIX BLOCKCHAIN NODE - INTERACTIVE MODE")
+        print("="*50)
+        cli.cmdloop()
             
     except KeyboardInterrupt:
-        print("\nInterrupted")
+        print("\nInterrupted by user")
+    except Exception as e:
+        print(f"CLI error: {e}")
     finally:
         # Save history
         history_manager.save_history()
+        print("Interactive session ended")
