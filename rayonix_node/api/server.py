@@ -8,8 +8,8 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import json
 
-from api.rest_routes import setup_rest_routes
-from api.jsonrpc_methods import setup_jsonrpc_methods
+from rayonix_node.api.rest_routes import setup_rest_routes
+from rayonix_node.api.jsonrpc_methods import setup_jsonrpc_methods
 
 logger = logging.getLogger("rayonix_node.api")
 
