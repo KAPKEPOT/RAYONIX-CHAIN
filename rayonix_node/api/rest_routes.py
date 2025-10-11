@@ -50,8 +50,9 @@ def setup_rest_routes(app, node):
     logger.info("FastAPI REST routes setup completed successfully")
 
 @router.get("/blockchain/status", response_model=BlockchainStatusResponse)
-async def get_blockchain_status(node: Any = Depends(lambda: router.node)):
+async def get_blockchain_status(request: Request):
     """Get blockchain status"""
+    node = request.app.state.node
     try:
         status = {
             "height": node.rayonix_chain.get_block_count(),
