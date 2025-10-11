@@ -1,124 +1,103 @@
-# cli/interactive.py - PRODUCTION READY
+# cli/interactive.py - Interactive mode implementation for RPC client
 
 import cmd
-import asyncio
-import threading
-import readline
 import os
 from typing import Optional
 from rayonix_node.cli.history_manager import HistoryManager
 
 class RayonixInteractiveCLI(cmd.Cmd):
-    """Interactive CLI for RAYONIX blockchain node"""
+    """Interactive CLI for RAYONIX blockchain node using RPC client"""
     
-    def __init__(self, node, history_manager: Optional[HistoryManager] = None):
+    def __init__(self, rpc_client, history_manager: Optional[HistoryManager] = None):
         super().__init__()
-        self.node = node
+        self.client = rpc_client
         self.history_manager = history_manager or HistoryManager()
         self.prompt = "rayonix> "
-        self.intro = "RAYONIX Blockchain Node CLI\nType 'help' for available commands"
+        self.intro = "RAYONIX Blockchain Node CLI (RPC Mode)\nType 'help' for available commands"
         
         # Setup command handler
         from rayonix_node.cli.command_handler import CommandHandler
-        self.command_handler = CommandHandler(node)
+        self.command_handler = CommandHandler(rpc_client)
         
         # Load command history
         self.history_manager.load_history()
-        
-        # Main event loop for async operations
-        self.main_loop = asyncio.get_event_loop()
     
     def precmd(self, line):
         """Process command before execution"""
         self.history_manager.add_to_history(line)
         return line
     
-    def _execute_command_sync(self, command_line: str) -> str:
-        """Execute command synchronously in main event loop"""
-        try:
-            # Run the async command in the main event loop
-            future = asyncio.run_coroutine_threadsafe(
-                self.command_handler.execute_command(command_line),
-                self.main_loop
-            )
-            return future.result(timeout=10)  # 10 second timeout
-        except Exception as e:
-            return f"Error: {e}"
+    def default(self, line):
+        """Handle commands"""
+        parts = line.strip().split()
+        if not parts:
+            return
+            
+        command = parts[0]
+        args = parts[1:]
+        
+        result = self.command_handler.execute_command(command, args)
+        if result:
+            print(result)
     
     def do_help(self, arg):
         """Show help information"""
-        result = self._execute_command_sync(f"help {arg}")
+        args = arg.split() if arg else []
+        result = self.command_handler.execute_command('help', args)
+        print(result)
+    
+    def do_info(self, arg):
+        """Show node information"""
+        result = self.command_handler.execute_command('info')
         print(result)
     
     def do_status(self, arg):
         """Show node status"""
-        result = self._execute_command_sync("status")
+        result = self.command_handler.execute_command('status')
         print(result)
     
     def do_balance(self, arg):
         """Show wallet balance"""
-        result = self._execute_command_sync("balance")
+        args = arg.split() if arg else []
+        result = self.command_handler.execute_command('balance', args)
         print(result)
     
     def do_send(self, arg):
         """Send coins to address"""
-        result = self._execute_command_sync(f"send {arg}")
+        args = arg.split() if arg else []
+        result = self.command_handler.execute_command('send', args)
         print(result)
     
     def do_address(self, arg):
         """Generate new address"""
-        result = self._execute_command_sync("address")
+        result = self.command_handler.execute_command('address')
         print(result)
     
     def do_peers(self, arg):
         """Show connected peers"""
-        result = self._execute_command_sync("peers")
-        print(result)
-    
-    def do_connect(self, arg):
-        """Connect to peer"""
-        result = self._execute_command_sync(f"connect {arg}")
-        print(result)
-    
-    def do_disconnect(self, arg):
-        """Disconnect from peer"""
-        result = self._execute_command_sync(f"disconnect {arg}")
+        result = self.command_handler.execute_command('peers')
         print(result)
     
     def do_block(self, arg):
         """Show block information"""
-        result = self._execute_command_sync(f"block {arg}")
+        args = arg.split() if arg else []
+        result = self.command_handler.execute_command('block', args)
         print(result)
     
     def do_transaction(self, arg):
         """Show transaction information"""
-        result = self._execute_command_sync(f"transaction {arg}")
+        args = arg.split() if arg else []
+        result = self.command_handler.execute_command('transaction', args)
         print(result)
     
     def do_mempool(self, arg):
         """Show mempool information"""
-        result = self._execute_command_sync("mempool")
+        result = self.command_handler.execute_command('mempool')
         print(result)
     
     def do_stake(self, arg):
         """Show staking information"""
-        result = self._execute_command_sync("stake")
-        print(result)
-    
-    def do_stop(self, arg):
-        """Stop the node"""
-        result = self._execute_command_sync("stop")
-        print(result)
-        return True
-    
-    def do_restart(self, arg):
-        """Restart the node"""
-        result = self._execute_command_sync("restart")
-        print(result)
-    
-    def do_config(self, arg):
-        """Show or modify configuration"""
-        result = self._execute_command_sync(f"config {arg}")
+        result = self.command_handler.execute_command('stake')
         print(result)
     
     def do_exit(self, arg):
@@ -139,38 +118,27 @@ class RayonixInteractiveCLI(cmd.Cmd):
         """Do nothing on empty line"""
         pass
 
-async def run_interactive_mode(node):
-    """Run interactive CLI mode - PRODUCTION READY"""
-    # Create history manager
-    data_dir = node.config_manager.get('database.db_path', './rayonix_data')
-    history_file = os.path.join(data_dir, '.cli_history')
+def run_interactive_mode(rpc_client, data_dir: str):
+    """Run interactive CLI mode with RPC client"""
+    history_file = os.path.join(data_dir, '.rayonix_cli_history')
     history_manager = HistoryManager(history_file)
     
-    # Create CLI
-    cli = RayonixInteractiveCLI(node, history_manager)
-    
-    def run_cli():
-        """Run the CLI in a separate thread"""
-        try:
-            print("\n" + "="*50)
-            print("RAYONIX BLOCKCHAIN NODE - INTERACTIVE MODE")
-            print("Type 'help' for available commands")
-            print("="*50)
-            cli.cmdloop()
-        except Exception as e:
-            print(f"CLI error: {e}")
-    
-    # Start CLI in a separate thread
-    cli_thread = threading.Thread(target=run_cli, daemon=True)
-    cli_thread.start()
+    # Create and run CLI
+    cli = RayonixInteractiveCLI(rpc_client, history_manager)
     
     try:
-        # Keep the main async loop running while CLI is active
-        while node.running and cli_thread.is_alive():
-            await asyncio.sleep(0.5)
-            
+        print("\n" + "="*50)
+        print("RAYONIX BLOCKCHAIN NODE - INTERACTIVE MODE")
+        print("Connected to daemon via RPC")
+        print("Type 'help' for available commands")
+        print("="*50)
+        
+        cli.cmdloop()
+        
     except KeyboardInterrupt:
-        print("\nReceived shutdown signal...")
+        print("\nInterrupted")
+    except Exception as e:
+        print(f"CLI error: {e}")
     finally:
         # Save history
         history_manager.save_history()
