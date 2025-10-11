@@ -73,7 +73,7 @@ async def main():
             if node.wallet.restore_from_mnemonic(args.wallet_mnemonic):
                 logger.info("Wallet loaded from command line mnemonic")
                 # Set blockchain reference
-                if node.wallet.set_blockchain_reference(node.rayonix_coin):
+                if node.wallet.set_blockchain_reference(node.rayonix_chain):
                     logger.info("Wallet blockchain integration established")
                 else:
                     logger.warning("Wallet loaded but blockchain integration failed")
