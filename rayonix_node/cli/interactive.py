@@ -6,7 +6,7 @@ import threading
 import readline
 import os
 from typing import Optional
-from cli.history_manager import HistoryManager
+from rayonix_node.cli.history_manager import HistoryManager
 
 class RayonixInteractiveCLI(cmd.Cmd):
     """Interactive CLI for RAYONIX blockchain node"""
