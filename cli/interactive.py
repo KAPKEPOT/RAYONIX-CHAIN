@@ -1,13 +1,11 @@
-# cli/interactive.py - Interactive mode implementation
+# cli/interactive.py - PRODUCTION READY
 
 import cmd
-import shlex
 import asyncio
+import threading
 import readline
 import os
 from typing import Optional
-import threading
-
 from cli.history_manager import HistoryManager
 
 class RayonixInteractiveCLI(cmd.Cmd):
@@ -27,173 +25,105 @@ class RayonixInteractiveCLI(cmd.Cmd):
         # Load command history
         self.history_manager.load_history()
         
-        # Event for stopping the CLI
-        self.should_exit = asyncio.Event()
+        # Main event loop for async operations
+        self.main_loop = asyncio.get_event_loop()
     
     def precmd(self, line):
         """Process command before execution"""
         self.history_manager.add_to_history(line)
         return line
     
-    async def execute_command_async(self, command_line: str) -> str:
-        """Execute command asynchronously"""
+    def _execute_command_sync(self, command_line: str) -> str:
+        """Execute command synchronously in main event loop"""
         try:
-            return await self.command_handler.execute_command(command_line)
+            # Run the async command in the main event loop
+            future = asyncio.run_coroutine_threadsafe(
+                self.command_handler.execute_command(command_line),
+                self.main_loop
+            )
+            return future.result(timeout=10)  # 10 second timeout
         except Exception as e:
             return f"Error: {e}"
     
-    def default(self, line):
-        """Handle unknown commands"""
-        # For production, we run commands in a thread-safe way
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async(line), 
-            asyncio.get_event_loop()
-        ).result(timeout=30)  # 30 second timeout
-        
-        if result:
-            print(result)
-    
     def do_help(self, arg):
         """Show help information"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async(f"help {arg}"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync(f"help {arg}")
+        print(result)
     
     def do_status(self, arg):
         """Show node status"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async("status"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync("status")
+        print(result)
     
     def do_balance(self, arg):
         """Show wallet balance"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async("balance"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync("balance")
+        print(result)
     
     def do_send(self, arg):
         """Send coins to address"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async(f"send {arg}"), 
-            asyncio.get_event_loop()
-        ).result(timeout=30)
-        if result:
-            print(result)
+        result = self._execute_command_sync(f"send {arg}")
+        print(result)
     
     def do_address(self, arg):
         """Generate new address"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async("address"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync("address")
+        print(result)
     
     def do_peers(self, arg):
         """Show connected peers"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async("peers"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync("peers")
+        print(result)
     
     def do_connect(self, arg):
         """Connect to peer"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async(f"connect {arg}"), 
-            asyncio.get_event_loop()
-        ).result(timeout=15)
-        if result:
-            print(result)
+        result = self._execute_command_sync(f"connect {arg}")
+        print(result)
     
     def do_disconnect(self, arg):
         """Disconnect from peer"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async(f"disconnect {arg}"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync(f"disconnect {arg}")
+        print(result)
     
     def do_block(self, arg):
         """Show block information"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async(f"block {arg}"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync(f"block {arg}")
+        print(result)
     
     def do_transaction(self, arg):
         """Show transaction information"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async(f"transaction {arg}"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync(f"transaction {arg}")
+        print(result)
     
     def do_mempool(self, arg):
         """Show mempool information"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async("mempool"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync("mempool")
+        print(result)
     
     def do_stake(self, arg):
         """Show staking information"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async("stake"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync("stake")
+        print(result)
     
     def do_stop(self, arg):
         """Stop the node"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async("stop"), 
-            asyncio.get_event_loop()
-        ).result(timeout=30)
-        if result:
-            print(result)
-        self.should_exit.set()
+        result = self._execute_command_sync("stop")
+        print(result)
         return True
     
     def do_restart(self, arg):
         """Restart the node"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async("restart"), 
-            asyncio.get_event_loop()
-        ).result(timeout=30)
-        if result:
-            print(result)
+        result = self._execute_command_sync("restart")
+        print(result)
     
     def do_config(self, arg):
         """Show or modify configuration"""
-        result = asyncio.run_coroutine_threadsafe(
-            self.execute_command_async(f"config {arg}"), 
-            asyncio.get_event_loop()
-        ).result(timeout=10)
-        if result:
-            print(result)
+        result = self._execute_command_sync(f"config {arg}")
+        print(result)
     
     def do_exit(self, arg):
         """Exit the CLI"""
         print("Exiting CLI...")
-        self.should_exit.set()
         return True
     
     def do_quit(self, arg):
@@ -210,7 +140,7 @@ class RayonixInteractiveCLI(cmd.Cmd):
         pass
 
 async def run_interactive_mode(node):
-    """Run interactive CLI mode - Production ready"""
+    """Run interactive CLI mode - PRODUCTION READY"""
     # Create history manager
     data_dir = node.config_manager.get('database.db_path', './rayonix_data')
     history_file = os.path.join(data_dir, '.cli_history')
@@ -229,8 +159,6 @@ async def run_interactive_mode(node):
             cli.cmdloop()
         except Exception as e:
             print(f"CLI error: {e}")
-        finally:
-            cli.should_exit.set()
     
     # Start CLI in a separate thread
     cli_thread = threading.Thread(target=run_cli, daemon=True)
@@ -238,22 +166,11 @@ async def run_interactive_mode(node):
     
     try:
         # Keep the main async loop running while CLI is active
-        while node.running and not cli.should_exit.is_set():
+        while node.running and cli_thread.is_alive():
             await asyncio.sleep(0.5)
-            
-        # If we get here, CLI has exited but node might still be running
-        if node.running and cli.should_exit.is_set():
-            print("\nCLI session ended. Node continues running in background.")
-            print("Use Ctrl+C to stop the node completely.")
             
     except KeyboardInterrupt:
         print("\nReceived shutdown signal...")
-    except Exception as e:
-        print(f"Interactive mode error: {e}")
     finally:
         # Save history
         history_manager.save_history()
-        
-        # If CLI thread is still alive, we need to stop it
-        if cli_thread.is_alive():
-            cli.should_exit.set()
