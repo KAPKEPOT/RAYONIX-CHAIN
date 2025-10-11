@@ -26,7 +26,7 @@ class RayonixNode:
         if dependencies:
             self.deps = dependencies
             self.config_manager = dependencies.config_manager
-            self.rayonix_chain = dependencies.rayonix_coin
+            self.rayonix_chain = dependencies.rayonix_chain
             self.wallet = dependencies.wallet
             self.network = dependencies.network
             self.contract_manager = dependencies.contract_manager
