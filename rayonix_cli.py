@@ -244,11 +244,11 @@ def main():
     try:
         if args.command == 'interactive' or not args.command:
             # Interactive mode
-            from cli.interactive import run_interactive_mode
+            from rayonix_node.cli.interactive import run_interactive_mode
             run_interactive_mode(client, data_dir)
         else:
             # Single command mode
-            from cli.command_handler import CommandHandler
+            from rayonix_node.cli.command_handler import CommandHandler
             handler = CommandHandler(client)
             
             command_args = []
