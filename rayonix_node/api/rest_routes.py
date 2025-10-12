@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 
-from rayonix_node.utils.validators import validate_rayonix_address, validate_transaction_amount
+from rayonix_node.utils.validators import validate_rayonix_address, validate_amount
 #from rayonix_node.core.blockchain import Block, Transaction
 #from rayonix_node.core.consensus import StakingManager, Validator
 #from rayonix_node.core.smart_contract import ContractManager, SmartContract
@@ -51,7 +51,7 @@ class TransactionRequest(BaseModel):
 
     @validator('amount')
     def validate_amount(cls, v):
-        if not validate_transaction_amount(v):
+        if not validate_amount(v):  # Changed from validate_transaction_amount to validate_amount
             raise ValueError('Invalid transaction amount')
         return v
 
