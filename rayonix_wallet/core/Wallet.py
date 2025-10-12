@@ -639,7 +639,7 @@ class ProductionRayonixWallet:
             # Use cryptography library for robust key derivation
             private_key_obj = ec.derive_private_key(
                 int.from_bytes(private_key, 'big'),
-                ec.SECP256k1(),
+                ec.SECP256K1(),
                 self._crypto_backend
             )
             
@@ -664,7 +664,7 @@ class ProductionRayonixWallet:
         """Cryptographic public key validation"""
         try:
             # Verify the point is on the curve
-            ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256k1(), public_key)
+            ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), public_key)
             
             # Additional validation for compressed format
             if len(public_key) == 33:
