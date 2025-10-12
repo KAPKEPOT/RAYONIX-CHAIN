@@ -153,6 +153,15 @@ class RayonixNode:
     	else:
     		# Create new wallet on demand
     		return await self._create_wallet_on_demand()
+    		
+    async def _create_wallet_on_demand(self) -> bool:
+    	"""Create wallet when explicitly requested by user"""
+    	try:
+    		await self._initialize_wallet_with_blockchain()
+    		return self.wallet is not None
+    	except Exception as e:
+    		logger.error(f"Failed to create wallet on demand: {e}")
+    		return False
 
     async def _initialize_wallet_with_blockchain(self):
         """Initialize wallet with proper blockchain reference integration"""
