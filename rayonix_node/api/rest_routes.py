@@ -35,8 +35,8 @@ class BlockchainStatusResponse(BaseModel):
     network: str
 
 # Dependency to get node instance
-def get_node(request: Dict):
-    return request["node"]
+def get_node(request: Request):
+    return request.app.state.node
 
 def setup_rest_routes(app, node):
     """Setup REST API routes for FastAPI"""
@@ -67,8 +67,9 @@ async def get_blockchain_status(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/blockchain/block/{block_hash_or_height}")
-async def get_block(block_hash_or_height: str, node: Any = Depends(lambda: router.node)):
+async def get_block(block_hash_or_height: str, request: Request):
     """Get block by hash or height"""
+    node = request.app.state.node
     try:
         if block_hash_or_height.isdigit():
             block = node.rayonix_chain.get_block_by_height(int(block_hash_or_height))
@@ -84,8 +85,9 @@ async def get_block(block_hash_or_height: str, node: Any = Depends(lambda: route
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/blockchain/transaction/{tx_hash}")
-async def get_transaction(tx_hash: str, node: Any = Depends(lambda: router.node)):
+async def get_transaction(tx_hash: str, request: Request):
     """Get transaction by hash"""
+    node = request.app.state.node
     try:
         transaction = node.rayonix_chain.get_transaction(tx_hash)
         
@@ -98,8 +100,9 @@ async def get_transaction(tx_hash: str, node: Any = Depends(lambda: router.node)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/wallet/balance", response_model=BalanceResponse)
-async def get_wallet_balance(node: Any = Depends(lambda: router.node)):
+async def get_wallet_balance(request: Request):
     """Get wallet balance"""
+    node = request.app.state.node
     try:
         if not node.wallet:
             raise HTTPException(status_code=400, detail="Wallet not available")
@@ -111,8 +114,9 @@ async def get_wallet_balance(node: Any = Depends(lambda: router.node)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/wallet/addresses", response_model=AddressesResponse)
-async def get_wallet_addresses(node: Any = Depends(lambda: router.node)):
+async def get_wallet_addresses(request: Request):
     """Get wallet addresses"""
+    node = request.app.state.node
     try:
         if not node.wallet:
             raise HTTPException(status_code=400, detail="Wallet not available")
@@ -124,8 +128,9 @@ async def get_wallet_addresses(node: Any = Depends(lambda: router.node)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/wallet/send", response_model=TransactionResponse)
-async def send_transaction(transaction: TransactionRequest, node: Any = Depends(lambda: router.node)):
+async def send_transaction(transaction: TransactionRequest, request: Request):
     """Send transaction"""
+    node = request.app.state.node
     try:
         if not node.wallet:
             raise HTTPException(status_code=400, detail="Wallet not available")
@@ -144,8 +149,9 @@ async def send_transaction(transaction: TransactionRequest, node: Any = Depends(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/node/status")
-async def get_node_status(node: Any = Depends(lambda: router.node)):
+async def get_node_status(request: Request):
     """Get node status"""
+    node = request.app.state.node
     try:
         status = node.state_manager.get_state_summary()
         return status
@@ -154,8 +160,9 @@ async def get_node_status(node: Any = Depends(lambda: router.node)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/node/peers")
-async def get_peers(node: Any = Depends(lambda: router.node)):
+async def get_peers(request: Request):
     """Get connected peers"""
+    node = request.app.state.node
     try:
         if not node.network:
             raise HTTPException(status_code=400, detail="Network not available")
