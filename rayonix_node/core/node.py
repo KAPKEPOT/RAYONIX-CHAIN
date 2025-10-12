@@ -147,9 +147,13 @@ class RayonixNode:
     	wallet_file = Path(self.get_config_value('database.db_path', './rayonix_data')) / 'wallet.dat'
     	
     	if wallet_file.exists() and wallet_file.stat().st_size > 0:
-    	   # Try to load existing wallet
-    	   return await self._initialize_wallet_with_blockchain()
-  
+    		# Try to load existing wallet
+    		return await self._initialize_wallet_with_blockchain()
+    		
+    	else:
+    		# Create new wallet on demand
+    		return await self._create_wallet_on_demand()
+
     async def _initialize_wallet_with_blockchain(self):
         """Initialize wallet with proper blockchain reference integration"""
         try:
