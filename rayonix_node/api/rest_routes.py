@@ -101,11 +101,11 @@ async def get_transaction(tx_hash: str, request: Request):
 
 @router.get("/wallet/balance", response_model=BalanceResponse)
 async def get_wallet_balance(request: Request):
-    """Get wallet balance"""
+    """Get wallet balance - returns 0 if no wallet"""
     node = request.app.state.node
     try:
         if not node.wallet:
-            raise HTTPException(status_code=400, detail="Wallet not available")
+            return {"balance": 0}  # Graceful fallback
         
         balance = node.wallet.get_balance()
         return {"balance": balance}

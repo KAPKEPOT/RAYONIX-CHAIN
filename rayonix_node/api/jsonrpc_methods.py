@@ -120,34 +120,42 @@ async def gettransaction(context, tx_hash: str) -> Dict:
 async def getbalance(context, address: str = None) -> Dict:
     """JSON-RPC method to get balance for address or wallet"""
     try:
-        if address:
-            # Validate address format
-            if not validate_rayonix_address(address):
-                return {"error": "Invalid address format"}
-            
-            balance = context.rayonix_chain.get_address_balance(address)
-        else:
-            # Get wallet balance if no address specified
-            if not context.wallet:
-                return {"error": "No wallet available"}
-            
-            balance = context.wallet.get_balance()
+        # If no wallet exists, return 0 balance
+        if not context.wallet:
+        	return Success(0)
         
-        return {"result": balance, "error": None}
+        if address:
+        	# Validate address format
+        	if not validate_rayonix_address(address):
+        		return Error("Invalid address format")
+        	
+        	balance = context.rayonix_chain.get_address_balance(address)
+        
+        else:
+        	# Get wallet balance
+        	balance = context.wallet.get_balance()
+        	
+        return Success(balance)
     except Exception as e:
-        return {"error": str(e)}
+    	logger.error(f"Error getting balance: {e}")
+    	return Error(str(e))
 
 @method
 async def getnewaddress(context, label: str = "") -> Dict:
     """JSON-RPC method to generate a new address"""
     try:
-        if not context.wallet:
-            return {"error": "No wallet available"}
-        
-        address = context.wallet.get_new_address()
-        return {"result": address, "error": None}
+    	# Ensure wallet exists first
+    	if not await context.create_wallet_if_not_exists():
+    		return Error("Failed to initialize wallet")
+    	
+    	if not context.wallet:
+    		return Error("No wallet available after initialization")
+    	
+    	address = context.wallet.get_new_address()
+    	return Success(address)
     except Exception as e:
-        return {"error": str(e)}
+    	logger.error(f"Error generating address: {e}")
+    	return Error(str(e))
 
 @method
 async def listtransactions(context, count: int = 10, skip: int = 0) -> Dict:
