@@ -19,10 +19,6 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 
 from rayonix_node.utils.validators import validate_rayonix_address, validate_amount
-#from rayonix_node.core.blockchain import Block, Transaction
-#from rayonix_node.core.consensus import StakingManager, Validator
-#from rayonix_node.core.smart_contract import ContractManager, SmartContract
-#from rayonix_node.core.wallet import Wallet, HDWallet, LegacyWallet
 
 logger = logging.getLogger("rayonix_node.api")
 
