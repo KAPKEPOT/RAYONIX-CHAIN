@@ -86,14 +86,14 @@ class BlockchainStatusResponse(BaseModel):
     best_block_hash: str
 
 class WalletCreateRequest(BaseModel):
-    wallet_type: str = Field("hd", regex="^(hd|legacy)$")
+    wallet_type: str = Field("hd", pattern="^(hd|legacy)$")
     password: Optional[str] = None
     mnemonic_length: int = Field(12, ge=12, le=24)
 
 class WalletLoadRequest(BaseModel):
     mnemonic: str
     password: Optional[str] = None
-    wallet_type: str = Field("hd", regex="^(hd|legacy)$")
+    wallet_type: str = Field("hd", pattern="^(hd|legacy)$")
 
 class WalletImportRequest(BaseModel):
     file_path: str
