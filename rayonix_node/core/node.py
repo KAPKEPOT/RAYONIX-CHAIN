@@ -115,8 +115,10 @@ class RayonixNode:
                 )
             
             # Initialize wallet if not provided via dependencies
-            if not self.wallet:
-                await self._initialize_wallet_with_blockchain()
+            #if not self.wallet:
+                #await self._initialize_wallet_with_blockchain()
+            self.wallet = None
+           
             
             # Initialize network if enabled and not provided via dependencies
             if self.config_manager.get('network.enabled', True) and not self.network:
@@ -137,7 +139,17 @@ class RayonixNode:
             import traceback
             traceback.print_exc()
             return False
-    
+            
+    async def create_wallet_if_not_exists(self) -> bool:
+    	"""Create wallet only when explicitly needed"""
+    	if self.wallet is not None:
+    		return True  # Wallet already exists
+    	wallet_file = Path(self.get_config_value('database.db_path', './rayonix_data')) / 'wallet.dat'
+    	
+    	if wallet_file.exists() and wallet_file.stat().st_size > 0:
+    	   # Try to load existing wallet
+    	   return await self._initialize_wallet_with_blockchain()
+  
     async def _initialize_wallet_with_blockchain(self):
         """Initialize wallet with proper blockchain reference integration"""
         try:
