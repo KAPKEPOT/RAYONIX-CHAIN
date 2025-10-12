@@ -171,8 +171,9 @@ Balance: {info.get('balance', 0)} RAY
     def cmd_address(self, args: List[str]) -> str:
         """Address command implementation"""
         try:
+            # This will now trigger wallet creation
             address = self.client.get_new_address()
-            return f"New Address: {address}"
+            return f"New Address: {address}\nWallet created successfully!"
         except Exception as e:
             return f"Error generating address: {e}"
     
