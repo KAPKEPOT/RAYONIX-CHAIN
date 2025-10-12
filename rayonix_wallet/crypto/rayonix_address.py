@@ -1,7 +1,7 @@
 import hashlib
 import struct
 import secrets
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 from enum import Enum, IntEnum
 from dataclasses import dataclass
 from cryptography.hazmat.primitives import hashes
