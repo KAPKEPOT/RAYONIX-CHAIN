@@ -95,10 +95,25 @@ class KeyManager:
             raise CryptoError("Invalid private key format")
     
     def _private_to_public(self, private_key: bytes) -> bytes:
-        """Derive public key from private key"""
-        import ecdsa
-        sk = ecdsa.SigningKey.from_string(private_key, curve=ecdsa.SECP256k1)
-        return sk.verifying_key.to_string()
+        """Convert private key to public key using cryptography library"""
+        try:
+            sk = ec.derive_private_key(
+                int.from_bytes(private_key, 'big'),
+                ec.SECP256K1(),  
+                self.backend
+            )
+            vk = sk.public_key()
+            
+            # Get compressed public key
+            public_key_bytes = vk.public_bytes(
+                encoding=ec.Encoding.X962,
+                format=ec.PublicFormat.CompressedPoint
+            )
+            
+            return public_key_bytes
+            
+        except Exception as e:
+            raise CryptoError(f"Public key derivation failed: {e}")
     
     def get_derivation_path(self, index: int, is_change: bool = False) -> str:
         """Get BIP44 derivation path"""

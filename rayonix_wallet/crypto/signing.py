@@ -15,10 +15,11 @@ class TransactionSigner:
     def sign_data(self, data: bytes, private_key: bytes) -> bytes:
         """Sign data using ECDSA with proper canonical signatures"""
         try:
+            #Use SECP256K1 (uppercase)
             private_key_obj = ec.derive_private_key(
                 int.from_bytes(private_key, 'big'),
-                ec.SECP256K1(),
-                default_backend()
+                ec.SECP256K1(),  
+                self.backend
             )
             
             signature = private_key_obj.sign(
@@ -92,10 +93,11 @@ class TransactionSigner:
         return version + input_count + inputs_data + output_count + outputs_data + locktime + sighash_type
     
     def verify_signature(self, data: bytes, signature: bytes, public_key: bytes) -> bool:
-        """Verify ECDSA signature"""
+        """Verify ECDSA signature with cryptographic"""
         try:
+            # Use SECP256K1 (uppercase)
             public_key_obj = ec.EllipticCurvePublicKey.from_encoded_point(
-                ec.SECP256K1(),
+                ec.SECP256K1(),  
                 public_key
             )
             
