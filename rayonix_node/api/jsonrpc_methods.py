@@ -5,6 +5,8 @@ import time
 import hashlib
 from jsonrpcserver import method, Result, Success, Error
 from typing import Dict, List  # Add this import
+import logging
+logger = logging.getLogger("rayonix_node.api.jsonrpc")
 
 from rayonix_node.utils.validators import validate_rayonix_address
 
