@@ -1,0 +1,82 @@
+the structure. consensus/
+├── core/
+│   ├── mod.rs
+│   ├── validator/
+│   │   ├── mod.rs
+│   │   ├── registry.rs
+│   │   ├── state_manager.rs
+│   │   └── lifecycle.rs
+│   ├── scoring/
+│   │   ├── mod.rs
+│   │   ├── engine.rs
+│   │   ├── time_lived.rs
+│   │   ├── stochastic.rs
+│   │   └── weights_manager.rs
+│   └── election/
+│       ├── mod.rs
+│       ├── leader_selector.rs
+│       ├── probability_calculator.rs
+│       └── vrf_integrator.rs
+├── mechanisms/
+│   ├── mod.rs
+│   ├── pos/
+│   │   ├── mod.rs
+│   │   ├── stake_manager.rs
+│   │   └── power_calculator.rs
+│   ├── potl/
+│   │   ├── mod.rs
+│   │   ├── reliability_tracker.rs
+│   │   ├── time_decay.rs
+│   │   └── behavior_monitor.rs
+│   └── hybrid_orchestrator.rs
+├── security/
+│   ├── mod.rs
+│   ├── slashing/
+│   │   ├── mod.rs
+│   │   ├── detector.rs
+│   │   ├── penalty_calculator.rs
+│   │   └── jail_manager.rs
+│   ├── finality/
+│   │   ├── mod.rs
+│   │   ├── gadget.rs
+│   │   ├── vote_aggregator.rs
+│   │   └── fork_choice.rs
+│   └── crisis/
+│       ├── mod.rs
+│       ├── detector.rs
+│       └── emergency_handler.rs
+├── economics/
+│   ├── mod.rs
+│   ├── rewards/
+│   │   ├── mod.rs
+│   │   ├── distributor.rs
+│   │   ├── calculator.rs
+│   │   └── fairness_engine.rs
+│   └── incentives/
+│       ├── mod.rs
+│       ├── game_theory.rs
+│       └── validator_behavior.rs
+├── state/
+│   ├── mod.rs
+│   ├── epoch_state.rs
+│   ├── consensus_state.rs
+│   ├── validator_state.rs
+│   └── snapshot_manager.rs
+├── governance/
+│   ├── mod.rs
+│   ├── parameters/
+│   │   ├── mod.rs
+│   │   ├── dynamic_manager.rs
+│   │   ├── temperature_controller.rs
+│   │   └── weight_balancer.rs
+│   └── upgrades/
+│       ├── mod.rs
+│       ├── migration_handler.rs
+│       └── version_manager.rs
+└── types/
+    ├── mod.rs
+    ├── validator.rs
+    ├── score.rs
+    ├── election.rs
+    ├── slashing.rs
+    └── consensus.rs
