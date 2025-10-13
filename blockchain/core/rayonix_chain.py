@@ -30,6 +30,7 @@ from blockchain.utils.genesis import GenesisBlockGenerator
 from network.core.p2p_network import AdvancedP2PNetwork
 from blockchain.config.consensus_config import ConsensusConfig
 from merkle_system.merkle import MerkleTree, CompactMerkleTree, MerkleTreeConfig, HashAlgorithm, ProofFormat, MerkleTreeFactory, MerkleTreeStats, global_stats, create_merkle_tree_from_file, create_merkle_tree_from_large_file, batch_verify_proofs, batch_verify_proofs_async, create_merkle_mountain_range
+from blockchain.consensus.rayonix_consensus_bridge import RayonixConsensusBridge, ConsensusMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +160,8 @@ class RayonixBlockchain:
         
         # Initialize blockchain
         self._initialize_blockchain()
+        self.consensus_bridge = None
+        self._initialize_advanced_consensus()
         
         logger.info(f"RAYONIX node initialized for {network_type} network")
         
@@ -241,7 +244,53 @@ class RayonixBlockchain:
             logger.error(f"Component initialization failed: {e}")
             self.health = NodeHealth.CRITICAL
             raise
-            
+           
+    def _initialize_advanced_consensus(self):
+    	"""Initialize the advanced Rust consensus system"""
+    	try:
+    		# Prepare consensus configuration
+    		consensus_config = {
+    		    'network_type': self.network_type,
+    		    'data_dir': str(self.data_dir),
+    		    'stake_minimum': self.config.stake_minimum,
+    		    'block_time_target': self.config.block_time_target,
+    		    'security_level': getattr(self.config, 'security_level', 'high'),
+    		    'enable_advanced_metrics': True,
+                'max_validators': 1000,
+                'temperature_control': True,
+                'crisis_detection': True
+    		}
+    		# Initialize consensus bridge
+    		self.consensus_bridge = RayonixConsensusBridge(
+    		    config=consensus_config,
+    		    data_dir=str(self.data_dir)
+    		)
+    		
+    		# Subscribe to consensus events
+    		self.consensus_bridge.subscribe('slot_processed', self._handle_slot_processed)
+    		self.consensus_bridge.subscribe('epoch_transition', self._handle_epoch_transition)
+    		self.consensus_bridge.subscribe('consensus_anomaly', self._handle_consensus_anomaly)
+    		logger.info("Advanced consensus system initialized")
+    	
+    	except Exception as e:
+    		logger.error(f"Advanced consensus initialization failed: {e}")
+    		
+    		# Fall back to basic consensus
+    		self._initialize_basic_consensus()
+    		
+    def _initialize_basic_consensus(self):
+    	"""Fallback to basic consensus if advanced system fails"""
+    	from consensusengine.core.consensus import ProofOfStake
+    	from consensusengine.utils.config.factory import ConfigFactory
+    	
+    	config_dict = self._config_to_dict()
+    	self.consensus_config = ConfigFactory.create_safe_consensus_config(**config_dict)
+    	
+    	self.consensus = ProofOfStake(
+    	    config=self.consensus_config,
+    	    network_config=getattr(self, 'network_config', {})
+    	)
+
     def _setup_contract_manager_references(self):
     	try:
     		if hasattr(self.contract_manager, 'set_blockchain_reference'):
@@ -737,68 +786,20 @@ class RayonixBlockchain:
             return False
 
     async def start(self):
-        """Start the blockchain node with comprehensive initialization"""
-        if self.running:
-            logger.warning("Node is already running")
-            return
-        
-        logger.info("Starting RAYONIX blockchain node...")
-        
-        try:
-            self.running = True
-            self.shutdown_event.clear()
-            self.state = BlockchainState.INITIALIZING
+        """Start blockchain with advanced consensus"""
+        # Start consensus bridge first
+        if self.consensus_bridge:
+            await self.consensus_bridge.start()
             
-            # Start network layer
-            await self.network.start()
-            
-            # Start background tasks
-            await self._start_background_tasks()
-            
-            # Change state to syncing
-            self.state = BlockchainState.SYNCING
-            self._notify_subscribers('node_state_change', {'state': self.state})
-            
-            # Begin synchronization
-            asyncio.create_task(self._synchronization_loop())
-            
-            logger.info("RAYONIX node started successfully")
-            
-        except Exception as e:
-            logger.error(f"Node startup failed: {e}")
-            self.health = NodeHealth.CRITICAL
-            await self.stop()
+        # Then start other components
+        await super().start()
 
     async def stop(self):
-        """Stop the blockchain node gracefully"""
-        if not self.running:
-            return
-        
-        logger.info("Stopping RAYONIX blockchain node...")
-        
-        self.running = False
-        self.shutdown_event.set()
-        self.state = BlockchainState.STOPPED
-        
-        # Cancel background tasks
-        for task in self.background_tasks:
-            if not task.done():
-                task.cancel()
-        
-        # Stop network
-        await self.network.stop()
-        
-        # Save state
-        self._save_node_state()
-        
-        # Wait for tasks to complete
-        try:
-            await asyncio.gather(*self.background_tasks, return_exceptions=True)
-        except Exception as e:
-            logger.debug(f"Background task cancellation: {e}")
-        
-        self.background_tasks.clear()
-        logger.info("RAYONIX node stopped gracefully")
+        """Stop blockchain and consensus bridge"""
+        if self.consensus_bridge:
+            await self.consensus_bridge.stop()
+            
+        await super().stop()
 
     async def _start_background_tasks(self):
         """Start all background maintenance tasks"""
@@ -831,30 +832,156 @@ class RayonixBlockchain:
                 await asyncio.sleep(min(interval, 300))  # Cap backoff at 5 minutes
 
     async def _block_production_loop(self):
-        """Proof-of-Stake block production loop"""
+        """Enhanced block production using advanced consensus"""
         if self.state != BlockchainState.SYNCED:
             return
-        
-        if not self.config.enable_auto_staking:
+            
+        if not self.consensus_bridge:
+            # Fall back to basic block production
+            await super()._block_production_loop()
             return
-        
+            
         try:
-            # Check if we should produce a block
-            if await self.block_producer.should_produce_block():
-                block = await self.block_producer.create_new_block()
+            # Get current network state for consensus
+            network_state = await self._get_network_state_for_consensus()
+            
+            # Get active validators
+            validators = await self._get_active_validators_for_consensus()
+            
+            # Process slot through advanced consensus
+            slot_result = await self.consensus_bridge.process_slot(
+                slot=self.metrics.block_height + 1,
+                parent_block_hash=self.chain_head,
+                validators=validators,
+                network_state=network_state
+            )
+            
+            # Check if we are the selected leader
+            if slot_result.get('is_leader', False):
+                block = await self._create_consensus_block(slot_result)
                 if block:
                     success = await self._process_new_block(block)
                     if success:
-                        self._notify_subscribers('block_processed', {
-                            'height': block.header.height,
-                            'hash': block.hash,
-                            'producer': self.wallet.get_primary_address()
-                        })
-        
+                        logger.info(f"Produced block #{block.header.height} using advanced consensus")
+                        
         except Exception as e:
-            logger.error(f"Block production error: {e}")
-            self.error_counters['block_production'] += 1
+            logger.error(f"Advanced block production error: {e}")
+            # Fall back to basic production
+            await super()._block_production_loop()
 
+    async def _get_network_state_for_consensus(self) -> Dict[str, Any]:
+        """Prepare network state for consensus engine"""
+        return {
+            'block_height': self.metrics.block_height,
+            'total_stake': await self._get_total_network_stake(),
+            'validator_count': len(await self._get_active_validators()),
+            'network_load': self._calculate_network_load(),
+            'security_parameter': self._calculate_security_parameter(),
+            'decentralization_index': self._calculate_decentralization_index(),
+            'average_latency': self._get_average_network_latency(),
+            'fork_probability': await self.fork_manager.assess_fork_risk(),
+            'economic_indicators': self._get_economic_indicators()
+        }
+        
+    async def _get_active_validators_for_consensus(self) -> List[Dict[str, Any]]:
+        """Prepare validator data for consensus engine"""
+        validators = []
+        active_validators = await self._get_active_validators()
+        
+        for validator in active_validators:
+            validator_data = {
+                'validator_id': validator['address'],
+                'stake': validator['stake'],
+                'reliability_score': validator.get('reliability', 0.0),
+                'performance_metrics': validator.get('performance', {}),
+                'time_lived_components': validator.get('time_lived', {}),
+                'geographic_location': validator.get('location', 'unknown'),
+                'network_performance': validator.get('network_stats', {})
+            }
+            validators.append(validator_data)
+            
+        return validators
+        
+    async def _create_consensus_block(self, slot_result: Dict[str, Any]) -> Any:
+        """Create block using consensus results"""
+        # Use the sophisticated scoring and selection from consensus
+        transactions = self.transaction_manager.select_transactions_for_block(
+            max_size=self.config.max_block_size,
+            priority_scores=slot_result.get('transaction_priorities', {})
+        )
+        
+        block = await self.block_producer.create_block_template(
+            parent_hash=self.chain_head,
+            transactions=transactions,
+            validator_data=slot_result.get('validator_scores', {})
+        )
+        
+        return block
+        
+    def _handle_slot_processed(self, data: Dict[str, Any]):
+        """Handle slot processed event from consensus"""
+        slot = data['slot']
+        leader = data['leader']
+        scores = data['scores']
+        
+        logger.debug(f"Consensus processed slot {slot}, leader: {leader['validator_id']}")
+        
+        # Update local validator scores
+        self._update_validator_scores(scores)
+        
+    def _handle_epoch_transition(self, data: Dict[str, Any]):
+        """Handle epoch transition from consensus"""
+        epoch = data['epoch']
+        metrics = data['metrics']
+        
+        logger.info(f"Consensus epoch transition to {epoch}, metrics: {metrics}")
+        
+        # Update governance parameters if needed
+        if metrics.gini_coefficient > 0.7:  # High inequality
+            self._adjust_consensus_parameters({'fairness_weight': 0.8})
+            
+    def _handle_consensus_anomaly(self, data: Dict[str, Any]):
+        """Handle consensus anomalies"""
+        anomaly_type = data['anomaly_type']
+        severity = data['severity']
+        
+        logger.warning(f"Consensus anomaly detected: {anomaly_type} (severity: {severity})")
+        
+        if severity == 'critical':
+            # Trigger emergency protocols
+            asyncio.create_task(self._handle_consensus_emergency(data))
+            
+    async def _handle_consensus_emergency(self, anomaly_data: Dict[str, Any]):
+        """Handle consensus emergencies"""
+        emergency_response = await self.consensus_bridge.handle_fork(anomaly_data)
+        
+        if emergency_response.get('requires_chain_reorganization'):
+            await self.fork_manager.handle_emergency_reorganization(
+                emergency_response['reorganization_plan']
+            )
+            
+    # Public API enhancements
+    async def get_advanced_consensus_metrics(self) -> ConsensusMetrics:
+        """Get advanced consensus metrics"""
+        if self.consensus_bridge:
+            return await self.consensus_bridge.get_consensus_metrics()
+        return ConsensusMetrics()
+        
+    async def get_validator_consensus_info(self, address: str) -> Optional[Dict[str, Any]]:
+        """Get detailed validator info from consensus"""
+        if self.consensus_bridge:
+            validator_info = await self.consensus_bridge.get_validator_info(address)
+            if validator_info:
+                return asdict(validator_info)
+        return None
+        
+    async def optimize_consensus_parameters(self) -> Dict[str, Any]:
+        """Optimize consensus parameters based on historical data"""
+        if self.consensus_bridge:
+            historical_data = self._prepare_historical_data()
+            return await self.consensus_bridge.optimize_parameters(historical_data)
+        return {}
+              
     async def _mempool_management_loop(self):
         """Mempool management loop"""
         try:
