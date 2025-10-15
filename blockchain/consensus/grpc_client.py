@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional, AsyncGenerator
 import grpc
 from google.protobuf import json_format
 
-from blockchain.consensus.consensus import consensus_pb2, consensus_pb2_grpc
+from blockchain.consensus.proto import consensus_pb2, consensus_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
