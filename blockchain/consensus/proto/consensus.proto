@@ -1,1 +1,218 @@
+// blockchain/consensus/proto/consensus.proto
+syntax = "proto3";
 
+package rayonix.consensus;
+
+service ConsensusService {
+  rpc ProcessSlot(SlotRequest) returns (SlotResponse);
+  rpc ProcessEpoch(EpochRequest) returns (EpochResponse);
+  rpc GetValidatorInfo(ValidatorRequest) returns (ValidatorResponse);
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc OptimizeParameters(OptimizeRequest) returns (OptimizeResponse);
+  rpc HandleFork(ForkRequest) returns (ForkResponse);
+  rpc StreamEvents(StreamRequest) returns (stream ConsensusEvent);
+}
+
+message SlotRequest {
+  uint64 slot = 1;
+  string parent_block_hash = 2;
+  repeated Validator validators = 3;
+  NetworkState network_state = 4;
+}
+
+message SlotResponse {
+  bool is_leader = 1;
+  string selected_validator = 2;
+  map<string, double> validator_scores = 3;
+  VRFOutput vrf_output = 4;
+  ConsensusMetrics metrics = 5;
+  string error_message = 6;
+}
+
+message Validator {
+  string validator_id = 1;
+  uint64 stake = 2;
+  double reliability_score = 3;
+  double total_score = 4;
+  PerformanceMetrics performance = 5;
+  TimeLivedComponents time_lived = 6;
+}
+
+message PerformanceMetrics {
+  double uptime_percentage = 1;
+  uint64 blocks_proposed = 2;
+  uint64 blocks_missed = 3;
+  double average_latency_ms = 4;
+  uint64 consecutive_successes = 5;
+}
+
+message TimeLivedComponents {
+  double exponential_moving_average = 1;
+  double cumulative_reliability = 2;
+  uint64 activation_epoch = 3;
+  uint64 last_reliability_update = 4;
+}
+
+message NetworkState {
+  uint64 block_height = 1;
+  uint64 total_stake = 2;
+  uint32 validator_count = 3;
+  double network_load = 4;
+  double security_parameter = 5;
+  double decentralization_index = 6;
+  double average_latency = 7;
+  double fork_probability = 8;
+  EconomicIndicators economic_indicators = 9;
+}
+
+message EconomicIndicators {
+  double inflation_rate = 1;
+  double stake_ratio = 2;
+  double reward_rate = 3;
+  double penalty_rate = 4;
+}
+
+message VRFOutput {
+  bytes proof = 1;
+  bytes output = 2;
+  string validator_id = 3;
+}
+
+message ConsensusMetrics {
+  uint64 epoch = 1;
+  uint64 slot = 2;
+  uint32 validator_count = 3;
+  uint64 total_stake = 4;
+  double average_score = 5;
+  double gini_coefficient = 6;
+  double entropy = 7;
+  double security_score = 8;
+  double health_score = 9;
+}
+
+message EpochRequest {
+  uint64 epoch = 1;
+  NetworkState network_state = 2;
+}
+
+message EpochResponse {
+  uint64 epoch = 1;
+  EpochResult result = 2;
+  ConsensusMetrics metrics = 3;
+}
+
+message ValidatorRequest {
+  string validator_id = 1;
+}
+
+message ValidatorResponse {
+  ValidatorInfo info = 1;
+}
+
+message ValidatorInfo {
+  string validator_id = 1;
+  uint64 stake = 2;
+  double reliability_score = 3;
+  double total_score = 4;
+  double selection_probability = 5;
+  string status = 6;
+  uint64 last_active_slot = 7;
+}
+
+message ForkRequest {
+  ForkData fork_data = 1;
+}
+
+message ForkResponse {
+  bool requires_reorganization = 1;
+  ReorganizationPlan plan = 2;
+  string emergency_level = 3;
+}
+
+message OptimizeRequest {
+  repeated HistoricalData historical_data = 1;
+}
+
+message OptimizeResponse {
+  map<string, double> parameter_adjustments = 1;
+  double expected_improvement = 2;
+  string risk_level = 3;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+  string version = 2;
+  uint64 uptime_seconds = 3;
+}
+
+message StreamRequest {
+  repeated string event_types = 1;
+}
+
+message ConsensusEvent {
+  string type = 1;
+  uint64 timestamp = 2;
+  bytes data = 3;
+  string severity = 4;
+}
+
+// Internal types
+message EpochResult {
+  map<string, double> stake_components = 1;
+  map<string, double> stake_power = 2;
+  map<string, double> time_lived_components = 3;
+  map<string, double> reliability_components = 4;
+  map<string, double> comprehensive_scores = 5;
+  repeated SlotResult slot_results = 6;
+  RewardDistribution reward_distribution = 7;
+}
+
+message SlotResult {
+  uint64 slot = 1;
+  LeaderSelection leader_selection = 2;
+  VRFOutput vrf_output = 3;
+  double temperature = 4;
+  AnomalyDetection anomaly_detection = 5;
+}
+
+message LeaderSelection {
+  string selected_validator = 1;
+  bytes selection_proof = 2;
+  double selection_score = 3;
+}
+
+message AnomalyDetection {
+  bool anomaly_detected = 1;
+  string anomaly_type = 2;
+  string severity = 3;
+  repeated string affected_validators = 4;
+}
+
+message RewardDistribution {
+  map<string, uint64> rewards = 1;
+  uint64 total_distributed = 2;
+  uint64 foundation_reward = 3;
+}
+
+message ForkData {
+  string fork_hash = 1;
+  uint64 fork_height = 2;
+  repeated string conflicting_validators = 3;
+  double fork_severity = 4;
+}
+
+message ReorganizationPlan {
+  uint64 target_height = 1;
+  repeated string blocks_to_rollback = 2;
+  repeated string blocks_to_add = 3;
+  string common_ancestor = 4;
+}
+
+message HistoricalData {
+  uint64 epoch = 1;
+  ConsensusMetrics metrics = 2;
+  map<string, double> validator_performance = 3;
+  NetworkState network_state = 4;
+}
