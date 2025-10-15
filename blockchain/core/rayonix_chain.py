@@ -31,6 +31,7 @@ from network.core.p2p_network import AdvancedP2PNetwork
 from blockchain.config.consensus_config import ConsensusConfig
 from merkle_system.merkle import MerkleTree, CompactMerkleTree, MerkleTreeConfig, HashAlgorithm, ProofFormat, MerkleTreeFactory, MerkleTreeStats, global_stats, create_merkle_tree_from_file, create_merkle_tree_from_large_file, batch_verify_proofs, batch_verify_proofs_async, create_merkle_mountain_range
 from blockchain.consensus.rayonix_consensus_bridge import RayonixConsensusBridge, ConsensusMetrics
+from blockchain.consensus.grpc_client import RayonixGRPCClient
 
 logger = logging.getLogger(__name__)
 
