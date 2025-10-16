@@ -127,6 +127,10 @@ class RayonixBlockchain:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
+        # Add database locking
+        self.db_lock_file = None
+        self._acquire_db_lock()
+        
         self.state = BlockchainState.INITIALIZING
         self.health = NodeHealth.UNHEALTHY
         self.config = self._load_configuration(config)
@@ -170,6 +174,33 @@ class RayonixBlockchain:
         self._initialize_advanced_consensus()
         
         logger.info(f"RAYONIX node initialized for {network_type} network")
+        
+    def _acquire_db_lock(self):
+        """Acquire a file lock to ensure single database access"""
+        lock_path = self.data_dir / "rayonix_db.lock"
+        
+        try:
+            self.db_lock_file = open(lock_path, 'w')
+            fcntl.flock(self.db_lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            atexit.register(self._release_db_lock)
+            logger.info(f"Database lock acquired: {lock_path}")
+        except IOError:
+            self.db_lock_file.close()
+            raise RuntimeError(f"Database is already in use by another process. Lock file: {lock_path}")
+    
+    def _release_db_lock(self):
+        """Release the database lock"""
+        if self.db_lock_file:
+            try:
+                fcntl.flock(self.db_lock_file.fileno(), fcntl.LOCK_UN)
+                self.db_lock_file.close()
+                lock_path = self.data_dir / "rayonix_db.lock"
+                if lock_path.exists():
+                    lock_path.unlink()
+                self.db_lock_file = None
+                logger.info("Database lock released")
+            except Exception as e:
+                logger.warning(f"Error releasing database lock: {e}")       
         
     def _config_to_dict(self) -> Dict[str, Any]:
     	"""Convert BlockchainConfig to dictionary"""
