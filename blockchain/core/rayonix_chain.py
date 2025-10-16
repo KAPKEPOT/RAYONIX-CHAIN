@@ -222,7 +222,7 @@ class RayonixBlockchain:
             config_dict = self._config_to_dict()
             
             # Initialize database with retry logic
-            #self.database = self._initialize_database_with_retry()
+            self.database = self._initialize_database_with_retry()
             
             # Initialize core components
             db_path = str(self.data_dir / 'utxo_db')
@@ -237,7 +237,7 @@ class RayonixBlockchain:
             logger.info("Configurations created successfully using ConfigFactory")
             
             # Initialize database
-            self.database = self._initialize_database_with_retry()
+            #self.database = self._initialize_database_with_retry()
             
             # Import consensus engine here to avoid circular imports
             from consensusengine.core.consensus import ProofOfStake
@@ -475,7 +475,18 @@ class RayonixBlockchain:
                 db_path = self.data_dir / 'blockchain_db'
                 db_path.mkdir(parents=True, exist_ok=True)
                 
-                # Use LevelDB for production (fallback to SQLite if not available)
+                # Clean up any stale lock files
+                lock_file = db_path / "LOCK"
+                if lock_file.exists():
+                	try:
+                		# Try to remove stale lock file
+                		lock_file.unlink()
+                		logger.warning("Removed stale database lock file")
+                		time.sleep(1)
+                		
+                	except Exception as e:
+                		logger.warning(f"Could not remove lock file: {e}")
+                
                 try:
                     import plyvel
                     raw_db = plyvel.DB(str(db_path), create_if_missing=True)
@@ -958,10 +969,41 @@ class RayonixBlockchain:
 
     async def stop(self):
         """Stop blockchain and gRPC client"""
+        logger.info("Shutting down blockchain node...")
+        
         if hasattr(self, 'grpc_client') and self.grpc_client:
             await self.grpc_client.disconnect()
             
+        # Stop consensus bridge if exists
+        if hasattr(self, 'consensus_bridge') and self.consensus_bridge:
+        	await self.consensus_bridge.stop()
+        	
+        # Release database lock
+        self._release_db_lock()
+        
+        # Close database connections
+        if hasattr(self, 'database'):
+        	try:
+        		self.database.close()
+        	except Exception as e:
+        		logger.warning(f"Error closing database: {e}")
+        		
+        # Close UTXO set
+        if hasattr(self, 'utxo_set'):
+        	try:
+        		self.utxo_set.close()
+        	except Exception as e:
+        		logger.warning(f"Error closing UTXO set: {e}")
+        	
+        logger.info("Blockchain node shutdown complete")
+        
+        
+
         await super().stop()
+        
+    def __del__(self):
+    	"""Destructor to ensure locks are released"""
+    	self._release_db_lock()       
 
     async def _start_background_tasks(self):
         """Start all background maintenance tasks"""
