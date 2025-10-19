@@ -16,10 +16,10 @@ from network.utils.rate_limiter import RateLimiter
 from network.utils.ban_manager import BanManager
 from network.utils.metrics_collector import MetricsCollector
 from network.protocols.tcp_handler import TCPHandler
-from network.protocols.udp_handler import UDPHandler
+#from network.protocols.udp_handler import UDPHandler
 from network.protocols.websocket_handler import WebSocketHandler
 from network.protocols.http_handler import HTTPHandler
-from network.protocols.udp_protocol import UDPProtocol
+#from network.protocols.udp_protocol import UDPProtocol
 
 logger = logging.getLogger("AdvancedP2PNetwork")
 
