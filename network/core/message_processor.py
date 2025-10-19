@@ -11,12 +11,23 @@ from network.models.peer_info import PeerInfo
 
 logger = logging.getLogger("MessageProcessor")
 
+@dataclass
+class SendResult:
+    """Result of a message send operation"""
+    success: bool
+    duration: float
+    bytes_sent: int
+    retry_count: int = 0
+    error: Optional[str] = None
+    
 class MessageProcessor(IMessageProcessor):
     """Message processing implementation"""
     
     def __init__(self, network):
         self.network = network
         self.handlers: Dict[MessageType, List[Callable]] = {}
+        self._send_attempts: Dict[str, int] = {}  # Track send attempts per connection
+        self._circuit_breakers: Dict[str, bool] = {}  # Circuit breaker pattern
     
     async def process_message(self, connection_id: str, message: NetworkMessage):
         """Process incoming message"""
