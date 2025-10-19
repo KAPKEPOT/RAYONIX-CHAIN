@@ -92,81 +92,82 @@ class TCPHandler(IProtocolHandler):
         
         try:
             while connection_id in self.connections:
-                # Read message with header
-                data = await self.receive_data(reader)
-                if not data:
-                    break
-                
-                # Parse message header
-                header, payload = self.parse_message_header(data)
-                
-                # Verify magic number
-                if header.magic != self.network.magic:
-                    logger.warning(f"Invalid magic number from {connection_id}")
-                    await self.network.penalize_peer(connection_id, -10)
-                    continue
-                
-                # Verify checksum
-                expected_checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
-                if header.checksum != expected_checksum:
-                    logger.warning(f"Invalid checksum from {connection_id}")
-                    await self.network.penalize_peer(connection_id, -10)
-                    continue
-                
-                # Check message size
-                if len(payload) > self.config.max_message_size:
-                    logger.warning(f"Oversized message from {connection_id}")
-                    await self.network.penalize_peer(connection_id, -20)
-                    continue
-                
-                # Check rate limit
-                if not await self.network.rate_limiter.check_rate_limit(connection_id, len(payload)):
-                    logger.warning(f"Rate limit exceeded for {connection_id}")
-                    await self.network.penalize_peer(connection_id, -5)
-                    continue
-                
-                # Decrypt if encryption enabled
-                if self.config.enable_encryption:
-                    try:
-                        payload = self.network.security_manager.decrypt_data(payload, connection_id)
-                    except Exception as e:
-                        logger.error(f"Decryption failed for {connection_id}: {e}")
-                        await self.network.penalize_peer(connection_id, -15)
-                        continue
-                
-                # Decompress if compression enabled
-                if self.config.enable_compression:
-                    try:
-                        payload = decompress_data(payload)
-                    except Exception as e:
-                        logger.error(f"Decompression failed for {connection_id}: {e}")
-                        await self.network.penalize_peer(connection_id, -5)
-                        continue
-                
-                # Deserialize message
                 try:
-                    message = deserialize_message(payload)
+                	# Read message with timeout
+                	data = await asyncio.wait_for(
+                	    self.receive_data(reader),
+                	    timeout=300.0  # 5 minute timeout
+                	)
+                	
+                	if not data:
+                		logger.debug(f"Connection {connection_id} closed by peer")
+                		break
+                		
+                	# Process message
+                	await self._process_message_data(connection_id, data)
+                except asyncio.TimeoutError:
+                	logger.warning(f"Connection {connection_id} timeout, closing")
+                	break
+                	
+                except asyncio.IncompleteReadError:
+                	logger.debug(f"Connection {connection_id} closed during read")
+                	break
+                	
+                except ConnectionError as e:
+                	logger.debug(f"Connection error for {connection_id}: {e}")
+                	break
+                
                 except Exception as e:
-                    logger.error(f"Deserialization failed for {connection_id}: {e}")
-                    await self.network.penalize_peer(connection_id, -10)
-                    continue
-                
-                # Update metrics
-                self.network.metrics_collector.update_connection_metrics(
-                    connection_id, bytes_received=len(data), messages_received=1
-                )
-                
-                # Process message
-                await self.network.message_processor.process_message(connection_id, message)
-                
-        except asyncio.IncompleteReadError:
-            logger.debug(f"Connection closed by peer: {connection_id}")
+                	logger.error(f"Message processing error for {connection_id}: {e}")
+                	# Don't break on individual message errors, continue processing
+                	continue
+                	
         except Exception as e:
-            logger.error(f"Message processing error for {connection_id}: {e}")
+        	logger.error(f"Fatal error in message processor for {connection_id}: {e}")
         finally:
-            if connection_id in self.connections:
-                await self.close_connection(connection_id)
+        	await self.close_connection(connection_id)
+        	
     
+    async def _process_message_data(self, connection_id: str, data: bytes):
+    	"""Process message data with validation"""
+    	try:
+    		# Parse message header
+    		header, payload = self.parse_message_header(data)
+    		
+    		# Verify magic number
+    		if header.magic != self.network.magic:
+    			logger.warning(f"Invalid magic number from {connection_id}")
+    			await self.network.penalize_peer(connection_id, -10)
+    			return
+    		
+    		# Verify checksum
+    		expected_checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
+    		if header.checksum != expected_checksum:
+    			logger.warning(f"Invalid checksum from {connection_id}")
+    			await self.network.penalize_peer(connection_id, -10)
+    			return
+    			
+    		# Check message size
+    		if len(payload) > self.config.max_message_size:
+    			logger.warning(f"Oversized message from {connection_id}: {len(payload)} bytes")
+    			await self.network.penalize_peer(connection_id, -20)
+    			return
+    			
+    		# Check rate limit
+    		if not await self.network.rate_limiter.check_rate_limit(connection_id, len(payload)):
+    			logger.warning(f"Rate limit exceeded for {connection_id}")
+    			await self.network.penalize_peer(connection_id, -5)
+    			return
+    		
+    		# Process through security and message processor
+    		message = await self._process_payload(connection_id, payload)
+    		if message:
+    			await self.network.message_processor.process_message(connection_id, message)
+    		
+    	except Exception as e:
+    		logger.error(f"Message data processing error for {connection_id}: {e}")
+    		await self.network.penalize_peer(connection_id, -5)
+
     async def send_message(self, connection_id: str, message: Any) -> bool:
         """Send message via TCP"""
         if connection_id not in self.connections:
