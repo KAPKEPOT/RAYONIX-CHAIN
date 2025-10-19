@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 import random
-from typing import Callable, Any, Dict, List
+from typing import Optional, Callable, Any, Dict, List
 from dataclasses import dataclass
 from network.interfaces.processor_interface import IMessageProcessor
 from network.exceptions import MessageError
