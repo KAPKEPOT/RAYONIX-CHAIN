@@ -187,15 +187,7 @@ class MessageProcessor(IMessageProcessor):
             
             if protocol == 'tcp':
                 return await self.network.tcp_handler.send_message(connection_id, message)
-            elif protocol == 'udp':
-                # For UDP, we need the address info
-                peer_info = connection.get('peer_info')
-                if peer_info:
-                    # Serialize and send via UDP
-                    serialized = self.network.utils.serialization.serialize_message(message)
-                    self.network.udp_handler.sendto(serialized, (peer_info.address, peer_info.port))
-                    return True
-                return False
+            
             elif protocol == 'websocket':
                 return await self.network.websocket_handler.send_message(connection_id, message)
             elif protocol == 'http':
@@ -217,10 +209,31 @@ class MessageProcessor(IMessageProcessor):
     async def broadcast_message(self, message: NetworkMessage, exclude: list = None):
         """Broadcast message to all connected peers"""
         exclude = exclude or []
+        connection_ids = list(self.network.connections.keys())
         
-        for connection_id in list(self.network.connections.keys()):
-            if connection_id not in exclude:
-                try:
-                    await self.send_message(connection_id, message)
-                except Exception as e:
-                    logger.debug(f"Failed to broadcast to {connection_id}: {e}")
+        # Batch processing to avoid overwhelming the system
+        batch_size = 10
+        for i in range(0, len(connection_ids), batch_size):
+        	batch = connection_ids[i:i + batch_size]
+        	
+        	# Process batch concurrently with semaphore
+        	semaphore = asyncio.Semaphore(5) 
+        	
+        	async def send_to_connection(conn_id):
+        		if conn_id not in exclude:
+        			async with semaphore:
+        				try:
+        					await self.send_message(conn_id, message)
+        					
+        				except Exception as e:
+        					logger.debug(f"Failed to broadcast to {conn_id}: {e}")
+        					
+        	# Execute batch concurrently
+        	await asyncio.gather(*[
+        	    send_to_connection(conn_id) for conn_id in batch
+        	], return_exceptions=True)
+        	
+        	# Small delay between batches
+        	if i + batch_size < len(connection_ids):
+        		await asyncio.sleep(0.1)
+    

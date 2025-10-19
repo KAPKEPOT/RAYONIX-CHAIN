@@ -26,66 +26,113 @@ class ConnectionManager(IConnectionManager):
         logger.info("Connection manager stopped")
     
     async def connect_to_peer(self, address: str, port: int, protocol: str) -> Optional[str]:
-        """Connect to a peer"""
+        """Connect to a peer with resource limits"""
+        # Enforce connection limits
+        current_connections = len(self.connections)
+        if current_connections >= self.network.config.max_connections:
+        	logger.warning(f"Connection limit reached ({current_connections})")
+        	return None
+        
+        # Validate input parameters
+        if not self._validate_address(address):
+        	logger.error(f"Invalid address: {address}")
+        	return None
+        	
+        if not (0 < port < 65536):
+        	logger.error(f"Invalid port: {port}")
+        	return None
+        	
         connection_id = f"{protocol}_{address}_{port}"
         
         # Check if already connected
         if connection_id in self.connections:
-            logger.debug(f"Already connected to {connection_id}")
-            return connection_id
-        
+        	logger.debug(f"Already connected to {connection_id}")
+        	return connection_id
+        	
         # Check if peer is banned
         if await self.network.ban_manager.is_peer_banned(address):
-            logger.warning(f"Cannot connect to banned peer: {address}")
-            return None
-        
+        	logger.warning(f"Cannot connect to banned peer: {address}")
+        	return None
+        	
         try:
-            # Create peer info
-            peer_info = PeerInfo(
-                node_id="",  # Will be set during handshake
-                address=address,
-                port=port,
-                protocol=ProtocolType[protocol.upper()],
-                version="1.0.0",
-                capabilities=[],
-                state=ConnectionState.CONNECTING
-            )
-            
-            # Store connection
-            self.connections[connection_id] = {
-                'peer_info': peer_info,
-                'protocol': protocol,
-                'created_at': time.time(),
-                'last_activity': time.time()
-            }
-            
-            # Connect using appropriate protocol handler
-            if protocol == 'tcp':
-                await self._connect_tcp(connection_id, address, port)
-            elif protocol == 'udp':
-                # UDP is connectionless, just store the address
-                pass
-            elif protocol == 'websocket':
-                await self._connect_websocket(connection_id, address, port)
-            elif protocol == 'http':
-                # HTTP is connectionless
-                pass
-            else:
-                raise ConnectionError(f"Unsupported protocol: {protocol}")
-            
-            # Update connection state
-            self.connections[connection_id]['peer_info'].state = ConnectionState.CONNECTED
-            self.connections[connection_id]['last_activity'] = time.time()
-            
-            logger.info(f"Connected to {connection_id}")
-            return connection_id
-            
+        	# Create peer info with timeout
+        	peer_info = PeerInfo(
+        	    node_id="",
+        	    address=address,
+        	    port=port,
+        	    protocol=ProtocolType[protocol.upper()],
+        	    version="1.0.0",
+        	    capabilities=[],
+        	    state=ConnectionState.CONNECTING
+        	)
+        	
+        	# Store connection with timeout
+        	self.connections[connection_id] = {
+        	    'peer_info': peer_info,
+        	    'protocol': protocol,
+        	    'created_at': time.time(),
+        	    'last_activity': time.time(),
+        	    'connection_timeout': 30  # seconds
+        	}
+        	
+        	# Connect with timeout
+        	if protocol == 'tcp':
+        		await asyncio.wait_for(
+        		    
+        		    self._connect_tcp(connection_id, address, port), 
+        		    timeout=10.0
+        		)
+        	
+        	elif protocol == 'websocket':
+        		await asyncio.wait_for(
+        		    self._connect_websocket(connection_id, address, port),
+        		    timeout=10.0
+        		)
+        	
+        	else:
+        		raise ConnectionError(f"Unsupported protocol: {protocol}")
+        		
+        	# Update connection state
+        	self.connections[connection_id]['peer_info'].state = ConnectionState.CONNECTED
+        	self.connections[connection_id]['last_activity'] = time.time()
+        	logger.info(f"Connected to {connection_id}")
+        	return connection_id
+        	
+        except asyncio.TimeoutError:
+        	logger.error(f"Connection timeout to {address}:{port}")
+        	await self._cleanup_connection(connection_id)
+        	return None
+        	
         except Exception as e:
-            logger.error(f"Failed to connect to {address}:{port}: {e}")
-            if connection_id in self.connections:
-                del self.connections[connection_id]
-            return None
-    
+        	logger.error(f"Failed to connect to {address}:{port}: {e}")
+        	await self._cleanup_connection(connection_id)
+        	return None
+    async def _cleanup_connection(self, connection_id: str):
+    	"""Safely cleanup connection resources"""
+    	if connection_id in self.connections:
+    		try:
+    			connection = self.connections[connection_id]
+    			protocol = connection.get('protocol')
+    			
+    			if protocol == 'tcp':
+    				writer = connection.get('writer')
+    				if writer and not writer.is_closing():
+    					writer.close()
+    					try:
+    						await asyncio.wait_for(writer.wait_closed(), timeout=5.0)
+    					except asyncio.TimeoutError:
+    						pass
+    						
+    			elif protocol == 'websocket':
+    				websocket = connection.get('websocket')
+    				if websocket and not websocket.closed:
+    					await websocket.close()
+    			
+    			del self.connections[connection_id]
+    			
+    		except Exception as e:
+    			logger.debug(f"Error during connection cleanup: {e}")
+    	
     async def _connect_tcp(self, connection_id: str, address: str, port: int):
         """Connect via TCP"""
         try:

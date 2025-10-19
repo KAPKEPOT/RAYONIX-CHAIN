@@ -2,7 +2,14 @@ import asyncio
 import logging
 import ssl
 import time
+import os
+import secrets
 from typing import Dict, Optional
+from typing import Dict, Optional
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, padding
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.backends import default_backend
 from network.exceptions import HandshakeError
 from network.models.network_message import NetworkMessage
 from network.config.network_types import MessageType
@@ -10,48 +17,74 @@ from network.config.network_types import MessageType
 logger = logging.getLogger("SecurityManager")
 
 class SecurityManager:
-    """Security management implementation"""
+    """Production-ready security management"""
     
     def __init__(self, network):
         self.network = network
         self.encryption_keys: Dict[str, bytes] = {}
         self.session_keys: Dict[str, bytes] = {}
         self.handshakes: Dict[str, Dict] = {}
+        self.private_key = None
+        self.public_key = None
     
     async def initialize(self):
-        """Initialize security manager"""
-        # Generate node key pair (in production, this would use proper cryptography)
-        self.node_private_key = b"simulated_private_key"
-        self.node_public_key = b"simulated_public_key"
-        logger.info("Security manager initialized")
+        """Initialize with proper cryptography"""
+        try:
+            # Generate proper EC key pair
+            self.private_key = ec.generate_private_key(ec.SECP256R1(), default_backend())
+            self.public_key = self.private_key.public_key()
+            
+            # Serialize public key for handshake
+            self.public_key_bytes = self.public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            
+            logger.info("Security manager initialized with proper cryptography")
+            
+        except Exception as e:
+            logger.error(f"Security initialization failed: {e}")
+            raise
     
     async def encrypt_data(self, data: bytes, connection_id: str) -> bytes:
-        """Encrypt data for a connection"""
+        """Proper encryption using AES-GCM"""
         if not self.network.config.enable_encryption:
             return data
         
+        if connection_id not in self.session_keys:
+            raise HandshakeError(f"No session key for {connection_id}")
+        
         try:
-            # In a real implementation, this would use proper encryption
-            # For simulation, we'll just add a header
-            if connection_id in self.session_keys:
-                return b"ENC:" + data
-            return data
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            
+            aesgcm = AESGCM(self.session_keys[connection_id])
+            nonce = os.urandom(12)  # 96-bit nonce for AES-GCM
+            encrypted = aesgcm.encrypt(nonce, data, None)
+            return nonce + encrypted
             
         except Exception as e:
             logger.error(f"Encryption error for {connection_id}: {e}")
             raise HandshakeError(f"Encryption failed: {e}")
     
     async def decrypt_data(self, data: bytes, connection_id: str) -> bytes:
-        """Decrypt data from a connection"""
+        """Proper decryption using AES-GCM"""
         if not self.network.config.enable_encryption:
             return data
         
+        if connection_id not in self.session_keys:
+            raise HandshakeError(f"No session key for {connection_id}")
+        
         try:
-            # In a real implementation, this would use proper decryption
-            # For simulation, we'll check for our header
-            if data.startswith(b"ENC:") and connection_id in self.session_keys:
-                return data[4:]
-            return data
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            
+            if len(data) < 13:  # nonce(12) + at least 1 byte data
+                raise HandshakeError("Message too short")
+            
+            nonce = data[:12]
+            ciphertext = data[12:]
+            
+            aesgcm = AESGCM(self.session_keys[connection_id])
+            return aesgcm.decrypt(nonce, ciphertext, None)
             
         except Exception as e:
             logger.error(f"Decryption error for {connection_id}: {e}")
