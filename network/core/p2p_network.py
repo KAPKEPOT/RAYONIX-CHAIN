@@ -72,11 +72,9 @@ class AdvancedP2PNetwork:
         
         # Protocol handlers
         self.ssl_context = self._create_ssl_context()
-        self.tcp_handler = TCPHandler(self, self.config, self.ssl_context)
-        self.udp_handler = UDPHandler(self, self.config)
+        self.tcp_handler = TCPHandler(self, self.config, self.ssl_context)        
         self.websocket_handler = WebSocketHandler(self, self.config, self.ssl_context)
-        self.http_handler = HTTPHandler(self, self.config, self.ssl_context)
-        self.udp_protocol = UDPProtocol(self.udp_handler)
+        self.http_handler = HTTPHandler(self, self.config, self.ssl_context)       
         
         # State - Initialize with empty dicts using string keys
         self.is_running = False
