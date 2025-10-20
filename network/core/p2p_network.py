@@ -127,7 +127,7 @@ class AdvancedP2PNetwork:
             
             # Start protocol handlers
             await self.tcp_handler.start_server()
-            await self.udp_handler.start_server()
+           # await self.udp_handler.start_server()
             
             # Only start WebSocket if port is different from TCP/UDP
             if self.config.websocket_port != self.config.listen_port:
