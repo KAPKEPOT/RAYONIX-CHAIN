@@ -34,6 +34,9 @@ class AdvancedP2PNetwork:
                 listen_port=port,
                 max_connections=max_connections,
                 listen_ip="0.0.0.0",
+                listen_port= "30303",
+                websocket_port= "30304",
+                http_port= "30305",
                 public_ip=None,
                 public_port=None,
                 max_peers=1000,
@@ -173,7 +176,6 @@ class AdvancedP2PNetwork:
         
         # Stop protocol handlers
         await self.tcp_handler.stop_server()
-        await self.udp_handler.stop_server()
         await self.websocket_handler.stop_server()
         await self.http_handler.stop_server()
         
