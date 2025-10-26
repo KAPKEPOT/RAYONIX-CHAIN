@@ -1,4 +1,5 @@
 aiodns
+aiofiles
 aiohappyeyeballs
 aiohttp
 aioprocessing
@@ -22,6 +23,7 @@ crc32c
 cryptography
 dnspython
 ecdsa
+fastapi
 frozenlist
 gas
 google-api-core
@@ -71,6 +73,7 @@ typing_extensions
 uritemplate
 urllib3
 uvloop
+uvicorn 
 wasmtime
 watchgod
 websockets
