@@ -182,7 +182,7 @@ class ProofOfStake:
     
     def _process_epoch_transition(self):
         """Process epoch transition and distribute rewards"""
-        if self.height % self.config.epoch_blocks != 0:
+        if self.height % self.config.staking.epoch_blocks != 0:
             return
         
         with self.lock:
