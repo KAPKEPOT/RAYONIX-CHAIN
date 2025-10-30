@@ -56,7 +56,7 @@ class ProofOfStake:
         self.round_states: Dict[Tuple[int, int], RoundState] = {}
         
         # Epoch management
-        self.epoch_state = EpochState(self.config.epoch_blocks)
+        self.epoch_state = EpochState(self.config.staking.epoch_blocks)
         
         # Manager instances
         self.db_manager = DatabaseManager(self.config.db_path)
