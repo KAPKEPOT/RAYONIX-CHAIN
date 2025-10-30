@@ -170,8 +170,7 @@ class RayonixBlockchain:
         
         # Initialize blockchain
         self._initialize_blockchain()
-        self.consensus_bridge = None
-        self._initialize_advanced_consensus()
+        self._initialize_consensus()
         
         logger.info(f"RAYONIX node initialized for {network_type} network")
         
@@ -281,90 +280,7 @@ class RayonixBlockchain:
             logger.error(f"Component initialization failed: {e}")
             self.health = NodeHealth.CRITICAL
             raise
-           
-    def _initialize_advanced_consensus(self):
-    	"""Initialize the advanced Rust consensus system"""
-    	try:
-    		# Remove any IPC references
-    		self.consensus_bridge = None
-    		
-    		# Initialize gRPC client
-    		self.grpc_client = RayonixGRPCClient(
-    		    host=getattr(self.config, 'consensus_host', 'localhost'),
-    		    port=getattr(self.config, 'consensus_port', 50051),
-    		    timeout=getattr(self.config, 'consensus_timeout', 30)
-    		)
-    		
-    		# Start connection and health monitoring
-    		asyncio.create_task(self._initialize_grpc_connection())
-    		
-    		logger.info("gRPC consensus system initialized")
-    	
-    	except Exception as e:
-    		logger.error(f"gRPC consensus initialization failed: {e}")
-    		
-    		# Fall back to basic consensus
-    		self._initialize_basic_consensus()
-    		
-    async def _initialize_grpc_connection(self):
-    	"""Initialize and maintain gRPC connection"""
-    	max_attempts = 10
-    	for attempt in range(max_attempts):
-    		try:
-    			await self.grpc_client.connect()
-    			if await self.grpc_client.health_check():
-    				logger.info("gRPC consensus connection established and healthy")
-    				
-    				# Start event streaming for real-time updates
-    				asyncio.create_task(self._start_event_streaming())
-    				return
-    		
-    		except Exception as e:
-    			logger.warning(f"gRPC connection attempt {attempt + 1} failed: {e}")
-    			if attempt < max_attempts - 1:
-    				await asyncio.sleep(2 ** attempt)  # Exponential backoff
-    				
-    		logger.error("Failed to establish gRPC connection after all attempts")
-    		self._initialize_basic_consensus()
-    		
-    async def _start_event_streaming(self):
-        """Start streaming real-time consensus events"""
-        try:
-            async for event in self.grpc_client.stream_events([
-                'slot_processed', 
-                'epoch_transition', 
-                'consensus_anomaly',
-                'validator_update'
-            ]):
-                await self._handle_consensus_event(event)
-                
-        except Exception as e:
-            logger.error(f"Consensus event streaming failed: {e}")
-            # Attempt to restart streaming after delay
-            await asyncio.sleep(5)
-            asyncio.create_task(self._start_event_streaming())
-            
-    async def _handle_consensus_event(self, event: Dict[str, Any]):
-        """Handle incoming consensus events"""
-        event_type = event['type']
-        
-        if event_type == 'slot_processed':
-            await self._handle_slot_processed_event(event)
-        elif event_type == 'epoch_transition':
-            await self._handle_epoch_transition_event(event)
-        elif event_type == 'consensus_anomaly':
-            await self._handle_consensus_anomaly_event(event)
-        elif event_type == 'validator_update':
-            await self._handle_validator_update_event(event)
-            
-    async def _handle_slot_processed_event(self, event: Dict[str, Any]):
-        """Handle slot processed event"""
-        data = event.get('data', {})
-        slot = data.get('slot')
-        leader = data.get('leader')
-        
-        logger.debug(f"Consensus processed slot {slot}, leader: {leader}")
-        
+   
     async def _block_production_loop(self):
         """Enhanced block production using gRPC consensus"""
         if self.state != BlockchainState.SYNCED:
@@ -402,43 +318,8 @@ class RayonixBlockchain:
         except Exception as e:
             logger.error(f"gRPC block production error: {e}")
             await self._basic_block_production_loop()
-            
-    async def get_advanced_consensus_metrics(self) -> Dict[str, Any]:
-        """Get advanced consensus metrics via gRPC"""
-        if hasattr(self, 'grpc_client') and self.grpc_client:
-            try:
-                # Get metrics from the last processed slot/epoch
-                network_state = await self._get_network_state_for_consensus()
-                validators = await self._get_active_validators_for_consensus()
-                
-                # Process a dummy slot to get current metrics
-                slot_result = await self.grpc_client.process_slot(
-                    slot=self.metrics.block_height,
-                    parent_block_hash=self.chain_head,
-                    validators=validators,
-                    network_state=network_state
-                )
-                
-                return slot_result.get('metrics', {})
-            except Exception as e:
-                logger.error(f"Failed to get consensus metrics: {e}")
-                
-        return {}
-        
-    async def optimize_consensus_parameters(self) -> Dict[str, Any]:
-        """Optimize consensus parameters via gRPC"""
-        if hasattr(self, 'grpc_client') and self.grpc_client:
-            try:
-                historical_data = self._prepare_historical_data()
-                return await self.grpc_client.optimize_parameters(historical_data)
-            except Exception as e:
-                logger.error(f"Consensus parameter optimization failed: {e}")
-                
-        return {}
-        
-    
  
-    def _initialize_basic_consensus(self):
+    def _initialize_consensus(self):
     	"""Fallback to basic consensus if advanced system fails"""
     	from consensusengine.core.consensus import ProofOfStake
     	from consensusengine.utils.config.factory import ConfigFactory
@@ -957,10 +838,7 @@ class RayonixBlockchain:
             return False
 
     async def start(self):
-        """Start blockchain with advanced consensus"""
-        # Start consensus bridge first
-        if self.consensus_bridge:
-            await self.consensus_bridge.start()
+        """Start blockchain with advanced consensus"""  
             
         # Then start other components
         await super().start()
@@ -968,14 +846,7 @@ class RayonixBlockchain:
     async def stop(self):
         """Stop blockchain and gRPC client"""
         logger.info("Shutting down blockchain node...")
-        
-        if hasattr(self, 'grpc_client') and self.grpc_client:
-            await self.grpc_client.disconnect()
-            
-        # Stop consensus bridge if exists
-        if hasattr(self, 'consensus_bridge') and self.consensus_bridge:
-        	await self.consensus_bridge.stop()
-        	
+  
         # Release database lock
         self._release_db_lock()
         
@@ -1071,119 +942,10 @@ class RayonixBlockchain:
             # Fall back to basic production
             await super()._block_production_loop()
 
-    async def _get_network_state_for_consensus(self) -> Dict[str, Any]:
-        """Prepare network state for consensus engine"""
-        return {
-            'block_height': self.metrics.block_height,
-            'total_stake': await self._get_total_network_stake(),
-            'validator_count': len(await self._get_active_validators()),
-            'network_load': self._calculate_network_load(),
-            'security_parameter': self._calculate_security_parameter(),
-            'decentralization_index': self._calculate_decentralization_index(),
-            'average_latency': self._get_average_network_latency(),
-            'fork_probability': await self.fork_manager.assess_fork_risk(),
-            'economic_indicators': self._get_economic_indicators()
-        }
-        
-    async def _get_active_validators_for_consensus(self) -> List[Dict[str, Any]]:
-        """Prepare validator data for consensus engine"""
-        validators = []
-        active_validators = await self._get_active_validators()
-        
-        for validator in active_validators:
-            validator_data = {
-                'validator_id': validator['address'],
-                'stake': validator['stake'],
-                'reliability_score': validator.get('reliability', 0.0),
-                'performance_metrics': validator.get('performance', {}),
-                'time_lived_components': validator.get('time_lived', {}),
-                'geographic_location': validator.get('location', 'unknown'),
-                'network_performance': validator.get('network_stats', {})
-            }
-            validators.append(validator_data)
-            
-        return validators
-        
-    async def _create_consensus_block(self, slot_result: Dict[str, Any]) -> Any:
-        """Create block using consensus results"""
-        # Use the sophisticated scoring and selection from consensus
-        transactions = self.transaction_manager.select_transactions_for_block(
-            max_size=self.config.max_block_size,
-            priority_scores=slot_result.get('transaction_priorities', {})
-        )
-        
-        block = await self.block_producer.create_block_template(
-            parent_hash=self.chain_head,
-            transactions=transactions,
-            validator_data=slot_result.get('validator_scores', {})
-        )
-        
         return block
-        
-    def _handle_slot_processed(self, data: Dict[str, Any]):
-        """Handle slot processed event from consensus"""
-        slot = data['slot']
-        leader = data['leader']
-        scores = data['scores']
-        
-        logger.debug(f"Consensus processed slot {slot}, leader: {leader['validator_id']}")
-        
-        # Update local validator scores
-        self._update_validator_scores(scores)
-        
-    def _handle_epoch_transition(self, data: Dict[str, Any]):
-        """Handle epoch transition from consensus"""
-        epoch = data['epoch']
-        metrics = data['metrics']
-        
-        logger.info(f"Consensus epoch transition to {epoch}, metrics: {metrics}")
-        
-        # Update governance parameters if needed
-        if metrics.gini_coefficient > 0.7:  # High inequality
-            self._adjust_consensus_parameters({'fairness_weight': 0.8})
-            
-    def _handle_consensus_anomaly(self, data: Dict[str, Any]):
-        """Handle consensus anomalies"""
-        anomaly_type = data['anomaly_type']
-        severity = data['severity']
-        
-        logger.warning(f"Consensus anomaly detected: {anomaly_type} (severity: {severity})")
-        
-        if severity == 'critical':
-            # Trigger emergency protocols
-            asyncio.create_task(self._handle_consensus_emergency(data))
-            
-    async def _handle_consensus_emergency(self, anomaly_data: Dict[str, Any]):
-        """Handle consensus emergencies"""
-        emergency_response = await self.consensus_bridge.handle_fork(anomaly_data)
-        
-        if emergency_response.get('requires_chain_reorganization'):
-            await self.fork_manager.handle_emergency_reorganization(
-                emergency_response['reorganization_plan']
-            )
-            
+    
+      
     # Public API enhancements
-    async def get_advanced_consensus_metrics(self) -> ConsensusMetrics:
-        """Get advanced consensus metrics"""
-        if self.consensus_bridge:
-            return await self.consensus_bridge.get_consensus_metrics()
-        return ConsensusMetrics()
-        
-    async def get_validator_consensus_info(self, address: str) -> Optional[Dict[str, Any]]:
-        """Get detailed validator info from consensus"""
-        if self.consensus_bridge:
-            validator_info = await self.consensus_bridge.get_validator_info(address)
-            if validator_info:
-                return asdict(validator_info)
-        return None
-        
-    async def optimize_consensus_parameters(self) -> Dict[str, Any]:
-        """Optimize consensus parameters based on historical data"""
-        if self.consensus_bridge:
-            historical_data = self._prepare_historical_data()
-            return await self.consensus_bridge.optimize_parameters(historical_data)
-        return {}
-              
     async def _mempool_management_loop(self):
         """Mempool management loop"""
         try:
