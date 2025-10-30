@@ -166,7 +166,7 @@ class ProofOfStake:
         
         def unavailability_checker():
             while self._running:
-                time.sleep(self.config.epoch_blocks * 5)
+                time.sleep(self.config.staking.epoch_blocks * 5)
                 try:
                     self.slashing_manager.check_unavailability()
                 except Exception as e:
@@ -249,7 +249,7 @@ class ProofOfStake:
             # Set timeout for propose step
             self.timeout_manager.set_timeout(
                 self.height, round, ConsensusState.PROPOSE,
-                self.config.timeout_propose, self._on_timeout
+                self.config.timeouts.propose_timeout
             )
             
             # If we're the proposer, create a proposal
@@ -440,7 +440,7 @@ class ProofOfStake:
             self.step = ConsensusState.PRECOMMIT
             self.timeout_manager.set_timeout(
                 height, round, ConsensusState.PRECOMMIT,
-                self.config.timeout_precommit, self._on_timeout
+                self.config.timeouts.precommit_timeout
             )
             
             # Send precommit for this block
@@ -730,7 +730,7 @@ class ProofOfStake:
     			logger.error(f"Block validator {validator_address} is jailed until {validator.jail_until}")
     			return False
     			
-    		if validator.total_stake < self.config.min_stake_amount:
+    		if validator.total_stake < self.config.staking.min_stake:
     			logger.error(f"Block validator {validator_address} has insufficient stake: {validator.total_stake} < {self.config.min_stake_amount}")
     			return False
     		
@@ -845,7 +845,7 @@ class ProofOfStake:
     		return 1
     	
     	average_block_time = sum(recent_blocks) / len(recent_blocks)
-    	target_block_time = self.config.get('block_time_target', 30)
+    	target_block_time = getattr(self.config, 'block_time_target', 30)
     	
     	# Adjust difficulty based on block time ratio
     	time_ratio = average_block_time / target_block_time
