@@ -39,10 +39,7 @@ class ProofOfStake:
         else:
         	from consensusengine.utils.config.settings import ConsensusConfig
         	self.config = ConsensusConfig(**vars(config))
-        	
-        # Add fallback for missing attributes
-        self._ensure_config_attributes()
- 
+
         # Core state management
         self.height = 0
         self.round = 0
