@@ -28,7 +28,7 @@ logger = logging.getLogger("rayonix_cli")
 class RayonixRPCClient:
     """RPC client"""
     
-    def __init__(self, api_url: str = "http://127.0.0.1:8545", timeout: int = 30):
+    def __init__(self, api_url: str = "http://127.0.0.1:52557", timeout: int = 30):
         self.api_url = api_url.rstrip('/')
         self.timeout = timeout
         self.session = requests.Session()
