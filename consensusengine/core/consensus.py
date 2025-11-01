@@ -773,11 +773,57 @@ class ProofOfStake:
     			if block.header.difficulty != expected_difficulty:
     				logger.error(f"Block difficulty mismatch: expected {expected_difficulty}, got {block.header.difficulty}")
     				return False
+    				
+    			# Enhanced Merkle validation
+    			if not self._validate_merkle_tree_comprehensive(block):
+    				logger.error(f"Block {block.hash} failed comprehensive Merkle validation")
+    				return False
+    			
     			return True
     	except Exception as e:
-    		logger.error(f"Consensus validation error: {e}", exc_info=True)
+    		logger.error(f"Block consensus validation error: {e}")
     		return False
     		
+    def _validate_merkle_tree_comprehensive(self, block: Any) -> bool:
+    	"""Comprehensive Merkle tree validation"""
+    	try:
+    		# Verify Merkle root matches calculated root
+    		calculated_root = block.calculate_merkle_root()
+    		
+    		if calculated_root != block.header.merkle_root:
+    			logger.error(f"Merkle root validation failed: calculated {calculated_root}, got {block.header.merkle_root}")
+    			return False
+    		
+    		# For blocks with transactions, verify proof generation works
+    		if block.transactions:
+    			# Test proof generation for first, middle, and last transactions
+    			test_indices = [0, len(block.transactions) // 2, len(block.transactions) - 1]
+    			for idx in test_indices:
+    				if idx < len(block.transactions):
+    					tx_hash = block.transactions[idx].tx_hash
+    					proof = block.get_merkle_proof(tx_hash)
+    					
+    					if not proof:
+    						logger.error(f"Failed to generate Merkle proof for transaction {tx_hash}")
+    						return False
+    						
+    					# Verify the proof
+    					if not block.validate_merkle_proof(tx_hash, proof):
+    						logger.error(f"Merkle proof verification failed for transaction {tx_hash}")
+    						return False
+    						
+    		# Additional security: Verify no duplicate transactions
+    		tx_hashes = [tx.tx_hash for tx in block.transactions]
+    		if len(tx_hashes) != len(set(tx_hashes)):
+    			logger.error("Duplicate transaction hashes detected in Merkle tree")
+    			return False
+    		
+    		return True
+    	
+    	except Exception as e:
+    		logger.error(f"Comprehensive Merkle validation error: {e}")
+    		return False
+    
     def _calculate_block_reward(self, height: int) -> int:
     	# Base monetary policy parameters
     	INITIAL_BLOCK_REWARD = 50 * 10**8  # 50 coins in satoshis
@@ -1028,8 +1074,75 @@ class ProofOfStake:
             return True
         except Exception as e:
             logger.error(f"Error removing stake: {e}")
-            return False           
-
+            return False
+            
+    def get_validator_count(self) -> int:
+    	"""Get the number of active validators"""
+    	with self.validator_lock:
+    		if not hasattr(self, 'active_validators'):
+    			raise AttributeError("active_validators not initialized in consensus engine")
+    		return len(self.active_validators)
+    	
+    def get_total_stake(self) -> int:
+    	"""Get total stake in the system"""
+    	with self.lock:
+    		if not hasattr(self, 'total_stake'):
+    			raise AttributeError("total_stake not initialized in consensus engine")
+    		return self.total_stake
+    		
+    def get_total_supply(self) -> int:
+    	"""Calculate total coin supply based on actual blockchain state"""
+    	try:
+    		# Get from state manager if available
+    		if hasattr(self, 'state_manager'):
+    			return self.state_manager.get_total_supply()
+    			
+    		# Calculate based on block rewards and genesis
+    		genesis_supply = getattr(self.config, 'genesis_premine', 1000000)
+    		block_reward = getattr(self.config, 'block_reward', 50)
+    		
+    		# Calculate with halving
+    		height = getattr(self, 'height', 0) or getattr(self, 'current_height', 0)
+    		halving_interval = 210000
+    		halvings = height // halving_interval
+    		
+    		total_block_rewards = 0
+    		remaining_height = height
+    		
+    		current_reward = block_reward
+    		for _ in range(halvings + 1):
+    			blocks_in_era = min(remaining_height, halving_interval)
+    			total_block_rewards += blocks_in_era * current_reward
+    			remaining_height -= blocks_in_era
+    			current_reward //= 2
+    		
+    		return genesis_supply + total_block_rewards
+    	
+    	except Exception as e:
+    		logger.error(f"Error calculating total supply: {e}")
+    		raise
+    		
+    def get_circulating_supply(self) -> int:
+    	"""Calculate circulating supply (total supply minus locked/staked amounts)"""
+    	try:
+    		total_supply = self.get_total_supply()
+    		total_staked = self.get_total_stake()
+    		
+    		# Also subtract any foundation/developer funds that are locked
+    		foundation_locked = 0
+    		if hasattr(self, 'state_manager'):
+    			foundation_address = getattr(self.config, 'foundation_address', '')
+    			if foundation_address:
+    				foundation_balance = self.state_manager.utxo_set.get_balance(foundation_address)
+    				foundation_locked = foundation_balance
+    				
+    		circulating = total_supply - total_staked - foundation_locked
+    		return max(0, circulating)
+    		
+    	except Exception as e:
+    		logger.error(f"Error calculating circulating supply: {e}")
+    		raise
+ 
     def shutdown(self):
         """Shutdown the consensus engine"""
         self._running = False
