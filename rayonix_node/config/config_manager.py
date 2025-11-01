@@ -25,7 +25,7 @@ class NetworkConfig:
     network_id: int = 1
     enabled: bool = True
     listen_ip: str = "0.0.0.0"
-    listen_port: int = 9333
+    listen_port: int = 52555
     max_connections: int = 50
     bootstrap_nodes: list = field(default_factory=list)
     enable_encryption: bool = True
@@ -33,8 +33,8 @@ class NetworkConfig:
     enable_dht: bool = False
     connection_timeout: int = 30
     message_timeout: int = 10
-    websocket_port: int = 9335  # WebSocket port
-    http_port: int = 9336    # HTTP port
+    websocket_port: int = 53556  # WebSocket port
+    http_port: int = 52557    # HTTP port
 
 @dataclass
 class DatabaseConfig:
