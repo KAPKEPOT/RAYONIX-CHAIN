@@ -82,3 +82,34 @@ class NodeStateManager:
             'is_synced': self.is_synced(),
             'timestamp': time.time()
         }
+        
+#class NodeStateManager:
+    # ... your existing code ...
+    
+    def get_uptime(self) -> str:
+        """Get node uptime as human-readable string"""
+        uptime_seconds = time.time() - self.node_state['start_time']
+        return self._format_uptime(uptime_seconds)
+    
+    def get_memory_usage(self) -> float:
+        """Get memory usage in MB"""
+        process = psutil.Process(os.getpid())
+        return process.memory_info().rss / 1024 / 1024  # Convert to MB
+    
+    def get_cpu_usage(self) -> float:
+        """Get CPU usage percentage"""
+        try:
+            return psutil.cpu_percent(interval=1)
+        except:
+            return 0.0
+    
+    def _format_uptime(self, seconds: int) -> str:
+        """Format uptime in seconds to human readable format"""
+        if seconds < 60:
+            return f"{seconds}s"
+        elif seconds < 3600:
+            return f"{seconds // 60}m {seconds % 60}s"
+        elif seconds < 86400:
+            return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+        else:
+            return f"{seconds // 86400}d {(seconds % 86400) // 3600}h"        
