@@ -38,11 +38,17 @@ class NetworkConfig:
     message_size_limit: int = 10 * 1024 * 1024  # 10MB
     enable_compression: bool = True
     enable_encryption: bool = True
+    listen_port: int = 9333  # TCP port
+    udp_port: int = 9334     # UDP port  
+    websocket_port: int = 9335  # WebSocket port
+    http_port: int = 9336    # HTTP port
+    max_connections: int = 50
+    listen_ip: str = "0.0.0.0"
 
 @dataclass
 class DatabaseConfig:
     """Database configuration"""
-    path: str = "./consensus_db"
+    path: str = "./rayonix_data/consensus_db"
     backup_enabled: bool = True
     backup_interval: int = 3600  # 1 hour
     max_backups: int = 24
