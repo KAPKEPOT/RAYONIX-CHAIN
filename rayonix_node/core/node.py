@@ -67,12 +67,7 @@ class RayonixNode:
     async def initialize_components(self, config_path: Optional[str] = None, 
                                   encryption_key: Optional[str] = None) -> bool:
         """Initialize all node components with dependency injection support"""
-        print(f"🚨 INITIALIZE_COMPONENTS CALLED - Time: {time.time()}")
-        import traceback
-        print("🚨 CALL STACK:")
         
-        for line in traceback.format_stack()[-4:-1]:
-        	print(line.strip())
         try:
             logger.info("Initializing RAYONIX Node components...")
             
