@@ -25,10 +25,9 @@ class NetworkManager:
             max_connections = self.node.get_config_value('network.max_connections', 50)
             
             # Use different ports for different protocols to avoid conflicts
-            tcp_port = listen_port
-            udp_port = listen_port + 1
-            websocket_port = listen_port + 2
-            http_port = listen_port + 3
+            tcp_port = listen_port          
+            websocket_port = listen_port + 1
+            http_port = listen_port + 2
             
             # Create network config object if needed, but pass individual params to constructor
             from network.config.node_config import NodeConfig
@@ -37,7 +36,7 @@ class NetworkManager:
             config = NodeConfig(
                 network_type=NetworkType.TESTNET,
                 listen_port=tcp_port,  # TCP uses main port
-                udp_port=udp_port,  # UDP uses different port
+                
                 websocket_port=websocket_port,  # WebSocket uses different port
                 http_port=http_port,  # HTTP uses different port
                 max_connections=max_connections,
@@ -56,7 +55,7 @@ class NetworkManager:
             # Register message handlers
             self._register_message_handlers()
             
-            logger.info(f"P2P network initialized successfully - TCP:{tcp_port}, UDP:{udp_port}, WS:{websocket_port}, HTTP:{http_port}")
+            logger.info(f"P2P network initialized successfully - TCP:{tcp_port}, WS:{websocket_port}, HTTP:{http_port}")
             return True
             
         except Exception as e:
