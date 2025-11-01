@@ -17,7 +17,7 @@ from consensusengine.crypto.signing import CryptoManager
 from database.core.database import AdvancedDatabase
 from consensusengine.utils.database import DatabaseManager
 from consensusengine.utils.timing import TimeoutManager
-from consensusengine.utils.config.settings import ConsensusConfig
+from consensusengine.config.consensus_config import ConsensusConfig
 
 logger = logging.getLogger('ConsensusEngine')
 
