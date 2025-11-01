@@ -1590,6 +1590,152 @@ class RayonixBlockchain:
     	except Exception as e:
     		logger.error(f"Error getting block count: {e}")
     		return 0
+    		
+    def get_network_hashrate(self) -> float:
+        """Get current network hashrate estimate"""
+        try:
+            # Calculate hashrate based on recent block difficulty and timestamps
+            recent_blocks = self._get_recent_blocks(100)  # Last 100 blocks
+            if len(recent_blocks) < 2:
+                return 0.0
+            
+            total_time = 0
+            total_difficulty = 0
+            valid_pairs = 0
+            
+            for i in range(1, len(recent_blocks)):
+            	current_block = recent_blocks[i]
+            	previous_block = recent_blocks[i-1]
+            	time_diff = current_block.header.timestamp - previous_block.header.timestamp
+            	
+            	if 1 <= time_diff <= 3600:
+            		total_time += time_diff
+            		total_difficulty += current_block.header.difficulty
+            		valid_pairs += 1
+            	
+            if valid_pairs < 5 or total_time <= 0:
+            	return 0.0
+            
+            average_time = total_time / valid_pairs
+            average_difficulty = total_difficulty / valid_pairs
+            
+            # Hashrate formula: difficulty / average block time
+            hashrate = average_difficulty / average_time
+            
+            return max(0.0, hashrate)
+            
+        except Exception as e:
+        	logger.error(f"Error calculating network hashrate: {e}")
+        	return 0.0
+
+    def _get_recent_blocks(self, count: int) -> List[Any]:
+        """Get recent blocks from the chain"""
+        blocks = []
+        current_hash = self.chain_head
+        
+        for _ in range(count):
+            if not current_hash:
+                break
+                
+            block = self.get_block(current_hash)
+            if not block:
+                break
+                
+            blocks.append(block)
+            current_hash = block.header.previous_hash
+        
+        return list(reversed(blocks))  # Return in chronological order
+    
+    def get_blockchain_status(self) -> Dict[str, Any]:
+        """Get comprehensive blockchain status for API"""
+        try:
+            current_height = self.get_block_count()
+            mempool_size = len(self.mempool)
+            network_hashrate = self.get_network_hashrate()
+            
+            # Get connected peers count from network layer
+            connected_peers = 0
+            if hasattr(self, 'network') and hasattr(self.network, 'get_connected_peers'):
+            	connected_peers = len(self.network.get_connected_peers())
+            
+            status = {
+                'height': current_height,
+                'chain_head': self.chain_head,
+                'difficulty': self.get_difficulty(),
+                'network_hashrate': network_hashrate,
+                'mempool_size': mempool_size,
+                'connected_peers': connected_peers,
+                'sync_progress': self.sync_progress,
+                'state': self.state.value,
+                'health': self.health.value,
+                'version': '1.0.0',
+                'network': self.network_type,
+                'consensus': 'pos',
+                'block_time_target': self.config.block_time_target,
+                'total_supply': self.get_total_supply(),
+                'circulating_supply': self.get_circulating_supply(),
+                'timestamp': time.time(),
+                'validator_count': self.consensus.get_validator_count() if hasattr(self.consensus, 'get_validator_count') else 0,
+                'total_stake': self.consensus.get_total_stake() if hasattr(self.consensus, 'get_total_stake') else 0
+            }
+            
+            return status
+            
+        except Exception as e:
+            logger.error(f"Error getting blockchain status: {e}")
+            
+    
+    def get_total_supply(self) -> int:
+        """Get total coin supply"""
+        try:
+            current_height = self.get_block_count()
+            
+            # Start with genesis premine
+            genesis_supply = self.config.genesis_premine
+            
+            # Calculate block rewards
+            block_reward = self.config.block_reward
+            
+            halving_interval = 210000
+            
+            total_block_rewards = 0
+            
+            height_remaining = current_height
+            
+            current_reward = block_reward
+            
+            while height_remaining > 0 and current_reward > 0:
+            	blocks_in_era = min(height_remaining, halving_interval)
+            	total_block_rewards += blocks_in_era * current_reward
+            	height_remaining -= blocks_in_era
+            	current_reward //= 2  # Halving
+            
+            return genesis_supply + total_block_rewards
+        
+        except Exception as e:
+        	logger.error(f"Error calculating total supply: {e}")
+        	return self.config.genesis_premine
+  
+    def get_circulating_supply(self) -> int:
+        """Get circulating coin supply"""
+        try:
+            total_supply = self.get_total_supply()
+            
+            # Subtract foundation funds if they're locked
+            foundation_balance = self.get_balance(self.config.foundation_address)
+            
+            # Consider foundation balance as part of circulating supply
+            # (adjust this logic based on your tokenomics)
+            
+            circulating_supply = total_supply
+            
+            #logger.debug(f"Circulating supply: {circulating_supply} (total: {total_supply}, foundation: {foundation_balance})")
+            
+            return circulating_supply
+            
+        except Exception as e:
+        	logger.error(f"Error calculating circulating supply: {e}")
+        	return self.get_total_supply()
   
 class StateRecoveryError(Exception):
     """State recovery failed"""
