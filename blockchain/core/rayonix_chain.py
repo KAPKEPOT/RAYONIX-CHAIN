@@ -349,6 +349,11 @@ class RayonixBlockchain:
 
     def _initialize_database_with_retry(self, max_retries: int = 3) -> Any:
         """Initialize database with retry logic for production robustness"""
+        print(f"🚨 RAYONIX_CHAIN CREATING DATABASE")
+        import traceback
+        print("🚨 RAYONIX_CHAIN DATABASE CALL STACK:")
+        for line in traceback.format_stack()[-5:-1]:
+        	print(line.strip())
         for attempt in range(max_retries):
             try:
                 db_path = self.data_dir / 'blockchain_db'
