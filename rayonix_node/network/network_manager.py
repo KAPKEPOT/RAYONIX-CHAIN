@@ -69,7 +69,7 @@ class NetworkManager:
         if not self.network:
             return
         
-        from network.message_handlers import (
+        from rayonix_node.network.message_handlers import (
             handle_block_message,
             handle_transaction_message,
             handle_peer_list_message,
