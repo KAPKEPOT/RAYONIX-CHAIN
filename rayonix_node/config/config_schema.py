@@ -15,15 +15,13 @@ class DatabaseEngine(str, Enum):
     
 class ConsensusType(str, Enum):
     POS = "pos"
-    POW = "pow"
-    DPOS = "dpos"
-
+    
 class NetworkConfigSchema(BaseModel):
     network_type: NetworkType = Field(default=NetworkType.TESTNET)
     network_id: int = Field(default=1, ge=1)
     enabled: bool = Field(default=True)
     listen_ip: str = Field(default="0.0.0.0")
-    listen_port: int = Field(default=9333, ge=1024, le=65535)
+    listen_port: int = Field(default=52555, ge=1024, le=65535)
     max_connections: int = Field(default=50, ge=1, le=1000)
     bootstrap_nodes: list = Field(default_factory=list)
     enable_encryption: bool = Field(default=True)
@@ -42,7 +40,7 @@ class DatabaseConfigSchema(BaseModel):
 class APIConfigSchema(BaseModel):
     enabled: bool = Field(default=True)
     host: str = Field(default="127.0.0.1")
-    port: int = Field(default=8545, ge=1024, le=65535)
+    port: int = Field(default=52557, ge=1024, le=65535)
     enable_cors: bool = Field(default=True)
     cors_origins: list = Field(default_factory=lambda: ["*"])
 
