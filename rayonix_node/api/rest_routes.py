@@ -245,14 +245,9 @@ async def decrypt_wallet_data(encrypted_wallet: dict, password: str) -> dict:
 @router.get("/blockchain/status", response_model=BlockchainStatusResponse)
 async def get_blockchain_status(request: Request):
     """Get comprehensive blockchain status"""
-    #node = request.app.state.node
-    try:
-        node = request.app.state.node
-        status = node.rayonix_chain.get_blockchain_status()
-        return status
-    except Exception as e:
-        logger.error(f"Error getting blockchain status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    node = request.app.state.node
+    status = await node.rayonix_chain.get_blockchain_status()
+    return status
 
 @router.get("/blockchain/block/{block_hash_or_height}")
 async def get_block(block_hash_or_height: str, request: Request):
