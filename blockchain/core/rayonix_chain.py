@@ -330,23 +330,42 @@ class RayonixBlockchain:
             await self._basic_block_production_loop()
  
     def _initialize_consensus(self):
-    	"""Fallback to basic consensus if advanced system fails"""
+    	"""Initialize consensus engine with proper state"""
     	if hasattr(self, 'consensus') and self.consensus:
     		return  # Consensus already exists
     		
-    	# Only create if it doesn't exist
-
-    	from consensusengine.core.consensus import ProofOfStake
-    	from consensusengine.utils.config.factory import ConfigFactory
+    	try:
+    		from consensusengine.core.consensus import ProofOfStake
+    		from consensusengine.utils.config.factory import ConfigFactory
+    		
+    		config_dict = self._config_to_dict()
+    		self.consensus_config = ConfigFactory.create_safe_consensus_config(**config_dict)
+    		
+    		# Ensure network config exists
+    		if not hasattr(self, 'network_config'):
+    			from consensusengine.utils.config.factory import ConfigFactory
+    			self.network_config = ConfigFactory.create_network_config(**config_dict)
+    		
+    		self.consensus = ProofOfStake(
+    		    config=self.consensus_config,
+    		    network_config=self.network_config
+    		)
+    		
+    		# Initialize consensus state with blockchain data
+    		if hasattr(self, 'state_manager'):
+    			current_height = self.state_manager.get_current_height()
+    			if hasattr(self.consensus, 'current_height'):
+    				self.consensus.current_height = current_height
+    			
+    			if hasattr(self.consensus, 'height'):
+    				self.consensus.height = current_height
+    		
+    		logger.info("Consensus engine initialized successfully")
     	
-    	config_dict = self._config_to_dict()
-    	self.consensus_config = ConfigFactory.create_safe_consensus_config(**config_dict)
-    	
-    	self.consensus = ProofOfStake(
-    	    config=self.consensus_config,
-    	    network_config=getattr(self, 'network_config', {})
-    	)
-
+    	except Exception as e:
+    		logger.error(f"Consensus initialization failed: {e}")
+    		raise RuntimeError(f"Consensus engine initialization failed: {e}")
+ 
     def _setup_contract_manager_references(self):
     	try:
     		if hasattr(self.contract_manager, 'set_blockchain_reference'):
@@ -1648,32 +1667,48 @@ class RayonixBlockchain:
     
     async def get_blockchain_status(self) -> Dict[str, Any]:
         """Get comprehensive blockchain status for API"""
-        current_height = self.get_block_count()
-        mempool_size = len(self.mempool)
-        network_hashrate = self.get_network_hashrate()
+        try:
+        	current_height = self.get_block_count()
+        	mempool_size = len(self.mempool)
+        	network_hashrate = self.get_network_hashrate()
+        	
+        	connected_peers = await self.network.get_connected_peers()
+        	
+        	# Validate that consensus engine has required methods
+        	required_methods = ['get_validator_count', 'get_total_stake', 'get_total_supply', 'get_circulating_supply']
+        	for method in required_methods:
+        		if not hasattr(self.consensus, method):
+        			raise AttributeError(f"Consensus engine missing required method: {method}")
+        	
+        	status = {
+        	    'height': current_height,
+        	    'chain_head': self.chain_head,
+        	    'difficulty': self.get_difficulty(),
+        	    'network_hashrate': network_hashrate,
+        	    'mempool_size': mempool_size,
+        	    'connected_peers': len(connected_peers),
+        	    'sync_progress': self.sync_progress,
+        	    
+        	    'state': self.state.value,
+        	    'health': self.health.value,
+        	    'version': '1.0.0',
+        	    'network': self.network_type,
+        	    'consensus': 'pos',
+        	    'block_time_target': self.config.block_time_target,
+        	    'timestamp': time.time(),
+        	}
+        	
+        	# Add consensus-specific data with validation
+        	status['total_supply'] = self.consensus.get_total_supply()
+        	status['circulating_supply'] = self.consensus.get_circulating_supply()
+        	status['validator_count'] = self.consensus.get_validator_count()
+        	status['total_stake'] = self.consensus.get_total_stake()
+        	
+        	return status
         
-        connected_peers = await self.network.get_connected_peers()
-        
-        return {
-            'height': current_height,
-            'chain_head': self.chain_head,
-            'difficulty': self.get_difficulty(),
-            'network_hashrate': network_hashrate,
-            'mempool_size': mempool_size,
-            'connected_peers': len(connected_peers),
-            'sync_progress': self.sync_progress,
-            'state': self.state.value,
-            'health': self.health.value,
-            'version': '1.0.0',
-            'network': self.network_type,
-            'consensus': 'pos',
-            'block_time_target': self.config.block_time_target,
-            'total_supply': self.get_total_supply(),
-            'circulating_supply': self.get_circulating_supply(),
-            'timestamp': time.time(),
-            'validator_count': self.consensus.get_validator_count(),
-            'total_stake': self.consensus.get_total_stake()
-        }
+        except Exception as e:
+        	logger.error(f"Error getting blockchain status: {e}")
+        	raise
         
     def get_total_supply(self) -> int:
         """Get total coin supply"""
