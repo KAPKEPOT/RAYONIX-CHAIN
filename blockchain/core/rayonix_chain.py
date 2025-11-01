@@ -91,7 +91,7 @@ class BlockchainConfig:
     """Blockchain configuration container"""
     network_type: str = "mainnet"
     data_dir: str = "./rayonix_data"
-    port: int = 30303
+    port: int = 52555
     max_connections: int = 50
     block_time_target: int = 30
     max_block_size: int = 4000000
