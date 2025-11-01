@@ -25,12 +25,12 @@ class WebSocketHandler(IProtocolHandler):
             self.server = await websockets.serve(
                 self.handle_connection,
                 self.config.listen_ip,
-                self.config.listen_port,
+                self.config.websocket_port,
                 ssl=self.ssl_context if self.config.enable_encryption else None,
                 max_size=self.config.max_message_size
             )
             
-            logger.info(f"WebSocket server listening on {self.config.listen_ip}:{self.config.listen_port}")
+            logger.info(f"WebSocket server listening on {self.config.listen_ip}:{self.config.websocket_port}")
             return self.server
             
         except Exception as e:
