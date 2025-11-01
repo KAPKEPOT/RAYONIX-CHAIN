@@ -13,7 +13,7 @@ logger = logging.getLogger('DatabaseManager')
 class DatabaseManager:
     """Production-ready database management for consensus state persistence"""
     
-    def __init__(self, db_path: str = './consensus_db', backup_enabled: bool = True):
+    def __init__(self, db_path: str = './rayonix_data/consensus_db', backup_enabled: bool = True):
         """
         Initialize database manager
         
