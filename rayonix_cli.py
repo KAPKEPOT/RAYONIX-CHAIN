@@ -121,11 +121,11 @@ class RayonixRPCClient:
     # Enhanced RPC methods
     def get_detailed_info(self) -> Dict[str, Any]:
         """Get detailed node information"""
-        return self.call_rest_api("status")
+        return self.call_rest_api("node/status")
     
     def get_network_stats(self) -> Dict[str, Any]:
         """Get network statistics"""
-        return self.call_rest_api("network")
+        return self.call_rest_api("network/stats")
     
     def get_wallet_detailed_balance(self) -> Dict[str, Any]:
         """Get detailed wallet balance"""
@@ -249,7 +249,7 @@ class RayonixRPCClient:
         return result.get('peers', [])
     
     def get_node_status(self) -> Dict[str, Any]:
-        return self.call_rest_api("status")
+        return self.call_rest_api("node/status")
     
     def get_wallet_addresses(self) -> List[str]:
         result = self.call_rest_api("wallet/addresses")
