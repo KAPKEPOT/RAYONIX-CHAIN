@@ -33,11 +33,8 @@ class NetworkConfig:
     enable_dht: bool = False
     connection_timeout: int = 30
     message_timeout: int = 10
-    #listen_port: int = 9333  # TCP port
-    udp_port: int = 9334     # UDP port  
     websocket_port: int = 9335  # WebSocket port
     http_port: int = 9336    # HTTP port
-    
 
 @dataclass
 class DatabaseConfig:
