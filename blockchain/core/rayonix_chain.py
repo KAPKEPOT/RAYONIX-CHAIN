@@ -1646,45 +1646,35 @@ class RayonixBlockchain:
         
         return list(reversed(blocks))  # Return in chronological order
     
-    def get_blockchain_status(self) -> Dict[str, Any]:
+    async def get_blockchain_status(self) -> Dict[str, Any]:
         """Get comprehensive blockchain status for API"""
-        try:
-            current_height = self.get_block_count()
-            mempool_size = len(self.mempool)
-            network_hashrate = self.get_network_hashrate()
-            
-            # Get connected peers count from network layer
-            connected_peers = 0
-            if hasattr(self, 'network') and hasattr(self.network, 'get_connected_peers'):
-            	connected_peers = len(self.network.get_connected_peers())
-            
-            status = {
-                'height': current_height,
-                'chain_head': self.chain_head,
-                'difficulty': self.get_difficulty(),
-                'network_hashrate': network_hashrate,
-                'mempool_size': mempool_size,
-                'connected_peers': connected_peers,
-                'sync_progress': self.sync_progress,
-                'state': self.state.value,
-                'health': self.health.value,
-                'version': '1.0.0',
-                'network': self.network_type,
-                'consensus': 'pos',
-                'block_time_target': self.config.block_time_target,
-                'total_supply': self.get_total_supply(),
-                'circulating_supply': self.get_circulating_supply(),
-                'timestamp': time.time(),
-                'validator_count': self.consensus.get_validator_count() if hasattr(self.consensus, 'get_validator_count') else 0,
-                'total_stake': self.consensus.get_total_stake() if hasattr(self.consensus, 'get_total_stake') else 0
-            }
-            
-            return status
-            
-        except Exception as e:
-            logger.error(f"Error getting blockchain status: {e}")
-            
-    
+        current_height = self.get_block_count()
+        mempool_size = len(self.mempool)
+        network_hashrate = self.get_network_hashrate()
+        
+        connected_peers = await self.network.get_connected_peers()
+        
+        return {
+            'height': current_height,
+            'chain_head': self.chain_head,
+            'difficulty': self.get_difficulty(),
+            'network_hashrate': network_hashrate,
+            'mempool_size': mempool_size,
+            'connected_peers': len(connected_peers),
+            'sync_progress': self.sync_progress,
+            'state': self.state.value,
+            'health': self.health.value,
+            'version': '1.0.0',
+            'network': self.network_type,
+            'consensus': 'pos',
+            'block_time_target': self.config.block_time_target,
+            'total_supply': self.get_total_supply(),
+            'circulating_supply': self.get_circulating_supply(),
+            'timestamp': time.time(),
+            'validator_count': self.consensus.get_validator_count(),
+            'total_stake': self.consensus.get_total_stake()
+        }
+        
     def get_total_supply(self) -> int:
         """Get total coin supply"""
         try:
