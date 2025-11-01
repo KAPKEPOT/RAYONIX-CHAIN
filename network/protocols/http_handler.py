@@ -35,7 +35,7 @@ class HTTPHandler(IProtocolHandler):
             self.site = web.TCPSite(
                 self.runner,
                 self.config.listen_ip,
-                self.config.listen_port,
+                self.config.http_port,
                 ssl_context=self.ssl_context if self.config.enable_encryption else None
             )
             
