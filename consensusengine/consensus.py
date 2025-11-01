@@ -15,8 +15,9 @@ from consensusengine.staking.slashing import SlashingManager
 from network.core.p2p_network import AdvancedP2PNetwork
 from consensusengine.crypto.signing import CryptoManager
 from database.core.database import AdvancedDatabase
+#from consensusengine.utils.database import DatabaseManager
 from consensusengine.utils.timing import TimeoutManager
-from consensusengine.utils.config.settings import ConsensusConfig
+from consensusengine.config.consensus_config import ConsensusConfig
 
 logger = logging.getLogger('ConsensusEngine')
 
@@ -38,10 +39,7 @@ class ProofOfStake:
         else:
         	from consensusengine.utils.config.settings import ConsensusConfig
         	self.config = ConsensusConfig(**vars(config))
-        	
-        # Add fallback for missing attributes
-        self._ensure_config_attributes()
- 
+
         # Core state management
         self.height = 0
         self.round = 0
@@ -58,10 +56,10 @@ class ProofOfStake:
         self.round_states: Dict[Tuple[int, int], RoundState] = {}
         
         # Epoch management
-        self.epoch_state = EpochState(self.config.epoch_blocks)
+        self.epoch_state = EpochState(self.config.staking.epoch_blocks)
         
         # Manager instances
-        self.database = AdvancedDatabase(self.config.db_path)
+        self.db_manager = AdvancedDatabase(self.config.database.path)
         self.timeout_manager = TimeoutManager()
         self.crypto_manager = CryptoManager()
         self.staking_manager = StakingManager(self)
@@ -96,27 +94,7 @@ class ProofOfStake:
         
         self._load_state()
         self._start_background_tasks()
-        
-    def _ensure_config_attributes(self):
-    	"""Ensure config has all required attributes with defaults"""
-    	defaults = {
-    	    'epoch_blocks': 100,
-    	    'timeout_propose': 3000,
-    	    'timeout_prevote': 1000,
-    	    'timeout_precommit': 1000,
-    	    'timeout_commit': 1000,
-    	    'db_path': './consensus_data',
-    	    'max_validators': 100,
-    	    'min_stake_amount': 1000,
-    	    'unbonding_period': 86400 * 21,
-    	    'slashing_percentage': 0.01,
-    	    'jail_duration': 86400 * 2
-    	}
-    	for attr, default in defaults.items():
-    		if not hasattr(self.config, attr):
-    			setattr(self.config, attr, default)
-    			logger.warning(f"Added missing config attribute {attr} with default value {default}")
-    
+
     def _load_state(self):
         """Load consensus state from database"""
         try:
@@ -188,7 +166,7 @@ class ProofOfStake:
         
         def unavailability_checker():
             while self._running:
-                time.sleep(self.config.epoch_blocks * 5)
+                time.sleep(self.config.staking.epoch_blocks * 5)
                 try:
                     self.slashing_manager.check_unavailability()
                 except Exception as e:
@@ -204,7 +182,7 @@ class ProofOfStake:
     
     def _process_epoch_transition(self):
         """Process epoch transition and distribute rewards"""
-        if self.height % self.config.epoch_blocks != 0:
+        if self.height % self.config.staking.epoch_blocks != 0:
             return
         
         with self.lock:
@@ -271,7 +249,7 @@ class ProofOfStake:
             # Set timeout for propose step
             self.timeout_manager.set_timeout(
                 self.height, round, ConsensusState.PROPOSE,
-                self.config.timeout_propose, self._on_timeout
+                self.config.timeouts.propose_timeout
             )
             
             # If we're the proposer, create a proposal
@@ -462,7 +440,7 @@ class ProofOfStake:
             self.step = ConsensusState.PRECOMMIT
             self.timeout_manager.set_timeout(
                 height, round, ConsensusState.PRECOMMIT,
-                self.config.timeout_precommit, self._on_timeout
+                self.config.timeouts.precommit_timeout
             )
             
             # Send precommit for this block
@@ -559,6 +537,11 @@ class ProofOfStake:
     			if not self._validate_block_consensus(block):
     				logger.error(f"Block {block.hash} failed consensus validation at height {block.header.height}")
     				return False
+    			
+    			if block.header.height == 0:
+    				
+    				return self._process_genesis_block(block)
+    				
     				# Verify block proposer is current round validator
     				expected_proposer = self.staking_manager.select_proposer(block.header.height, 0)
     				if not expected_proposer or expected_proposer.address != block.header.validator:
@@ -569,6 +552,7 @@ class ProofOfStake:
     				
     				# Process validator performance metrics
     				validator_address = block.header.validator
+    				
     				if validator_address in self.validators:
     					validator = self.validators[validator_address]
     					validator.last_active = time.time()
@@ -588,32 +572,67 @@ class ProofOfStake:
     					if total_blocks > 0:
     						validator.uptime = (validator.signed_blocks / total_blocks) * 100.0
     				# Calculate and distribute block rewards
-    				block_reward = self._calculate_block_reward(block.header.height)
-    				transaction_fees = self._calculate_transaction_fees(block.transactions)
-    				total_reward = block_reward + transaction_fees
-    				# Add to epoch reward pool for distribution
-    				self.epoch_state.reward_pool += total_reward
-    				
-    				# Update monetary supply with precise accounting
-    				self.total_supply += total_reward
-    				# Update staking manager state
-    				self.staking_manager.process_block_production(validator_address, block.header.height)
-    				
-    				# Execute slashing conditions for missed blocks
-    				self._check_missed_blocks_slashing(block.header.height)
-    				
-    				# Update network difficulty based on recent block times
-    				
-    				self._adjust_network_difficulty(block.header.timestamp)
+    				if block.header.height >= 1:
+    					block_reward = self._calculate_block_reward(block.header.height)
+    					transaction_fees = self._calculate_transaction_fees(block.transactions)
+    					total_reward = block_reward + transaction_fees
+    					
+    					# Add to epoch reward pool for distribution
+    					self.epoch_state.reward_pool += total_reward
+    					
+    					# Update monetary supply with precise accounting
+    					self.total_supply += total_reward
+    					
+    				# Update staking manager state (starting from block 1)
+    				if block.header.height >= 1:
+    					self.staking_manager.process_block_production(validator_address, block.header.height)
+    					
+    					# Execute slashing conditions for missed blocks
+    					self._check_missed_blocks_slashing(block.header.height)
+    					
+    					# Update network difficulty based on recent block times
+    					self._adjust_network_difficulty(block.header.timestamp)
     				
     				# Persist consensus state changes
-    				self._save_state()
-    				logger.info(f"Successfully processed block {block.hash[:16]} at height {block.header.height}, reward: {total_reward}")
+    				logger.info(f"Successfully processed block {block.hash[:16]} at height {block.header.height}")
     				return True
+    				
     	except Exception as e:
     		logger.error(f"Critical error processing block {block.hash if hasattr(block, 'hash') else 'unknown'}: {e}", exc_info=True)
     		return False
     		
+    def _process_genesis_block(self, block: Any) -> bool:
+    	"""Special handling for genesis block at height 0"""
+    	try:
+    		logger.info(f"Processing genesis block at height {block.header.height}")
+    		
+    		# Initialize consensus state with genesis block
+    		self.current_height = 0
+    		self.height = 0
+    		
+    		# Initialize validator set for genesis if needed
+    		if not self.validators:
+    			logger.info("Initializing empty validator set for genesis")
+    			
+    		# Initialize epoch state
+    		self.epoch_state.current_epoch = 0
+    		self.epoch_state.reward_pool = 0
+    		
+    		# Initialize other consensus state
+    		self.round = 0
+    		self.step = ConsensusState.NEW_HEIGHT
+    		self.locked_round = -1
+    		self.valid_round = -1
+    		self.locked_value = None
+    		self.valid_value = None
+    		
+    		logger.info("Genesis block (height 0) consensus processing completed")
+    		return True
+    	
+    	except Exception as e:
+    		logger.error(f"Error processing genesis block: {e}")
+    		return False
+ 
     def revert_block(self, block: Any) -> bool:
     	"""Production-grade block reversion with complete state rollback"""
     	try:
@@ -664,7 +683,7 @@ class ProofOfStake:
     			return False
     			
     		# ENHANCED VALIDATION: Special handling for genesis block
-    		if block.header.height == 1:
+    		if block.header.height == 0:
     			# Skip height sequencing validation for genesis
     			if not hasattr(block.header, 'validator') or not block.header.validator:
     				logger.error("Genesis block missing validator identification")
@@ -676,9 +695,10 @@ class ProofOfStake:
     			
     			# Set current height to 0 so genesis becomes height 1
     			if self.current_height == 0:
+    				logger.info("Genesis block validation passed")
     				return True
     			else:
-    				logger.error("Genesis block processed at incorrect height")
+    				logger.error(f"Genesis block processed at incorrect current height: {self.current_height}")
     				return False
     			
     		# Validate block height sequencing
@@ -710,7 +730,7 @@ class ProofOfStake:
     			logger.error(f"Block validator {validator_address} is jailed until {validator.jail_until}")
     			return False
     			
-    		if validator.total_stake < self.config.min_stake_amount:
+    		if validator.total_stake < self.config.staking.min_stake:
     			logger.error(f"Block validator {validator_address} has insufficient stake: {validator.total_stake} < {self.config.min_stake_amount}")
     			return False
     		
@@ -825,7 +845,7 @@ class ProofOfStake:
     		return 1
     	
     	average_block_time = sum(recent_blocks) / len(recent_blocks)
-    	target_block_time = self.config.get('block_time_target', 30)
+    	target_block_time = getattr(self.config, 'block_time_target', 30)
     	
     	# Adjust difficulty based on block time ratio
     	time_ratio = average_block_time / target_block_time
