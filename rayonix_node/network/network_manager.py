@@ -21,13 +21,13 @@ class NetworkManager:
         try:
             # Extract individual parameters instead of passing a dict
             network_id = self.node.get_config_value('network.network_id', 1)
-            listen_port = self.node.get_config_value('network.listen_port', 9333)
+            listen_port = self.node.get_config_value('network.listen_port', 52555)  # RAYONIX port
             max_connections = self.node.get_config_value('network.max_connections', 50)
             
             # Use different ports for different protocols to avoid conflicts
-            tcp_port = listen_port          
-            websocket_port = listen_port + 1
-            http_port = listen_port + 2
+            tcp_port = listen_port                    # 52555 - P2P TCP
+            websocket_port = listen_port + 1          # 52556 - WebSocket  
+            http_port = listen_port + 2               # 52557 - HTTP API
             
             # Create network config object if needed, but pass individual params to constructor
             from network.config.node_config import NodeConfig
@@ -45,11 +45,13 @@ class NetworkManager:
                 enable_compression=True
             )
             self.network = AdvancedP2PNetwork(
+                #network_id=network_id,
+                #port=tcp_port,  # Pass TCP port as main port
+                #max_connections=max_connections,
+                #node_id=None,  # Let it generate its own
+                config=config,
                 network_id=network_id,
-                port=tcp_port,  # Pass TCP port as main port
-                max_connections=max_connections,
-                node_id=None,  # Let it generate its own
-                config=config
+                node_id=None  # Let it generate its own
             )
             
             # Register message handlers
