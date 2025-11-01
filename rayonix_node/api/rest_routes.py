@@ -249,36 +249,88 @@ async def get_blockchain_status(request: Request):
     status = await node.rayonix_chain.get_blockchain_status()
     return status
 
-@router.get("/blockchain/block/{block_hash_or_height}")
-async def get_block(block_hash_or_height: str, request: Request):
-    """Get block by hash or height with full transaction details"""
-    node = request.app.state.node
-    try:
-        chain = node.rayonix_chain
-        
-        if block_hash_or_height.isdigit():
-            block = chain.get_block_by_height(int(block_hash_or_height))
-        else:
-            block = chain.get_block_by_hash(block_hash_or_height)
-        
-        if not block:
-            raise HTTPException(status_code=404, detail="Block not found")
-        
-        # Enhance block data with additional information
-        enhanced_block = block.to_dict() if hasattr(block, 'to_dict') else block
-        
-        # Add transaction details
-        if 'transactions' in enhanced_block:
-            enhanced_block['transaction_count'] = len(enhanced_block['transactions'])
-            enhanced_block['total_amount'] = sum(
-                sum(output.get('amount', 0) for output in tx.get('outputs', []))
-                for tx in enhanced_block['transactions']
-            )
-        
-        return enhanced_block
-    except Exception as e:
-        logger.error(f"Error getting block {block_hash_or_height}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/blockchain/block/{block_hash}/merkle-proof/{tx_hash}")
+async def get_merkle_proof(block_hash: str, tx_hash: str, format: str = "binary",
+                          node: Node = Depends(get_node)):                         
+    """Get Merkle proof for transaction inclusion in block"""
+    block = node.rayonix_chain.get_block(block_hash)
+    if not block:
+        raise HTTPException(status_code=404, detail="Block not found")
+    
+    # Convert format string to ProofFormat enum
+    proof_format = ProofFormat.BINARY
+    if format.lower() == "json":
+        proof_format = ProofFormat.JSON
+    elif format.lower() == "msgpack":
+        proof_format = ProofFormat.MSGPACK
+    
+    proof = block.get_merkle_proof(tx_hash, proof_format)
+    if not proof:
+        raise HTTPException(status_code=404, detail="Transaction not found in block")
+    
+    response_data = {
+        "block_hash": block_hash,
+        "tx_hash": tx_hash,
+        "merkle_root": block.header.merkle_root,
+        "transaction_count": len(block.transactions),
+        "proof_format": format
+    }
+    
+    if proof_format == ProofFormat.BINARY:
+        response_data["proof_hex"] = proof.hex()
+    else:
+        response_data["proof"] = proof.decode('utf-8') if isinstance(proof, bytes) else proof
+    
+    return response_data
+
+@router.post("/blockchain/verify-merkle-proof")
+async def verify_merkle_proof(proof_data: dict, node: Node = Depends(get_node)):
+    """Verify Merkle proof for transaction inclusion"""
+    block_hash = proof_data.get('block_hash')
+    tx_hash = proof_data.get('tx_hash')
+    proof_hex = proof_data.get('proof_hex')
+    proof_format_str = proof_data.get('proof_format', 'binary')
+    
+    if not all([block_hash, tx_hash, proof_hex]):
+        raise HTTPException(status_code=400, detail="Missing required fields")
+    
+    block = node.rayonix_chain.get_block(block_hash)
+    if not block:
+        raise HTTPException(status_code=404, detail="Block not found")
+    
+    # Convert proof format
+    proof_format = ProofFormat.BINARY
+    if proof_format_str.lower() == "json":
+        proof_format = ProofFormat.JSON
+    elif proof_format_str.lower() == "msgpack":
+        proof_format = ProofFormat.MSGPACK
+    
+    # Convert hex proof to bytes if needed
+    if proof_format == ProofFormat.BINARY:
+        try:
+            proof_bytes = bytes.fromhex(proof_hex)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid proof hex format")
+    else:
+        proof_bytes = proof_hex.encode('utf-8')
+    
+    is_valid = block.verify_merkle_proof(tx_hash, proof_bytes, proof_format)
+    
+    return {
+        "valid": is_valid,
+        "block_hash": block_hash,
+        "tx_hash": tx_hash,
+        "merkle_root": block.header.merkle_root
+    }
+
+@router.get("/blockchain/block/{block_hash}/light-header")
+async def get_light_client_header(block_hash: str, node: Node = Depends(get_node)):
+    """Get light client header information"""
+    block = node.rayonix_chain.get_block(block_hash)
+    if not block:
+        raise HTTPException(status_code=404, detail="Block not found")
+    
+    return block.get_light_client_header()
 
 @router.get("/blockchain/transaction/{tx_hash}")
 async def get_transaction(tx_hash: str, request: Request):
