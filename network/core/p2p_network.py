@@ -334,7 +334,7 @@ class AdvancedP2PNetwork:
                     port = int(port_str)
                 else:
                     ip = addr_port
-                    port = 30303  # Default port
+                    port = 52555  # Default port
             else:
                 if ':' in address:
                     ip, port_str = address.split(':')
@@ -342,7 +342,7 @@ class AdvancedP2PNetwork:
                     protocol = 'tcp'  # Default protocol
                 else:
                     ip = address
-                    port = 30303
+                    port = 52555
                     protocol = 'tcp'
             
             connection_id = await self.connection_manager.connect_to_peer(ip, port, protocol)
