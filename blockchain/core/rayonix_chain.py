@@ -321,6 +321,11 @@ class RayonixBlockchain:
  
     def _initialize_consensus(self):
     	"""Fallback to basic consensus if advanced system fails"""
+    	if hasattr(self, 'consensus') and self.consensus:
+    		return  # Consensus already exists
+    		
+    	# Only create if it doesn't exist
+
     	from consensusengine.core.consensus import ProofOfStake
     	from consensusengine.utils.config.factory import ConfigFactory
     	
