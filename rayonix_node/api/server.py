@@ -16,7 +16,7 @@ logger = logging.getLogger("rayonix_node.api")
 class RayonixAPIServer:
     """API server for RAYONIX blockchain node with JSON-RPC and REST endpoints using FastAPI"""
     
-    def __init__(self, node: 'RayonixNode', host: str = "127.0.0.1", port: int = 8545):
+    def __init__(self, node: 'RayonixNode', host: str = "127.0.0.1", port: int = 52557):
         self.node = node
         self.host = host
         self.port = port
