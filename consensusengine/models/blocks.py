@@ -98,42 +98,184 @@ class Block:
         
         tx_hashes = [tx.tx_hash for tx in self.transactions]
         
-        while len(tx_hashes) > 1:
-            new_hashes = []
-            
-            for i in range(0, len(tx_hashes), 2):
-                if i + 1 < len(tx_hashes):
-                    combined = tx_hashes[i] + tx_hashes[i + 1]
-                    new_hash = hashlib.sha256(combined.encode()).hexdigest()
-                else:
-                    new_hash = tx_hashes[i]
-                
-                new_hashes.append(new_hash)
-            
-            tx_hashes = new_hashes
+        # Create proper Merkle tree with blockchain-optimized configuration
+        from merkle_system.merkle import MerkleTree, MerkleTreeConfig, HashAlgorithm
         
-        return tx_hashes[0] if tx_hashes else "0" * 64
-    
+        config = MerkleTreeConfig(
+            hash_algorithm=HashAlgorithm.SHA256,
+            double_hash=True,  # Double hashing for extra security
+            use_encoding=True,
+            enable_parallel_processing=len(tx_hashes) > 100,  # Parallel for large blocks
+            batch_size=1000,
+            cache_enabled=True
+        )
+        
+        merkle_tree = MerkleTree(tx_hashes, config)
+        return merkle_tree.get_root_hash()
+
+    def get_merkle_proof(self, tx_hash: str, proof_format: ProofFormat = ProofFormat.BINARY) -> Optional[bytes]:
+    	"""Get Merkle proof for a transaction in specified format"""
+    	if not self.transactions:
+    		return None
+    		
+    	from merkle_system.merkle import MerkleTree, MerkleTreeConfig, HashAlgorithm, ProofFormat
+    	tx_hashes = [tx.tx_hash for tx in self.transactions]
+    	
+    	# Recreate the Merkle tree (should match the one used for root calculation)
+    	
+    	config = MerkleTreeConfig(
+    	    
+    	    hash_algorithm=HashAlgorithm.SHA256,
+    	    double_hash=True,
+    	    use_encoding=True
+    	)
+    	
+    	merkle_tree = MerkleTree(tx_hashes, config)
+    	
+    	# Verify we're using the same root
+    	if merkle_tree.get_root_hash() != self.header.merkle_root:
+    		logger.error("Merkle tree recreation mismatch - cannot generate valid proof")
+    		return None
+    	
+    	return merkle_tree.get_proof(tx_hash, proof_format)
+    	
+    def validate_merkle_proof(self, tx_hash: str, proof_data: bytes, proof_format: ProofFormat = ProofFormat.BINARY) -> bool:
+    	"""Validate Merkle proof for transaction inclusion"""
+    	from merkle_system.merkle import MerkleTree
+    	
+    	return MerkleTree.verify_proof(
+    	    proof_data=proof_data,
+    	    target_hash=tx_hash,
+    	    root_hash=self.header.merkle_root,
+    	    format=proof_format
+    	)
+    	
+    def get_merkle_proof_by_index(self, tx_index: int, proof_format: ProofFormat = ProofFormat.BINARY) -> Optional[bytes]:
+    	"""Get Merkle proof for a transaction by its index in the block"""
+    	if tx_index < 0 or tx_index >= len(self.transactions):
+    		return None
+    		
+    	tx_hash = self.transactions[tx_index].tx_hash
+    	return self.get_merkle_proof(tx_hash, proof_format)
+    	
     def validate(self, previous_block: Optional['Block'] = None) -> bool:
-        """Validate block structure and consistency"""
+        """Validate block structure and consistency with proper Merkle validation"""
         # Validate header
         if self.header.height < 0:
-            return False
+        	logger.error("Invalid block height")
+        	return False
         
         if previous_block and self.header.previous_hash != previous_block.hash:
-            return False
+        	logger.error("Previous hash mismatch")
+        	return False
+        	
+        # Validate Merkle root using proper calculation
+        try:
+        	calculated_root = self.calculate_merkle_root()
+        	if calculated_root != self.header.merkle_root:
+        		logger.error(f"Merkle root mismatch: calculated {calculated_root}, header {self.header.merkle_root}")
+        		return False
+        except Exception as e:
+        	logger.error(f"Merkle root calculation failed: {e}")
+        	return False
+        	
+        # Validate transaction hashes are unique
+        tx_hashes = [tx.tx_hash for tx in self.transactions]
+        if len(tx_hashes) != len(set(tx_hashes)):
+        	logger.error("Duplicate transaction hashes in block")
+        	return False
         
-        # Validate Merkle root
-        if self.calculate_merkle_root() != self.header.merkle_root:
-            return False
-        
-        # Validate transactions
+        # Validate individual transactions
         for tx in self.transactions:
-            if not tx.validate():
-                return False
+        	if not tx.validate():
+        		logger.error(f"Invalid transaction: {tx.tx_hash}")
+        		return False
+        
+        # Additional Merkle tree integrity checks for large blocks
+        if len(self.transactions) > 1000:
+        	if not self._validate_merkle_tree_integrity():
+        		return False
         
         return True
-
+       
+    def _validate_merkle_tree_integrity(self) -> bool:
+    	"""Perform additional Merkle tree integrity checks for large blocks"""
+    	try:
+    		from merkle_system.merkle import MerkleTree, MerkleTreeConfig, HashAlgorithm
+    		
+    		tx_hashes = [tx.tx_hash for tx in self.transactions]
+    		config = MerkleTreeConfig(
+    		    hash_algorithm=HashAlgorithm.SHA256,
+    		    double_hash=True
+    		)
+    		
+    		merkle_tree = MerkleTree(tx_hashes, config)
+    		
+    		# Verify tree depth is reasonable
+    		tree_depth = merkle_tree.get_tree_depth()
+    		max_expected_depth = 20  # For 1M transactions, depth ~= log2(1M) ≈ 20
+    		if tree_depth > max_expected_depth:
+    			logger.error(f"Suspicious Merkle tree depth: {tree_depth}")
+    			return False
+    			
+    		# Verify we can generate and validate proofs for sample transactions
+    		sample_indices = [0, len(tx_hashes) // 2, len(tx_hashes) - 1]
+    		for idx in sample_indices:
+    			if idx < len(tx_hashes):
+    				proof = merkle_tree.get_proof_by_index(idx)
+    				if not proof:
+    					logger.error(f"Failed to generate proof for transaction at index {idx}")
+    					return False
+    				
+    				if not MerkleTree.verify_proof(proof, tx_hashes[idx], self.header.merkle_root):
+    					logger.error(f"Generated proof failed verification for transaction at index {idx}")
+    					return False
+    					
+    		return True
+    	
+    	except Exception as e:
+    		logger.error(f"Merkle tree integrity validation failed: {e}")
+    		return False
+    		
+    def get_light_client_header(self) -> Dict[str, Any]:
+    	"""Get block header information for light clients"""
+    	return {
+    	    'height': self.header.height,
+    	    'hash': self.hash,
+    	    'previous_hash': self.header.previous_hash,
+    	    'merkle_root': self.header.merkle_root,
+    	    'timestamp': self.header.timestamp,
+    	    'difficulty': self.header.difficulty,
+    	    'validator': self.header.validator,
+    	    'transaction_count': len(self.transactions)
+    	}
+    
+    def verify_transaction_inclusion(self, tx_hash: str, proof_data: bytes, proof_format: ProofFormat = ProofFormat.BINARY) -> bool:
+    	"""Verify transaction inclusion for light clients"""
+    	return self.validate_merkle_proof(tx_hash, proof_data, proof_format)
+    	
+    def get_transaction_with_proof(self, tx_hash: str) -> Optional[Dict[str, Any]]:
+    	"""Get transaction with its Merkle proof for light clients"""
+    	tx = None
+    	for transaction in self.transactions:
+    		if transaction.tx_hash == tx_hash:
+    			tx = transaction
+    			break
+    		
+    	if not tx:
+    		return None
+    	
+    	proof = self.get_merkle_proof(tx_hash)    	
+    	if not proof:
+    		return None
+    		
+    	return {
+    	    'transaction': tx.to_dict() if hasattr(tx, 'to_dict') else tx.__dict__,
+    	    'merkle_proof': proof.hex() if isinstance(proof, bytes) else proof,
+    	    'block_header': self.get_light_client_header(),
+    	    'tx_index': self.transactions.index(tx) if tx in self.transactions else -1
+    	}
+   
 @dataclass
 class BlockProposal:
     """Block proposal structure for consensus"""
