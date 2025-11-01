@@ -267,10 +267,18 @@ class RayonixBlockchain:
             self.block_producer = BlockProducer(self.state_manager, self.validation_manager, config_dict, self.wallet)
             
             # Initialize network layer
+            network_config = NodeConfig(
+                network_type=NetworkType.TESTNET if self.network_type == "testnet" else NetworkType.MAINNET,
+                listen_port=self.config.port,
+                max_connections=self.config.max_connections
+            )
+            
             self.network = AdvancedP2PNetwork(
+                config=network_config,
                 network_id=self._get_network_id(),
-                port=self.config.port,
-                max_connections=self.config.max_connections,
+                #network_id=self._get_network_id(),
+                #port=self.config.port,
+                #max_connections=self.config.max_connections,
                 node_id=self._generate_node_id()
             )
             
@@ -354,11 +362,7 @@ class RayonixBlockchain:
 
     def _initialize_database_with_retry(self, max_retries: int = 3) -> Any:
         """Initialize database with retry logic for production robustness"""
-        print(f"🚨 RAYONIX_CHAIN CREATING DATABASE")
-        import traceback
-        print("🚨 RAYONIX_CHAIN DATABASE CALL STACK:")
-        for line in traceback.format_stack()[-5:-1]:
-        	print(line.strip())
+        
         for attempt in range(max_retries):
             try:
                 db_path = self.data_dir / 'blockchain_db'
