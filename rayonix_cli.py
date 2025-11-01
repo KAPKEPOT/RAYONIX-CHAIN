@@ -262,8 +262,8 @@ class RayonixRPCClient:
 def main():
     """CLI entry point"""
     parser = argparse.ArgumentParser(description='RAYONIX CLI Client')
-    parser.add_argument('--url', default='http://127.0.0.1:8545', 
-                       help='Daemon API URL (default: http://127.0.0.1:8545)')
+    parser.add_argument('--url', default='http://127.0.0.1:52557', 
+                       help='Daemon API URL (default: http://127.0.0.1:52557)')
     parser.add_argument('--timeout', type=int, default=30,
                        help='Request timeout in seconds (default: 30)')
     parser.add_argument('--data-dir', default='~/.rayonix',
