@@ -26,40 +26,12 @@ logger = logging.getLogger("AdvancedP2PNetwork")
 class AdvancedP2PNetwork:
     """Main P2P network class"""
     
-    def __init__(self, network_id: int = 1, port: int = 30303, max_connections: int = 50, node_id: str = None, config: Optional[NodeConfig] = None):
-        # Use provided parameters or create config from them
-        if config is None:
-            config = NodeConfig(
-                network_type=NetworkType.TESTNET,
-                listen_port=port,
-                max_connections=max_connections,
-                listen_ip="0.0.0.0",                
-                websocket_port= "53556",
-                http_port= "52557",
-                public_ip=None,
-                public_port=None,
-                max_peers=1000,
-                connection_timeout=30,
-                message_timeout=10,
-                ping_interval=60,
-                bootstrap_nodes=[],
-                enable_nat_traversal=True,
-                enable_encryption=False,  # Disable for initial testing
-                enable_compression=True,
-                enable_dht=True,
-                enable_gossip=True,
-                enable_syncing=True,
-                max_message_size=10 * 1024 * 1024,  # 10MB
-                rate_limit_per_peer=1000,
-                ban_threshold=-100,
-                ban_duration=3600,
-                dht_bootstrap_nodes=[],
-                dns_seeds=[]
-            )
+    def __init__(self, config: NodeConfig, network_id: int = 1, node_id: str = None):
         
         self.config = config
+        self.network_id = network_id
         self.node_id = node_id or self._generate_node_id()
-        self.magic = self._get_magic_number(network_id)  # Network magic number
+        #self.magic = self._get_magic_number(network_id)  # Network magic number
         
         # Core components
         self.connection_manager = ConnectionManager(self)
