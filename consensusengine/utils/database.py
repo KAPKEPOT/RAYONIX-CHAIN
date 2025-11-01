@@ -21,6 +21,11 @@ class DatabaseManager:
             db_path: Path to database directory
             backup_enabled: Whether to enable automatic backups
         """
+        print(f"🚨 DATABASE MANAGER CREATING: {db_path}")
+        import traceback
+        print("🚨 DATABASE MANAGER CALL STACK:")
+        for line in traceback.format_stack()[-5:-1]:
+        	print(line.strip())
         self.db_path = db_path
         self.backup_enabled = backup_enabled
         self.backup_path = os.path.join(db_path, 'backups')
