@@ -130,7 +130,7 @@ class RayonixNode:
             # Initialize API server if enabled
             if self.config_manager.get('api.enabled', True):
                 api_host = self.config_manager.get('api.host', '127.0.0.1')
-                api_port = self.config_manager.get('api.port', 8545)
+                api_port = self.config_manager.get('api.port', 52557)
                 self.api_server = RayonixAPIServer(self, api_host, api_port)
             
             logger.info("RAYONIX Node components initialized successfully")
