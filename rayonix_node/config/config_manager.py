@@ -48,7 +48,7 @@ class DatabaseConfig:
 class APIConfig:
     enabled: bool = True
     host: str = "127.0.0.1"
-    port: int = 8545
+    port: int = 52557  # ✅ RAYONIX API port (matches http_port)
     enable_cors: bool = True
     cors_origins: list = field(default_factory=lambda: ["*"])
 
@@ -60,6 +60,27 @@ class ConsensusConfig:
     block_time: int = 10
     difficulty_adjustment_interval: int = 2016
     reward_halving_interval: int = 210000
+    
+    # ADD MISSING PARAMETERS:
+    epoch_blocks: int = 100
+    timeout_propose: int = 3000
+    timeout_prevote: int = 1000  
+    timeout_precommit: int = 1000
+    timeout_commit: int = 1000
+    max_validators: int = 100
+    min_stake_amount: int = 1000
+    unbonding_period: int = 86400 * 21
+    slashing_percentage: float = 0.01
+    jail_duration: int = 86400 * 2
+    security_level: str = "high"
+    enable_slashing: bool = True
+    enable_jailing: bool = True
+    max_block_size: int = 4000000
+    block_time_target: int = 30
+    max_transactions_per_block: int = 1000
+    block_reward: int = 50
+    developer_fee_percent: float = 0.05
+    foundation_address: str = 'RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX'
 
 @dataclass
 class GasConfig:
