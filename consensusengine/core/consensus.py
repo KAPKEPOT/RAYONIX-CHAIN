@@ -14,8 +14,8 @@ from consensusengine.staking.manager import StakingManager
 from consensusengine.staking.slashing import SlashingManager
 from network.core.p2p_network import AdvancedP2PNetwork
 from consensusengine.crypto.signing import CryptoManager
-from database.core.database import AdvancedDatabase
-#from consensusengine.utils.database import DatabaseManager
+#from database.core.database import AdvancedDatabase
+from consensusengine.utils.database import DatabaseManager
 from consensusengine.utils.timing import TimeoutManager
 from consensusengine.config.consensus_config import ConsensusConfig
 
@@ -59,7 +59,7 @@ class ProofOfStake:
         self.epoch_state = EpochState(self.config.staking.epoch_blocks)
         
         # Manager instances
-        self.db_manager = AdvancedDatabase(self.config.database.path)
+        self.db_manager = DatabaseManager(self.config.database.path)
         self.timeout_manager = TimeoutManager()
         self.crypto_manager = CryptoManager()
         self.staking_manager = StakingManager(self)
