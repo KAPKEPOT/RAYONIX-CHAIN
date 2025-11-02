@@ -63,7 +63,7 @@ class RayonixNode:
         self.peer_monitor = PeerMonitor(self)
     
     async def initialize_components(self, config_path: Optional[str] = None, 
-                                  encryption_key: Optional[str] = None) -> bool:
+                              encryption_key: Optional[str] = None) -> bool:
         """Initialize all node components with dependency injection support"""
         
         try:
@@ -78,36 +78,27 @@ class RayonixNode:
             if not self.rayonix_chain:
                 from blockchain.core.rayonix_chain import RayonixBlockchain
                 
-                network_type = self.config_manager.get('network.network_type', 'testnet')
-                data_dir = Path(self.config_manager.get('database.db_path', './rayonix_data'))
+                network_type = self.config_manager.get('network.network_type')
+                data_dir = Path(self.config_manager.get('database.db_path'))
                 data_dir.mkdir(exist_ok=True, parents=True)
                 # Create blockchain configuration from main config
                 blockchain_config = {
                     'network_type': network_type,
                     'data_dir': str(data_dir),
-                    'port': self.config_manager.get('network.port', 30303),
-                    'max_connections': self.config_manager.get('network.max_connections', 50),
-                    'block_time_target': self.config_manager.get('consensus.block_time_target', 30),
-                    'max_block_size': self.config_manager.get('consensus.max_block_size', 4000000),
-                    'min_transaction_fee': self.config_manager.get('gas.min_transaction_fee', 1),
-                    'stake_minimum': self.config_manager.get('consensus.stake_minimum', 1000),
-                    'developer_fee_percent': self.config_manager.get('consensus.developer_fee_percent', 0.05),
-                    'enable_auto_staking': self.config_manager.get('consensus.enable_auto_staking', True),
-                    'enable_transaction_relay': self.config_manager.get('network.enable_transaction_relay', True),
-                    'enable_state_pruning': self.config_manager.get('database.enable_state_pruning', True),
-                    'max_reorganization_depth': self.config_manager.get('consensus.max_reorganization_depth', 100),
-                    'checkpoint_interval': self.config_manager.get('database.checkpoint_interval', 1000)
+                    'port': self.config_manager.get('network.listen_port'),
+                    'max_connections': self.config_manager.get('network.max_connections'),
+                    'block_time_target': self.config_manager.get('consensus.block_time'),
+                    'max_block_size': self.config_manager.get('consensus.max_block_size'),
+                    'min_transaction_fee': self.config_manager.get('gas.min_transaction_fee'),
+                    'stake_minimum': self.config_manager.get('consensus.min_stake'),
+                    'developer_fee_percent': self.config_manager.get('consensus.developer_fee_percent'),
+                    'enable_auto_staking': self.config_manager.get('consensus.enable_auto_staking'),
+                    'enable_transaction_relay': self.config_manager.get('network.enable_transaction_relay'),
+                    'enable_state_pruning': self.config_manager.get('database.enable_state_pruning'),
+                    'max_reorganization_depth': self.config_manager.get('consensus.max_reorganization_depth'),
+                    'checkpoint_interval': self.config_manager.get('database.checkpoint_interval')
                 }
-                
-                # Get gas price config from main config
-                gas_price_config = {
-                    'base_gas_price': self.config_manager.get('gas.base_gas_price', 1000000000),
-                    'min_gas_price': self.config_manager.get('gas.min_gas_price', 500000000),
-                    'max_gas_price': self.config_manager.get('gas.max_gas_price', 10000000000),
-                    'adjustment_factor': self.config_manager.get('gas.adjustment_factor', 1.125),
-                    'target_utilization': self.config_manager.get('gas.target_utilization', 0.5)
-                }
-                
+
                 self.rayonix_chain = RayonixBlockchain(
                     network_type=network_type,
                     data_dir=str(data_dir),
@@ -128,9 +119,9 @@ class RayonixNode:
                 self.network = self.network_manager.network
             
             # Initialize API server if enabled
-            if self.config_manager.get('api.enabled', True):
-                api_host = self.config_manager.get('api.host', '127.0.0.1')
-                api_port = self.config_manager.get('api.port', 52557)
+            if self.config_manager.get('api.enabled'):
+                api_host = self.config_manager.get('api.host')
+                api_port = self.config_manager.get('api.port')
                 self.api_server = RayonixAPIServer(self, api_host, api_port)
             
             logger.info("RAYONIX Node components initialized successfully")
