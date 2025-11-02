@@ -905,6 +905,26 @@ class StateManager:
         consensus_size = self.consensus.get_validator_count() * 500
         contract_size = self.contract_manager.get_contract_count() * 1000
         return utxo_size + consensus_size + contract_size
+       
+    def get_total_supply(self) -> int:
+    	"""Get total supply from UTXO set"""
+    	if not hasattr(self, 'utxo_set'):
+    		raise AttributeError("StateManager: utxo_set not initialized")
+    	
+    	if not hasattr(self.utxo_set, 'get_total_supply'):
+    		raise AttributeError("StateManager: utxo_set missing get_total_supply method")
+    	
+    	return self.utxo_set.get_total_supply()
+    	
+    def get_circulating_supply(self) -> int:
+    	"""Get circulating supply from UTXO set"""
+    	if not hasattr(self, 'utxo_set'):
+    		raise AttributeError("StateManager: utxo_set not initialized")
+    	
+    	if not hasattr(self.utxo_set, 'get_circulating_supply'):
+    		raise AttributeError("StateManager: utxo_set missing get_circulating_supply method")
+    	
+    	return self.utxo_set.get_circulating_supply()
 
     def cleanup_old_data(self, max_transition_age: int = 86400):
         """Clean up old state transition data"""
