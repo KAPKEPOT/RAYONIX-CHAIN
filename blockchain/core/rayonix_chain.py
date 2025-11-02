@@ -1739,48 +1739,61 @@ class RayonixBlockchain:
     
     async def get_blockchain_status(self) -> Dict[str, Any]:
         """Get comprehensive blockchain status for API"""
-        try:
-        	current_height = self.get_block_count()
-        	mempool_size = len(self.mempool)
-        	network_hashrate = self.get_network_hashrate()
-        	
-        	connected_peers = await self.network.get_connected_peers()
-        	
-        	# Validate that consensus engine has required methods
-        	required_methods = ['get_validator_count', 'get_total_stake', 'get_total_supply', 'get_circulating_supply']
-        	for method in required_methods:
-        		if not hasattr(self.consensus, method):
-        			raise AttributeError(f"Consensus engine missing required method: {method}")
-        	
-        	status = {
-        	    'height': current_height,
-        	    'chain_head': self.chain_head,
-        	    'difficulty': self.get_difficulty(),
-        	    'network_hashrate': network_hashrate,
-        	    'mempool_size': mempool_size,
-        	    'connected_peers': len(connected_peers),
-        	    'sync_progress': self.sync_progress,
-        	    
-        	    'state': self.state.value,
-        	    'health': self.health.value,
-        	    'version': '1.0.0',
-        	    'network': self.network_type,
-        	    'consensus': 'pos',
-        	    'block_time_target': self.config.block_time_target,
-        	    'timestamp': time.time(),
-        	}
-        	
-        	# Add consensus-specific data with validation
-        	status['total_supply'] = self.consensus.get_total_supply()
-        	status['circulating_supply'] = self.consensus.get_circulating_supply()
-        	status['validator_count'] = self.consensus.get_validator_count()
-        	status['total_stake'] = self.consensus.get_total_stake()
-        	
-        	return status
+        current_height = self.get_block_count()
+        mempool_size = len(self.mempool)
+        network_hashrate = self.get_network_hashrate()
         
-        except Exception as e:
-        	logger.error(f"Error getting blockchain status: {e}")
-        	raise
+        # Get sync state from sync manager
+        sync_manager = getattr(self.node, 'sync_manager', None)
+        if sync_manager:
+        	syncing = sync_manager.is_syncing()
+        	sync_progress = sync_manager.get_sync_progress()
+        	target_sync_height = sync_manager.get_target_sync_height()
+        	
+        # Get connected peers
+        connected_peers = []
+        if hasattr(self, 'network') and self.network:
+        	connected_peers = await self.network.get_connected_peers()
+        
+        # Calculate real values
+        total_transactions = self._calculate_total_transactions()
+        chain_work = self._calculate_chain_work()
+        best_block_hash = self.chain_head or "0" * 64
+        
+        # Get consensus data
+        total_supply = self.consensus.get_total_supply()
+        circulating_supply = self.consensus.get_circulating_supply()
+        validator_count = self.consensus.get_validator_count()
+        total_stake = self.consensus.get_total_stake()
+        
+        status = {
+            
+            'height': current_height,
+            'chain_head': self.chain_head,
+            'difficulty': self.get_difficulty(),
+            'network_hashrate': network_hashrate,
+            'mempool_size': mempool_size,
+            'connected_peers': len(connected_peers),
+            'sync_progress': sync_progress,
+            'hashrate': network_hashrate,
+            'syncing': syncing,
+            'total_transactions': total_transactions,
+            'chain_work': chain_work,
+            'best_block_hash': best_block_hash,
+            
+            'state': self.state.value,
+            'health': self.health.value,
+            'version': '1.0.0',
+            'network': self.network_type,
+            'consensus': 'pos',
+            'block_time_target': self.config.block_time_target,
+            'timestamp': time.time(),
+            'total_supply': total_supply,
+            'circulating_supply': circulating_supply,
+            'validator_count': validator_count,
+            'total_stake': total_stake
+        }
+        return status
         
     def get_total_supply(self) -> int:
         """Get total coin supply"""
