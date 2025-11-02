@@ -340,7 +340,32 @@ class TransactionManager:
         if tx_hash in self.mempool:
             return self.mempool[tx_hash][0]
         return None
-    
+        
+    def get_total_transactions_count(self) -> int:
+    	"""Get total number of transactions in blockchain"""
+    	try:
+    		current_height = self.state_manager.get_current_height()
+    		total_txs = 0
+    		
+    		# Count transactions in each block
+    		for height in range(current_height + 1):
+    			block = self.state_manager.get_block_by_height(height)
+    			if not block:
+    				continue
+    				
+    			if hasattr(block, 'transactions'):
+    				total_txs += len(block.transactions)
+    			elif isinstance(block, dict) and 'transactions' in block:
+    				total_txs += len(block['transactions'])
+    			else:
+    				total_txs += 1  # Every block has at least coinbase
+    		
+    		return total_txs
+    	
+    	except Exception as e:
+    		logger.error(f"Error calculating total transactions: {e}")
+    		return 0
+  
     def has_transaction(self, tx_hash: str) -> bool:
         """Check if transaction is in mempool"""
         return tx_hash in self.mempool
