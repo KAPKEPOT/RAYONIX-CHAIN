@@ -3,7 +3,7 @@ import logging
 import ssl
 import time
 from typing import Dict, List, Optional, Any
-from network.config.node_config import NodeConfig
+from config.config import get_config
 from network.config.network_types import NetworkType, ProtocolType, ConnectionState, MessageType
 from network.models.peer_info import PeerInfo
 from network.models.network_message import NetworkMessage
@@ -20,17 +20,23 @@ from network.protocols.tcp_handler import TCPHandler
 from network.protocols.websocket_handler import WebSocketHandler
 from network.protocols.http_handler import HTTPHandler
 #from network.protocols.udp_protocol import UDPProtocol
+#from config.config import get_config
 
 logger = logging.getLogger("AdvancedP2PNetwork")
 
 class AdvancedP2PNetwork:
     """Main P2P network class"""
     
-    def __init__(self, config: NodeConfig, network_id: int = 1, node_id: str = None):
+    #def __init__(self, config: NodeConfig, network_id: int = 1, node_id: str = None):
+    def __init__(self, config, network_id: int = None, node_id: str = None):      
         
         self.config = config
-        self.network_id = network_id
+       # self.network_id = network_id
         self.node_id = node_id or self._generate_node_id()
+        self.magic = self.config.network.magic_bytes
+        self.network_id = self.config.network.network_id
+        self.tcp_port = self.config.network.listen_port
+        self.ws_port = self.config.network.websocket_port
         #self.magic = self._get_magic_number(network_id)  # Network magic number
         
         # Core components
@@ -61,14 +67,13 @@ class AdvancedP2PNetwork:
         self.maintenance_task = None
         self.metrics_task = None
         
-    def _get_magic_number(self, network_id: int) -> bytes:
-        """Get magic number based on network ID"""
-        magic_numbers = {
-            1: b'RAYX',  # Mainnet
-            2: b'RAYT',  # Testnet
-            3: b'RAYD',  # Devnet
-        }
-        return magic_numbers.get(network_id, b'RAYX')
+    #def _get_magic_number(self, network_id: int) -> bytes:
+        #magic_numbers = {
+            #1: b'RAYX',  # Mainnet
+            #2: b'RAYT',  # Testnet
+            #3: b'RAYD',  # Devnet
+        #}
+        #return magic_numbers.get(network_id, b'RAYX')
     
     def _generate_node_id(self) -> str:
         """Generate unique node ID"""
@@ -92,6 +97,7 @@ class AdvancedP2PNetwork:
     
     async def start(self):
         """Start the P2P network"""
+        logger.info(f"Starting P2P on TCP: {self.config.network.listen_port}, WS: {self.config.network.websocket_port}")
         if self.is_running:
             logger.warning("Network is already running")
             return
@@ -104,11 +110,11 @@ class AdvancedP2PNetwork:
            # await self.udp_handler.start_server()
             
             # Only start WebSocket if port is different from TCP/UDP
-            if self.config.websocket_port != self.config.listen_port:
+            if self.config.network.websocket_port != self.config.network.listen_port:
             	await self.websocket_handler.start_server()
             else:
             	logger.warning("WebSocket port conflicts with TCP port, skipping WebSocket")
-            await self.websocket_handler.start_server()
+            #await self.websocket_handler.start_server()
             #if self.config.http_port not in [self.config.listen_port, self.config.websocket_port]:
             	#await self.http_handler.start_server()
             #else:
