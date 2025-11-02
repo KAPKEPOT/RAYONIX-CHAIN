@@ -1,7 +1,7 @@
 # consensus/models/validators.py
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional, Tuple, Set, Any, Union
 from enum import Enum, auto
 import logging
 
@@ -365,13 +365,17 @@ class Validator:
         self.jail_until = time.time() + duration
         logger.warning(f"Validator {self.address} jailed for {duration} seconds")
     
-    def unjail(self) -> None:
+    def unjail(self, slashing_manager: Optional[Any] = None) -> None:
         """Release validator from jail"""
         if self.status == ValidatorStatus.JAILED:
             self.status = ValidatorStatus.ACTIVE
             self.jail_until = None
+            
             # Reset missed blocks counter when unjailed
             self.missed_blocks = 0
+            
+            if slashing_manager and hasattr(slashing_manager, 'jailed_validators'):
+            	slashing_manager.jailed_validators.discard(self.address)
             logger.info(f"Validator {self.address} unjailed")
     
     def slash(self, amount: int) -> bool:
