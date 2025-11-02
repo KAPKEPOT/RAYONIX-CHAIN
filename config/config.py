@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 import yaml
 import os
 from pathlib import Path
+from network.config.network_types import NetworkType
 
 @dataclass
 class NetworkConfig:
