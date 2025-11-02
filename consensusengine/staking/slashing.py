@@ -99,8 +99,6 @@ class SlashingEvent:
         }
 
 class SlashingManager:
-    """Production-ready slashing conditions and evidence verification with comprehensive features"""
-    
     def __init__(self, consensus_engine: Any):
         self.consensus_engine = consensus_engine
         self.config = consensus_engine.config
@@ -114,6 +112,9 @@ class SlashingManager:
         # Comprehensive slashing history
         self.slashing_events: Dict[str, SlashingEvent] = {}  # event_id -> event
         self.validator_slashing_history: Dict[str, List[str]] = {}  # validator -> event_ids
+        
+        # Initialize jailed_validators set
+        self.jailed_validators: Set[str] = set()
         
         # Risk assessment and monitoring
         self.risk_scores: Dict[str, Dict[str, float]] = {}  # validator -> risk metrics
@@ -548,6 +549,9 @@ class SlashingManager:
             # Apply jail if required
             if slashing_params['jail_duration']:
                 validator.jail(slashing_params['jail_duration'])
+                
+                # Track jailed validator
+                self.jailed_validators.add(validator.address)
             
             # Update validator set
             self.consensus_engine.staking_manager.update_validator_set()
@@ -603,9 +607,10 @@ class SlashingManager:
     			if validator and hasattr(validator, 'jail_until'):
     				if current_time >= validator.jail_until:
     					# Release validator from jail
-    					validator.jail_until = None
-    					validator.status = ValidatorStatus.ACTIVE
-    					self.jailed_validators.discard(validator_address)
+    					validator.unjail(self)  # Pass self (slashing_manager) as parameter
+    					#validator.jail_until = None
+    					#validator.status = ValidatorStatus.ACTIVE
+    					#self.jailed_validators.discard(validator_address)
     					released_count += 1
     					logger.info(f"Released validator {validator_address} from jail")
     		
@@ -784,6 +789,36 @@ class SlashingManager:
                 'pending_evidence_count': len(self.pending_evidence)
             }
 
+    def get_jailed_validators_count(self) -> int:
+    	"""Get count of currently jailed validators"""
+    	with self.lock:
+    		return len(self.jailed_validators)
+    
+    def get_jailed_validators_list(self) -> List[str]:
+    	"""Get list of currently jailed validator addresses"""
+    	with self.lock:
+    		return list(self.jailed_validators)
+    
+    def get_jail_statistics(self) -> Dict[str, Any]:
+    	"""Get statistics about jailed validators"""
+    	with self.lock:
+    		jailed_validators_info = []
+    		for validator_address in self.jailed_validators:
+    			validator = self.consensus_engine.validators.get(validator_address)
+    			if validator and hasattr(validator, 'jail_until'):
+    				time_remaining = max(0, validator.jail_until - time.time())
+    				jailed_validators_info.append({
+    				    'address': validator_address,
+    				    'time_remaining': time_remaining,
+    				    'jail_until': validator.jail_until,
+    				    'time_served': time.time() - (validator.jail_until - time_remaining)
+    				})
+    		return {
+    		    
+    		    'total_jailed': len(self.jailed_validators),
+    		    'jailed_validators': jailed_validators_info,
+    		    'average_time_remaining': sum(info['time_remaining'] for info in jailed_validators_info) / len(jailed_validators_info) if jailed_validators_info else 0
+    		}
     def cleanup_old_evidence(self):
         """Clean up old evidence and events to prevent memory bloat"""
         with self.lock:
