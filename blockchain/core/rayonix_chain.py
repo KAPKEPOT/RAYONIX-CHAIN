@@ -173,6 +173,7 @@ class RayonixBlockchain:
         # Initialize blockchain
         self._initialize_blockchain()
         self._initialize_consensus()
+        self.node = None
         
         logger.info(f"RAYONIX node initialized for {network_type} network")
         
