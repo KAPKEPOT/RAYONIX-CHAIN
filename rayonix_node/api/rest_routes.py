@@ -250,8 +250,9 @@ async def get_blockchain_status(request: Request):
     return status
 
 @router.get("/blockchain/block/{block_hash}/merkle-proof/{tx_hash}")
-async def get_merkle_proof(block_hash: str, tx_hash: str, format: str = "binary", node: Node = Depends(get_node)):                                                 
+async def get_merkle_proof(block_hash: str, tx_hash: str, format: str = "binary", request: Request = None):                                                 
     """Get Merkle proof for transaction inclusion in block"""
+    node = request.app.state.node
     block = node.rayonix_chain.get_block(block_hash)
     if not block:
         raise HTTPException(status_code=404, detail="Block not found")
