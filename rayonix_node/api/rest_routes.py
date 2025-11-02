@@ -250,7 +250,7 @@ async def get_blockchain_status(request: Request):
     return status
 
 @router.get("/blockchain/block/{block_hash}/merkle-proof/{tx_hash}")
-async def get_merkle_proof(block_hash: str, tx_hash: str, format: str = "binary", request: Request):                                                 
+async def get_merkle_proof(block_hash: str, tx_hash: str, format: str = "binary", request: Request = None):                                                 
     """Get Merkle proof for transaction inclusion in block"""
     node = request.app.state.node
     block = node.rayonix_chain.get_block(block_hash)
@@ -284,7 +284,7 @@ async def get_merkle_proof(block_hash: str, tx_hash: str, format: str = "binary"
     return response_data
 
 @router.post("/blockchain/verify-merkle-proof")
-async def verify_merkle_proof(proof_data: dict, request: Request):
+async def verify_merkle_proof(proof_data: dict, request: Request = None):
     """Verify Merkle proof for transaction inclusion"""
     node = request.app.state.node
     block_hash = proof_data.get('block_hash')
@@ -325,7 +325,7 @@ async def verify_merkle_proof(proof_data: dict, request: Request):
     }
 
 @router.get("/blockchain/block/{block_hash}/light-header")
-async def get_light_client_header(block_hash: str, request: Request):
+async def get_light_client_header(block_hash: str, request: Request = None):
     """Get light client header information"""
     node = request.app.state.node
     block = node.rayonix_chain.get_block(block_hash)
