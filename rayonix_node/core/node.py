@@ -113,8 +113,10 @@ class RayonixNode:
                     data_dir=str(data_dir),
                     config=blockchain_config
                 )
+                # Set node reference on the blockchain
+                self.rayonix_chain.node = self
             
-            # Initialize wallet if not provided via dependencies
+            # Set node reference on the blockchain
             #if not self.wallet:
                 #await self._initialize_wallet_with_blockchain()
             self.wallet = None
