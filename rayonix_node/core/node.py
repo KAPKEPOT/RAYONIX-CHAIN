@@ -20,8 +20,6 @@ from rayonix_node.network.sync_manager import SyncManager
 logger = logging.getLogger("rayonix_node.core")
 
 class RayonixNode:
-    """Complete RAYONIX blockchain node implementation"""
-    
     def __init__(self, dependencies: Optional[NodeDependencies] = None):
         # Use provided dependencies or create empty ones
         if dependencies:
