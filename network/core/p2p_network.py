@@ -48,7 +48,7 @@ class AdvancedP2PNetwork:
         self.ssl_context = self._create_ssl_context()
         self.tcp_handler = TCPHandler(self, self.config, self.ssl_context)        
         self.websocket_handler = WebSocketHandler(self, self.config, self.ssl_context)
-        self.http_handler = HTTPHandler(self, self.config, self.ssl_context)       
+        #self.http_handler = HTTPHandler(self, self.config, self.ssl_context)       
         
         # State - Initialize with empty dicts using string keys
         self.is_running = False
@@ -108,11 +108,11 @@ class AdvancedP2PNetwork:
             	await self.websocket_handler.start_server()
             else:
             	logger.warning("WebSocket port conflicts with TCP port, skipping WebSocket")
-            #await self.websocket_handler.start_server()
-            if self.config.http_port not in [self.config.listen_port, self.config.websocket_port]:
-            	await self.http_handler.start_server()
-            else:
-            	logger.warning("HTTP port conflicts with other services, skipping HTTP")
+            await self.websocket_handler.start_server()
+            #if self.config.http_port not in [self.config.listen_port, self.config.websocket_port]:
+            	#await self.http_handler.start_server()
+            #else:
+            	#logger.warning("HTTP port conflicts with other services, skipping HTTP")
             
             # Start core components
             await self.security_manager.initialize()
