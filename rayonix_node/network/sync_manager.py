@@ -8,7 +8,6 @@ from enum import Enum
 logger = logging.getLogger("rayonix_node.sync")
 
 class SyncManager:
-    """Complete production-ready sync manager with full implementation"""
     
     def __init__(self, node: 'RayonixNode'):
         self.node = node
@@ -147,6 +146,8 @@ class SyncManager:
                 return False
             
             current_height = self.node.rayonix_chain.get_block_count()
+            self.current_sync_height = current_height  # Track current height
+            self.target_sync_height = best_height      # Track target height
             
             if current_height >= best_height:
                 logger.info(f"Node synchronized at height {current_height}")
@@ -288,6 +289,7 @@ class SyncManager:
                 
                 successful_batches += 1
                 current_height = batch_end + 1
+                self.current_sync_height = current_height
                 
                 # Update progress
                 progress = (current_height / end_height) * 100
@@ -469,3 +471,27 @@ class SyncManager:
             "total_peers_tracked": len(self.peer_reliability),
             "retry_backoff": self._calculate_backoff() if self.consecutive_failures > 0 else 0
         }
+       
+    def get_sync_progress(self) -> float:
+    	"""Get current sync progress percentage"""
+    	if not self.syncing:
+    		return 100.0
+    	if self.target_sync_height == 0:
+    		return 0.0
+    	
+    	current_height = self.current_sync_height or (self.node.rayonix_chain.get_block_count() if self.node.rayonix_chain else 0)
+    	progress = (current_height / self.target_sync_height) * 100
+    	return min(100.0, max(0.0, progress))
+    
+    def is_syncing(self) -> bool:
+    	"""Check if currently syncing"""
+    	return self.syncing
+    
+    def get_current_sync_height(self) -> int:
+    	"""Get current sync height"""
+    	return self.current_sync_height
+    
+    def get_target_sync_height(self) -> int:
+    	"""Get target sync height"""
+    	return self.target_sync_height
+    
