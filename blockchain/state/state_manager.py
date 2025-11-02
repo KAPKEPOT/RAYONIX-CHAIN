@@ -16,7 +16,7 @@ import logging
 import uuid
 
 from blockchain.models.block import Block
-from utxo_system.database.core import UTXOSet
+from utxo_system.core.utxoset import UTXOSet
 from consensusengine.core.consensus import ProofOfStake
 from smart_contract.core.contract_manager import ContractManager
 
