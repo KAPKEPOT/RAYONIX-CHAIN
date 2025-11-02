@@ -924,7 +924,33 @@ class StateManager:
     	if not hasattr(self.utxo_set, 'get_circulating_supply'):
     		raise AttributeError("StateManager: utxo_set missing get_circulating_supply method")
     	
+    
+    	
     	return self.utxo_set.get_circulating_supply()
+    
+    def calculate_chain_work(self) -> str:
+    	"""Calculate total chain work (cumulative difficulty)"""
+    	try:
+    		current_height = self.get_current_height()
+    		total_work = 0
+    		
+    		for height in range(current_height + 1):
+    			block = self.get_block_by_height(height)
+    			if not block:
+    				continue
+    			
+    			if hasattr(block, 'header') and hasattr(block.header, 'difficulty'):
+    				total_work += block.header.difficulty
+    			elif isinstance(block, dict) and 'difficulty' in block:
+    				total_work += block['difficulty']
+    			else:
+    				total_work += 1
+    				
+    		return str(total_work)
+    	
+    	except Exception as e:
+    		logger.error(f"Error calculating chain work: {e}")
+    		return "0"
 
     def cleanup_old_data(self, max_transition_age: int = 86400):
         """Clean up old state transition data"""
