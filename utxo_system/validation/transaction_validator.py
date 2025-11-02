@@ -1,5 +1,5 @@
 # utxo_system/validation/transaction_validator.py
-from typing import Tuple
+from typing import Dict, List, Any, Optional, Deque, Tuple, Set, Callable
 from utxo_system.models.transaction import Transaction
 from utxo_system.core.utxoset import UTXOSet
 from utxo_system.exceptions import ValidationError
