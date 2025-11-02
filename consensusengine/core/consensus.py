@@ -64,6 +64,7 @@ class ProofOfStake:
         self.crypto_manager = CryptoManager()
         self.staking_manager = StakingManager(self)
         self.slashing_manager = SlashingManager(self)
+        self.state_manager = None
         
         #Network configuration
         self.network_config = network_config
@@ -83,11 +84,6 @@ class ProofOfStake:
         self.validators: Dict[str, Validator] = {}
         self.active_validators: List[Validator] = []
         self.pending_validators: List[Validator] = []
-        
-        self.state_manager = state_manager
-        
-        # Initialize with real data
-        self._initialize_with_real_data()
         
         # Locks for thread safety
         self.lock = threading.RLock()
@@ -128,23 +124,10 @@ class ProofOfStake:
         except Exception as e:
             logger.error(f"Error loading state: {e}")
             self._initialize_genesis_state()
-            
-    def _initialize_with_real_data(self):
-    	"""Initialize consensus state with real blockchain data"""
-    	try:
-    		if self.state_manager:
-    			current_height = self.state_manager.get_current_height()
-    			self.height = current_height
-    			self.current_height = current_height
-    			
-    			# Load validators from state
-    			self._load_validators_from_state()
-    		
-    		logger.info(f"Consensus engine initialized with height: {self.height}")
-    	
-    	except Exception as e:
-    		logger.error(f"Failed to initialize consensus with real data: {e}")
-    		raise RuntimeError(f"Consensus initialization failed: {e}")
+           
+    def set_state_manager(self, state_manager):
+    	"""Set state manager after initialization to break circular dependency"""
+    	self.state_manager = state_manager           
     
     def _initialize_genesis_state(self):
         """Initialize genesis state"""
@@ -1113,45 +1096,58 @@ class ProofOfStake:
     		return self.total_stake
     		
     def get_total_supply(self) -> int:
-    	"""Get total coin supply from state manager"""
-    	if not hasattr(self, 'state_manager') or not self.state_manager:
-    		raise RuntimeError("Consensus engine: state_manager not available for supply calculation")
-    	
-    	if not hasattr(self.state_manager, 'get_total_supply'):
-    		raise AttributeError("Consensus engine: state_manager missing get_total_supply method")
-    	
-    	return self.state_manager.get_total_supply()
-    		
-    def get_circulating_supply(self) -> int:
-    	"""Get circulating supply from state manager"""
-    	if not hasattr(self, 'state_manager') or not self.state_manager:
-    		raise RuntimeError("Consensus engine: state_manager not available for supply calculation")
-    		
-    	if not hasattr(self.state_manager, 'get_circulating_supply'):
-    		raise AttributeError("Consensus engine: state_manager missing get_circulating_supply method")
-    	
-    	return self.state_manager.get_circulating_supply()
-    
-    def _load_validators_from_state(self):
-    	"""Load validators from state manager"""
+    	"""Calculate total coin supply based on actual blockchain state"""
     	try:
-    		# This should load validators from persistent storage
-    		# For now, initialize empty if no validators exist
-    		if not hasattr(self, 'validators'):
-    			self.validators = {}
+    		# Get from state manager if available
+    		if hasattr(self, 'state_manager'):
+    			return self.state_manager.get_total_supply()
     			
-    		if not hasattr(self, 'active_validators'):
-    			self.active_validators = []
+    		# Calculate based on block rewards and genesis
+    		genesis_supply = getattr(self.config, 'genesis_premine', 1000000)
+    		block_reward = getattr(self.config, 'block_reward', 50)
     		
-    		if not hasattr(self, 'total_stake'):
-    			self.total_stake = 0
+    		# Calculate with halving
+    		height = getattr(self, 'height', 0) or getattr(self, 'current_height', 0)
+    		halving_interval = 210000
+    		halvings = height // halving_interval
     		
-    		logger.info(f"Loaded {len(self.validators)} validators from state")
+    		total_block_rewards = 0
+    		remaining_height = height
+    		
+    		current_reward = block_reward
+    		for _ in range(halvings + 1):
+    			blocks_in_era = min(remaining_height, halving_interval)
+    			total_block_rewards += blocks_in_era * current_reward
+    			remaining_height -= blocks_in_era
+    			current_reward //= 2
+    		
+    		return genesis_supply + total_block_rewards
     	
     	except Exception as e:
-    		logger.error(f"Failed to load validators from state: {e}")
+    		logger.error(f"Error calculating total supply: {e}")
     		raise
-  
+    		
+    def get_circulating_supply(self) -> int:
+    	"""Calculate circulating supply (total supply minus locked/staked amounts)"""
+    	try:
+    		total_supply = self.get_total_supply()
+    		total_staked = self.get_total_stake()
+    		
+    		# Also subtract any foundation/developer funds that are locked
+    		foundation_locked = 0
+    		if hasattr(self, 'state_manager'):
+    			foundation_address = getattr(self.config, 'foundation_address', '')
+    			if foundation_address:
+    				foundation_balance = self.state_manager.utxo_set.get_balance(foundation_address)
+    				foundation_locked = foundation_balance
+    				
+    		circulating = total_supply - total_staked - foundation_locked
+    		return max(0, circulating)
+    		
+    	except Exception as e:
+    		logger.error(f"Error calculating circulating supply: {e}")
+    		raise
+ 
     def shutdown(self):
         """Shutdown the consensus engine"""
         self._running = False
