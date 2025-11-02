@@ -831,14 +831,26 @@ API Enabled:    {info.get('api_enabled', False)}"""
     # Utility Methods
     def _format_uptime(self, seconds: int) -> str:
         """Format uptime in seconds to human readable format"""
-        if seconds < 60:
-            return f"{seconds}s"
-        elif seconds < 3600:
-            return f"{seconds // 60}m {seconds % 60}s"
-        elif seconds < 86400:
-            return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
-        else:
-            return f"{seconds // 86400}d {(seconds % 86400) // 3600}h"
+        # If it's already a formatted string, return it as-is
+        if isinstance(uptime_value, str) and any(x in uptime_value for x in ['s', 'm', 'h', 'd']):
+        	return uptime_value
+        
+        # If it's a number, use the original formatting logic
+        try:
+        	seconds = int(uptime_value)
+        	if seconds < 60:
+        		return f"{seconds}s"
+        	elif seconds < 3600:
+        		return f"{seconds // 60}m {seconds % 60}s"
+        	elif seconds < 86400:
+        		return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+        		
+        	else:
+        		return f"{seconds // 86400}d {(seconds % 86400) // 3600}h"
+        		
+        except (ValueError, TypeError):
+        	# If we can't convert it, return as string
+        	return str(uptime_value)
     
     def _format_bytes(self, bytes_count: int) -> str:
         """Format bytes to human readable format"""
