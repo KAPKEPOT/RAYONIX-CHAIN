@@ -26,7 +26,7 @@ from blockchain.forks.fork_manager import ForkManager
 from blockchain.production.block_producer import BlockProducer
 from blockchain.models.chain_state import ChainState
 from rayonix_wallet.core.wallet import RayonixWallet
-from utxo_system.database.core import UTXOSet
+from utxo_system.core.utxoset import UTXOSet
 from consensusengine.core.consensus import ProofOfStake
 from blockchain.utils.genesis import GenesisBlockGenerator
 from network.core.p2p_network import AdvancedP2PNetwork
