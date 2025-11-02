@@ -10,6 +10,18 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.backends import default_backend
 
+
+try:
+    from merkle import ProofFormat
+except ImportError:
+    # Fallback if merkle module is not available
+    from enum import Enum
+    
+    class ProofFormat(Enum):
+        JSON = 'json'
+        MSGPACK = 'msgpack'
+        BINARY = 'binary'
+
 @dataclass
 class BlockHeader:
     """Block header structure"""
