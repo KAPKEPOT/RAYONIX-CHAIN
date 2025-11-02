@@ -292,6 +292,10 @@ class RayonixBlockchain:
             )
             
             # Initialize consensus with real state data
+            logger.info(f"DEBUG: Consensus object type: {type(self.consensus)}")
+            logger.info(f"DEBUG: All methods: {[m for m in dir(self.consensus) if 'initialize' in m.lower()]}")
+            logger.info(f"DEBUG: Has _initialize_with_real_data: {hasattr(self.consensus, '_initialize_with_real_data')}")
+            
             self.consensus._initialize_with_real_data()
             
             self.health = NodeHealth.HEALTHY
