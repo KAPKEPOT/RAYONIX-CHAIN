@@ -1757,8 +1757,8 @@ class RayonixBlockchain:
         	connected_peers = await self.network.get_connected_peers()
         
         # Calculate real values
-        total_transactions = self._calculate_total_transactions()
-        chain_work = self._calculate_chain_work()
+        total_transactions = self.transaction_manager.get_total_transactions_count()
+        chain_work = self.state_manager.calculate_chain_work()
         best_block_hash = self.chain_head or "0" * 64
         
         # Get consensus data
