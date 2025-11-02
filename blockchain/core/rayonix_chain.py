@@ -256,11 +256,21 @@ class RayonixBlockchain:
             
             # Initialize core managers with dependency injection
             self.state_manager = StateManager(
-                self.database, self.utxo_set, self.consensus, self.contract_manager,
+                self.database, 
+                self.utxo_set, 
+                self.consensus, 
+                self.contract_manager,
                 state_path=str(self.data_dir / "state")
             )
+            
+            # Now that state_manager is created, connect it to consensus
+            
+            self.consensus.state_manager = self.state_manager
+            
+            # Setup contract manager references
             self._setup_contract_manager_references()
             
+            # Initialize other managers            
             self.checkpoint_manager = CheckpointManager(self.database, self.state_manager)
             self.validation_manager = ValidationManager(self.state_manager, config_dict)
             self.transaction_manager = TransactionManager(self.state_manager, self.wallet, config_dict)
@@ -277,12 +287,12 @@ class RayonixBlockchain:
             
             self.network = AdvancedP2PNetwork(
                 config=network_config,
-                network_id=self._get_network_id(),
-                #network_id=self._get_network_id(),
-                #port=self.config.port,
-                #max_connections=self.config.max_connections,
+                network_id=self._get_network_id(),                
                 node_id=self._generate_node_id()
             )
+            
+            # Initialize consensus with real state data
+            self.consensus._initialize_with_real_data()
             
             self.health = NodeHealth.HEALTHY
             
@@ -626,7 +636,65 @@ class RayonixBlockchain:
         with open(node_id_file, 'w') as f:
             f.write(new_id)
         return new_id
-
+       
+    def _validate_component_dependencies(self):
+    	"""Validate that all components are properly connected"""
+    	validation_errors = []
+    	
+    	# Check consensus engine has required methods
+    	required_consensus_methods = [
+    	    'get_validator_count', 
+    	    'get_total_stake',
+    	    'get_total_supply',
+    	    'get_circulating_supply'
+    	]
+    	
+    	for method in required_consensus_methods:
+    		if not hasattr(self.consensus, method):
+    			validation_errors.append(f"Consensus missing method: {method}")
+    		
+    		else:
+    			# Test that method can be called without errors
+    			try:
+    				if method == 'get_validator_count':
+    					_ = self.consensus.get_validator_count()
+    				
+    				elif method == 'get_total_stake':
+    					_ = self.consensus.get_total_stake()
+    				
+    				elif method == 'get_total_supply':
+    					 _ = self.consensus.get_total_supply()
+    				
+    				elif method == 'get_circulating_supply':
+    					_ = self.consensus.get_circulating_supply()
+    					
+    			except Exception as e:
+    				validation_errors.append(f"Consensus method {method} failed: {e}")
+    			
+    	# Check state manager
+    	if not hasattr(self, 'state_manager'):
+    		validation_errors.append("State manager not initialized")
+    	
+    	else:
+    		required_state_methods = ['get_total_supply', 'get_circulating_supply']
+    		for method in required_state_methods:
+    			if not hasattr(self.state_manager, method):
+    				validation_errors.append(f"State manager missing method: {method}")
+    			
+    	# Check UTXO set
+    	if not hasattr(self, 'utxo_set'):
+    		validation_errors.append("UTXO set not initialized")
+    	else:
+    		required_utxo_methods = ['get_total_supply', 'get_circulating_supply']
+    		for method in required_utxo_methods:
+    			if not hasattr(self.utxo_set, method):
+    				validation_errors.append(f"UTXO set missing method: {method}")
+    		
+    	if validation_errors:
+    		error_msg = "Component dependency validation failed:\n" + "\n".join(validation_errors)
+    		logger.error(error_msg)
+    		raise RuntimeError(error_msg)
+    		
     def _initialize_blockchain(self):
         """Initialize or load blockchain state with comprehensive recovery"""
         try:
