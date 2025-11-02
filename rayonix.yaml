@@ -1,10 +1,12 @@
-# Rayonix Blockchain Node Configuration
-# Network Configuration
+#rayonix.yaml
 network:
   network_type: "testnet"
   network_id: 2
+  enabled: true
   listen_ip: "0.0.0.0"
-  listen_port: 30303
+  listen_port: 52555  
+  websocket_port: 52556  
+  http_port: 52557 
   public_ip: null
   public_port: null
   max_connections: 50
@@ -18,37 +20,46 @@ network:
   enable_dht: true
   enable_gossip: true
   bootstrap_nodes:
-    - "node1.rayonix.site:30303"
-    - "node2.rayonix.site:30303"
-    - "node3.rayonix.site:30303"
+    - "node1.rayonix.site:52555" 
+    - "node2.rayonix.site:52555"  
+    - "node3.rayonix.site:52555"  
+  dns_seeds:  
+    - "seeds.rayonix.org"
+    - "testnet-seeds.rayonix.org"
   allowed_peers: []
   blocked_peers: []
+  ban_threshold: -100  
+  ban_duration: 3600  
+  rate_limit_per_peer: 1000  
 
-# Consensus Configuration
-consensus:
-  consensus_type: "pos"
-  block_time: 30
-  block_reward: 50
-  halving_interval: 210000
-  difficulty_adjustment_blocks: 2016
-  min_stake: 1000
-  max_stake: 10000000
-  stake_locktime: 86400
-  slash_percentage: 0.01
-  jail_duration: 3600
-  epoch_blocks: 100
-  max_validators: 100
-  validator_commission: 0.1
-  unbonding_period: 172800
-  min_delegation: 100
-  governance_enabled: true
-  proposal_deposit: 1000
-  voting_period: 259200
+# API Configuration
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 52557 
+  cors_domains:
+    - "*"
+  rate_limiting: true
+  rate_limit: 100
+  authentication: false
+  auth_tokens: []
+  ssl_enabled: false
+  ssl_cert: null
+  ssl_key: null
+  enable_websockets: true
+  websocket_port: 52556 
+  max_connections: 100
+  request_timeout: 30
+  enable_metrics: true
+  metrics_port: 52558  
+  enable_profiling: false
+  profiling_port: 52559 
 
 # Database Configuration
 database:
   db_type: "plyvel"
   db_path: "./rayonix_data"
+  db_engine: "plyvel"  
   compression: "snappy"
   encryption: "fernet"
   cache_size: 134217728
@@ -62,6 +73,43 @@ database:
   backup_retention: 7
   stats_enabled: true
   stats_interval: 300
+  connection_string: ""
+  max_connections: 10 
+  connection_timeout: 30 
+
+# Consensus Configuration 
+consensus:
+  consensus_type: "pos"
+  block_time: 30
+  block_time_target: 30  
+  block_reward: 50
+  halving_interval: 210000
+  difficulty_adjustment_interval: 2016 
+  reward_halving_interval: 210000 
+  min_stake: 1000
+  max_stake: 10000000
+  stake_locktime: 86400
+  slash_percentage: 0.01
+  jail_duration: 3600
+  epoch_blocks: 100
+  max_validators: 100
+  validator_commission: 0.1
+  unbonding_period: 172800
+  min_delegation: 100
+  governance_enabled: true
+  proposal_deposit: 1000
+  voting_period: 259200
+  max_block_size: 4000000  
+  max_transactions_per_block: 1000  
+  developer_fee_percent: 0.05  
+  foundation_address: "RYXFOUNDATIONXXXXXXXXXXXXXXXXXXXXXX"  
+# Gas Configuration 
+gas:
+  base_gas_price: 1000000000
+  min_gas_price: 500000000
+  max_gas_price: 10000000000
+  adjustment_factor: 1.125
+  target_utilization: 0.5
 
 # Wallet Configuration
 wallet:
@@ -84,7 +132,7 @@ wallet:
   multisig_config: null
   hardware_wallet: null
 
-# Smart Contract Configuration
+# Smart Contract Configuration - UPDATED PORTS
 smart_contract:
   evm_version: "istanbul"
   gas_limit: 8000000
@@ -98,7 +146,7 @@ smart_contract:
   max_recursion_depth: 1024
   contract_timeout: 30
   enable_debugging: false
-  debug_port: 8545
+  debug_port: 52560  # ✅ CHANGED: Different port to avoid conflicts
   allowed_opcodes:
     - "STOP"
     - "ADD"
@@ -179,29 +227,6 @@ smart_contract:
     - "REVERT"
     - "INVALID"
 
-# API Configuration
-api:
-  enabled: true
-  host: "0.0.0.0"
-  port: 8545
-  cors_domains:
-    - "*"
-  rate_limiting: true
-  rate_limit: 100
-  authentication: false
-  auth_tokens: []
-  ssl_enabled: false
-  ssl_cert: null
-  ssl_key: null
-  enable_websockets: true
-  websocket_port: 8546
-  max_connections: 100
-  request_timeout: 30
-  enable_metrics: true
-  metrics_port: 9090
-  enable_profiling: false
-  profiling_port: 6060
-
 # Logging Configuration
 logging:
   level: "INFO"
@@ -220,12 +245,14 @@ logging:
   json_format: false
   enable_tracing: false
   trace_sample_rate: 0.1
+  max_size: 10485760  # ✅ ADDED: Missing field
+  backup_count: 5  # ✅ ADDED: Missing field
 
-# Monitoring Configuration
+# Monitoring Configuration - FIXED PORT CONFLICTS
 monitoring:
   enabled: true
   prometheus_enabled: true
-  prometheus_port: 9090
+  prometheus_port: 52558  # ✅ MUST MATCH api.metrics_port
   health_check_interval: 30
   metrics_interval: 60
   enable_alerting: true
