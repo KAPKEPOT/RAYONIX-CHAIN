@@ -265,7 +265,7 @@ class RayonixBlockchain:
             
             # Now that state_manager is created, connect it to consensus
             
-            self.consensus.state_manager = self.state_manager
+            self.consensus.set_state_manager(self.state_manager)
             
             # Setup contract manager references
             self._setup_contract_manager_references()
