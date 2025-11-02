@@ -814,3 +814,446 @@ class MerkleTreeStats:
 
 # Global statistics collector
 global_stats = MerkleTreeStats()
+
+class SparseMerkleTree:
+    """Production-ready Sparse Merkle Tree for efficient sparse datasets"""
+    
+    def __init__(self, depth: int = 256, default_value: str = "0" * 64, 
+                 config: Optional[MerkleTreeConfig] = None):
+        """
+        Initialize sparse Merkle tree
+        
+        Args:
+            depth: Depth of the tree (determines capacity: 2^depth leaves)
+            default_value: Default hash value for empty nodes
+            config: Configuration for hash algorithm and other settings
+        """
+        self.depth = depth
+        self.default_value = default_value
+        self.config = config or MerkleTreeConfig()
+        self.leaves: Dict[int, str] = {}  # index -> hash
+        self.nodes: Dict[str, str] = {}   # path -> hash
+        self._lock = threading.RLock()
+        self._hash_func = self._get_hash_function()
+        self._initialize_tree()
+    
+    def _get_hash_function(self):
+        """Get the appropriate hash function based on configuration"""
+        if self.config.hash_algorithm == HashAlgorithm.SHA256:
+            return hashlib.sha256
+        elif self.config.hash_algorithm == HashAlgorithm.SHA3_256:
+            return hashlib.sha3_256
+        elif self.config.hash_algorithm == HashAlgorithm.BLAKE2B:
+            return hashlib.blake2b
+        elif self.config.hash_algorithm == HashAlgorithm.BLAKE2S:
+            return hashlib.blake2s
+        elif self.config.hash_algorithm == HashAlgorithm.SHA512:
+            return hashlib.sha512
+        else:
+            return hashlib.sha256
+    
+    def _hash_data(self, data: str) -> str:
+        """Hash data using configured algorithm"""
+        data_bytes = data.encode('utf-8')
+        hash_result = self._hash_func(data_bytes).hexdigest()
+        
+        if self.config.double_hash:
+            hash_result = self._hash_func(hash_result.encode('utf-8')).hexdigest()
+            
+        return hash_result
+    
+    def _initialize_tree(self):
+        """Initialize tree with default values and precompute default hashes"""
+        # Precompute default values for each level
+        default_hashes = [self.default_value]
+        for i in range(self.depth):
+            combined = default_hashes[-1] + default_hashes[-1]
+            default_hashes.append(self._hash_data(combined))
+        
+        self.default_hashes = default_hashes
+        self._default_root = default_hashes[-1]
+    
+    def _get_path(self, index: int) -> str:
+        """Get binary path for given index (left-padded with zeros)"""
+        if index < 0 or index >= (1 << self.depth):
+            raise ValueError(f"Index {index} out of range for tree depth {self.depth}")
+        return bin(index)[2:].zfill(self.depth)
+    
+    def _get_default_hash(self, level: int) -> str:
+        """Get default hash for a specific level"""
+        return self.default_hashes[self.depth - level - 1]
+    
+    def update_leaf(self, index: int, value: str):
+        """
+        Update leaf value and propagate changes efficiently
+        
+        Args:
+            index: Leaf index to update
+            value: New hash value for the leaf
+        """
+        with self._lock:
+            path = self._get_path(index)
+            old_value = self.leaves.get(index, self.default_hashes[0])
+            
+            # If value is the same as default and leaf doesn't exist, no update needed
+            if value == self.default_hashes[0] and index not in self.leaves:
+                return
+            
+            self.leaves[index] = value
+            
+            # Update the leaf node
+            current_hash = value
+            self.nodes[path] = current_hash
+            
+            # Propagate changes up the tree
+            for level in range(self.depth - 1, -1, -1):
+                node_path = path[:level + 1]
+                sibling_path = path[:level] + ('1' if path[level] == '0' else '0')
+                
+                # Get sibling hash (from storage or default)
+                sibling_hash = self.nodes.get(sibling_path, self._get_default_hash(level))
+                
+                # Combine based on position
+                if path[level] == '0':
+                    combined = current_hash + sibling_hash
+                else:
+                    combined = sibling_hash + current_hash
+                
+                current_hash = self._hash_data(combined)
+                parent_path = path[:level]
+                self.nodes[parent_path] = current_hash
+            
+            # Update root
+            self.nodes[""] = current_hash
+    
+    def delete_leaf(self, index: int):
+        """
+        Delete a leaf (set it to default value)
+        
+        Args:
+            index: Leaf index to delete
+        """
+        self.update_leaf(index, self.default_hashes[0])
+        
+        with self._lock:
+            # Clean up storage if this was the last reference
+            path = self._get_path(index)
+            if index in self.leaves:
+                del self.leaves[index]
+            
+            # Remove leaf node from storage if it exists
+            if path in self.nodes:
+                del self.nodes[path]
+            
+            # Clean up orphaned internal nodes (optional optimization)
+            self._cleanup_orphaned_nodes()
+    
+    def _cleanup_orphaned_nodes(self):
+        """Remove internal nodes that are no longer needed"""
+        # This is an optimization to save memory
+        # In production, you might want to keep this disabled for performance
+        paths_to_remove = []
+        
+        for path in self.nodes:
+            if path == "" or len(path) == self.depth:
+                continue  # Skip root and leaves
+            
+            # Check if both children are default
+            left_child = path + "0"
+            right_child = path + "1"
+            
+            left_hash = self.nodes.get(left_child, self._get_default_hash(self.depth - len(left_child) - 1))
+            right_hash = self.nodes.get(right_child, self._get_default_hash(self.depth - len(right_child) - 1))
+            
+            if (left_hash == self._get_default_hash(self.depth - len(left_child) - 1) and
+                right_hash == self._get_default_hash(self.depth - len(right_child) - 1)):
+                paths_to_remove.append(path)
+        
+        for path in paths_to_remove:
+            del self.nodes[path]
+    
+    def get_leaf(self, index: int) -> str:
+        """
+        Get leaf value at specific index
+        
+        Args:
+            index: Leaf index
+            
+        Returns:
+            Leaf hash value (default if not set)
+        """
+        return self.leaves.get(index, self.default_hashes[0])
+    
+    def get_root(self) -> str:
+        """Get current root hash"""
+        return self.nodes.get("", self._default_root)
+    
+    def get_proof(self, index: int, format: ProofFormat = ProofFormat.BINARY) -> bytes:
+        """
+        Get inclusion proof for leaf
+        
+        Args:
+            index: Leaf index to prove
+            format: Proof serialization format
+            
+        Returns:
+            Serialized proof data
+        """
+        with self._lock:
+            proof_dict = self._get_proof_dict(index)
+            return self._serialize_proof(proof_dict, format)
+    
+    def _get_proof_dict(self, index: int) -> Dict:
+        """Get proof as dictionary"""
+        path = self._get_path(index)
+        leaf_hash = self.leaves.get(index, self.default_hashes[0])
+        
+        proof = {
+            'version': PROOF_VERSION,
+            'algorithm': self.config.hash_algorithm.value,
+            'leaf_hash': leaf_hash,
+            'leaf_index': index,
+            'sibling_hashes': [],
+            'path': path,
+            'tree_depth': self.depth,
+            'root_hash': self.get_root()
+        }
+        
+        current_path = path
+        for level in range(self.depth - 1, -1, -1):
+            sibling_path = current_path[:level] + ('1' if current_path[level] == '0' else '0')
+            sibling_hash = self.nodes.get(sibling_path, self._get_default_hash(level))
+            proof['sibling_hashes'].append(sibling_hash)
+            current_path = current_path[:level]
+        
+        return proof
+    
+    def _serialize_proof(self, proof: Dict, format: ProofFormat) -> bytes:
+        """Serialize proof to specified format"""
+        if format == ProofFormat.JSON:
+            return json.dumps(proof).encode('utf-8')
+        elif format == ProofFormat.MSGPACK:
+            return msgpack.packb(proof)
+        elif format == ProofFormat.BINARY:
+            return self._serialize_sparse_proof_binary(proof)
+        else:
+            raise ValueError(f"Unsupported proof format: {format}")
+    
+    def _serialize_sparse_proof_binary(self, proof: Dict) -> bytes:
+        """Serialize sparse Merkle proof to compact binary format"""
+        # Header: version(1) + algorithm(1) + depth(1) + path_length(1) + leaf_index(8)
+        version = PROOF_VERSION
+        algorithm_code = self._get_algorithm_code(proof['algorithm'])
+        depth = proof['tree_depth']
+        path_length = len(proof['path'])
+        leaf_index = proof['leaf_index']
+        
+        header = struct.pack('!BBBBI', version, algorithm_code, depth, path_length, leaf_index)
+        
+        # Leaf hash (32 bytes)
+        leaf_hash = bytes.fromhex(proof['leaf_hash'])
+        
+        # Root hash (32 bytes)
+        root_hash = bytes.fromhex(proof['root_hash'])
+        
+        # Path (as ASCII bytes)
+        path_bytes = proof['path'].encode('ascii')
+        
+        # Sibling hashes (each 32 bytes)
+        sibling_hashes = b''.join([bytes.fromhex(h) for h in proof['sibling_hashes']])
+        
+        # Combine all parts
+        return header + leaf_hash + root_hash + path_bytes + sibling_hashes
+    
+    def _get_algorithm_code(self, algorithm: str) -> int:
+        """Get numeric code for hash algorithm"""
+        algorithms = {
+            'sha256': 0,
+            'sha3_256': 1,
+            'blake2b': 2,
+            'blake2s': 3,
+            'sha512': 4
+        }
+        return algorithms.get(algorithm, 0)
+    
+    @classmethod
+    def deserialize_proof(cls, proof_data: bytes, format: ProofFormat = ProofFormat.BINARY) -> Optional[Dict]:
+        """Deserialize sparse Merkle proof"""
+        try:
+            if format == ProofFormat.JSON:
+                return json.loads(proof_data.decode('utf-8'))
+            elif format == ProofFormat.MSGPACK:
+                return msgpack.unpackb(proof_data)
+            elif format == ProofFormat.BINARY:
+                return cls._deserialize_sparse_proof_binary(proof_data)
+            else:
+                return None
+        except (json.JSONDecodeError, msgpack.UnpackException, struct.error):
+            return None
+    
+    @classmethod
+    def _deserialize_sparse_proof_binary(cls, proof_data: bytes) -> Optional[Dict]:
+        """Deserialize sparse Merkle proof from binary format"""
+        try:
+            # Parse header
+            header = proof_data[:12]
+            version, algorithm_code, depth, path_length, leaf_index = struct.unpack('!BBBBI', header)
+            
+            if version != PROOF_VERSION:
+                return None
+            
+            # Parse leaf hash (32 bytes)
+            leaf_hash_start = 12
+            leaf_hash = proof_data[leaf_hash_start:leaf_hash_start + 32].hex()
+            
+            # Parse root hash (32 bytes)
+            root_hash_start = leaf_hash_start + 32
+            root_hash = proof_data[root_hash_start:root_hash_start + 32].hex()
+            
+            # Parse path
+            path_start = root_hash_start + 32
+            path = proof_data[path_start:path_start + path_length].decode('ascii')
+            
+            # Parse sibling hashes
+            sibling_start = path_start + path_length
+            sibling_hashes = []
+            for i in range(depth):
+                hash_start = sibling_start + i * 32
+                sibling_hash = proof_data[hash_start:hash_start + 32].hex()
+                sibling_hashes.append(sibling_hash)
+            
+            # Get algorithm name from code
+            algorithm_codes = {
+                0: 'sha256',
+                1: 'sha3_256',
+                2: 'blake2b',
+                3: 'blake2s',
+                4: 'sha512'
+            }
+            algorithm = algorithm_codes.get(algorithm_code, 'sha256')
+            
+            return {
+                'version': version,
+                'algorithm': algorithm,
+                'leaf_hash': leaf_hash,
+                'leaf_index': leaf_index,
+                'sibling_hashes': sibling_hashes,
+                'path': path,
+                'tree_depth': depth,
+                'root_hash': root_hash
+            }
+        except (IndexError, struct.error, UnicodeDecodeError):
+            return None
+    
+    @classmethod
+    def verify_proof(cls, proof_data: bytes, target_hash: str, root_hash: str, 
+                    format: ProofFormat = ProofFormat.BINARY) -> bool:
+        """
+        Verify a sparse Merkle proof
+        
+        Args:
+            proof_data: Serialized proof data
+            target_hash: Hash of the data item to verify
+            root_hash: Expected root hash of the tree
+            format: Format of the proof data
+            
+        Returns:
+            True if proof is valid, False otherwise
+        """
+        proof = cls.deserialize_proof(proof_data, format)
+        if not proof or 'sibling_hashes' not in proof:
+            return False
+        
+        current_hash = target_hash
+        sibling_hashes = proof['sibling_hashes']
+        path = proof.get('path', '')
+        
+        # Determine hash function from proof
+        algorithm = proof.get('algorithm', 'sha256')
+        hash_func = getattr(hashlib, algorithm)
+        
+        # Reconstruct the root hash
+        for level, sibling_hash in enumerate(sibling_hashes):
+            if level < len(path):
+                bit = path[level]
+            else:
+                bit = '0'  # Default to left if path is shorter than depth
+            
+            if bit == '0':
+                combined = current_hash + sibling_hash
+            else:
+                combined = sibling_hash + current_hash
+            
+            # Use the appropriate hash function
+            current_hash = hash_func(combined.encode('utf-8')).hexdigest()
+        
+        return current_hash == root_hash
+    
+    def verify_leaf(self, index: int, value: str) -> bool:
+        """Verify that a leaf value is in the tree"""
+        proof_data = self.get_proof(index, ProofFormat.BINARY)
+        if not proof_data:
+            return False
+        return self.verify_proof(proof_data, value, self.get_root())
+    
+    def get_leaf_count(self) -> int:
+        """Get number of non-default leaf nodes"""
+        return len(self.leaves)
+    
+    def get_capacity(self) -> int:
+        """Get total capacity of the tree (2^depth)"""
+        return 1 << self.depth
+    
+    def to_dict(self) -> Dict:
+        """Convert tree to dictionary representation"""
+        return {
+            'root_hash': self.get_root(),
+            'hash_algorithm': self.config.hash_algorithm.value,
+            'double_hash': self.config.double_hash,
+            'depth': self.depth,
+            'leaf_count': self.get_leaf_count(),
+            'capacity': self.get_capacity(),
+            'default_value': self.default_value
+        }
+    
+    def batch_update(self, updates: Dict[int, str]):
+        """
+        Batch update multiple leaves efficiently
+        
+        Args:
+            updates: Dictionary of index -> value updates
+        """
+        with self._lock:
+            for index, value in updates.items():
+                self.update_leaf(index, value)
+    
+    async def batch_update_async(self, updates: Dict[int, str]):
+        """
+        Asynchronously batch update multiple leaves
+        
+        Args:
+            updates: Dictionary of index -> value updates
+        """
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self.batch_update, updates)
+
+# Add these utility functions at the end of the file
+
+def create_sparse_merkle_tree(depth: int = 256, config: Optional[MerkleTreeConfig] = None) -> SparseMerkleTree:
+    """Create a new sparse Merkle tree"""
+    return SparseMerkleTree(depth=depth, config=config)
+
+async def create_sparse_merkle_tree_from_dict(data_dict: Dict[int, str], 
+                                            depth: int = 256,
+                                            config: Optional[MerkleTreeConfig] = None) -> SparseMerkleTree:
+    """Create sparse Merkle tree from dictionary of index -> value pairs"""
+    tree = SparseMerkleTree(depth=depth, config=config)
+    await tree.batch_update_async(data_dict)
+    return tree
+
+def sparse_merkle_proof_to_json(proof_data: bytes) -> Optional[str]:
+    """Convert sparse Merkle proof to JSON string for readability"""
+    proof = SparseMerkleTree.deserialize_proof(proof_data, ProofFormat.BINARY)
+    if proof:
+        return json.dumps(proof, indent=2)
+    return None
