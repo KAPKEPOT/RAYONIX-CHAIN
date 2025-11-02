@@ -1,49 +1,87 @@
 # utxo_system/validation/transaction_validator.py
 from typing import Tuple
 from utxo_system.models.transaction import Transaction
-from utxo_system.database.core import UTXOSet
+from utxo_system.core.utxoset import UTXOSet
 from utxo_system.exceptions import ValidationError
 from utxo_system.utils.logging_config import logger
 
-def validate_transaction(transaction: Transaction, utxo_set: UTXOSet, 
-                        current_block_height: int = 0) -> Tuple[bool, str]:
-    """
-    Validate a transaction before processing it.
+class TransactionValidator:
+    """Advanced transaction validation with comprehensive checks"""
     
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    # Check all inputs exist and are spendable
-    for i, tx_input in enumerate(transaction.inputs):
-        utxo_id = f"{tx_input.tx_hash}:{tx_input.output_index}"
-        utxo = utxo_set.get_utxo(utxo_id)
+    @staticmethod
+    def validate_transaction(transaction: Transaction, utxo_set: Any, 
+                           current_height: int = 0) -> Tuple[bool, List[str]]:
+        """Comprehensive transaction validation"""
+        errors = []
         
-        if not utxo:
-            return False, f"Input UTXO {utxo_id} does not exist"
+        # Basic structure validation
+        if not transaction.validate_structure():
+            errors.append("Invalid transaction structure")
+            return False, errors
         
-        if utxo.spent:
-            return False, f"Input UTXO {utxo_id} is already spent"
+        # Check if transaction is final
+        if not transaction.is_final(current_height):
+            errors.append("Transaction is not final")
         
-        if not utxo.is_spendable(current_block_height, 0):
-            return False, f"Input UTXO {utxo_id} is not spendable yet"
+        # Verify signatures (skip for coinbase)
+        if not transaction.is_coinbase():
+            if not transaction.verify_all_signatures(utxo_set):
+                errors.append("Invalid signatures")
         
-        # Verify signature
-        if not transaction.verify_input_signature(i, utxo_set):
-            return False, f"Invalid signature for input {i}"
+        # Check for double spends
+        double_spend_error = TransactionValidator._check_double_spends(transaction, utxo_set)
+        if double_spend_error:
+            errors.append(double_spend_error)
+        
+        # Validate fee
+        fee = transaction.calculate_fee(utxo_set)
+        if fee < 0:
+            errors.append("Negative transaction fee")
+        
+        # Check output amounts
+        for i, output in enumerate(transaction.outputs):
+            if output.amount <= 0:
+                errors.append(f"Output {i} has invalid amount: {output.amount}")
+        
+        return len(errors) == 0, errors
     
-    # Check output amounts are positive
-    for output in transaction.outputs:
-        if output.amount <= 0:
-            return False, "Output amount must be positive"
+    @staticmethod
+    def _check_double_spends(transaction: Transaction, utxo_set: Any) -> Optional[str]:
+        """Check for double spending attempts"""
+        for inp in transaction.inputs:
+            if inp.is_coinbase():
+                continue
+                
+            utxo_id = inp.get_outpoint()
+            try:
+                utxo = utxo_set.get_utxo(utxo_id)
+                if utxo and getattr(utxo, 'is_spent', False):
+                    return f"Double spend detected: {utxo_id}"
+            except Exception as e:
+                logger.warning(f"Error checking double spend for {utxo_id}: {e}")
+        
+        return None
+
+
+# Utility functions for transaction handling
+def create_transaction_hash(data: bytes) -> str:
+    """Create double SHA256 hash of transaction data"""
+    return hashlib.sha256(hashlib.sha256(data).digest()).hexdigest()
+
+def validate_transaction_format(transaction_data: Dict) -> bool:
+    """Validate transaction data format"""
+    required_fields = {'version', 'inputs', 'outputs', 'locktime'}
+    return all(field in transaction_data for field in required_fields)
+
+def calculate_transaction_weight(transaction: Transaction) -> int:
+    """Calculate transaction weight for fee calculation"""
+    base_size = transaction.calculate_size()
+    total_size = base_size
     
-    # Check fee is reasonable (at least non-negative)
-    fee = transaction.calculate_fee(utxo_set)
-    if fee < 0:
-        return False, "Transaction has negative fee"
+    # Add witness size if present
+    if transaction.witness_data:
+        witness_size = sum(len(str(w)) for w_list in transaction.witness_data.values() 
+                          for w in w_list) if isinstance(transaction.witness_data, dict) else 0
+        total_size += witness_size
     
-    # Additional validation: check for dust outputs
-    for output in transaction.outputs:
-        if output.amount < 546:  # Minimum dust amount (similar to Bitcoin)
-            logger.warning(f"Dust output detected: {output.amount}")
-    
-    return True, ""
+    return (base_size * 3 + total_size) // 4
