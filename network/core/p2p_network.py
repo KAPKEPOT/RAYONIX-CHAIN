@@ -42,11 +42,10 @@ class AdvancedP2PNetwork:
         #self.magic = self._get_magic_number(network_id)  # Network magic number
         
         # Core components
-        try:
-            self.connection_manager = ConnectionManager(self)
-            self.peer_discovery = PeerDiscovery(self)
-            self.message_processor = MessageProcessor(self)
-            self.security_manager = SecurityManager(self)
+        self.connection_manager = ConnectionManager(self)
+        self.peer_discovery = PeerDiscovery(self)
+        self.message_processor = MessageProcessor(self)
+        self.security_manager = SecurityManager(self)
         
         # Utility components
         self.rate_limiter = RateLimiter(self.config.rate_limit_per_peer)
