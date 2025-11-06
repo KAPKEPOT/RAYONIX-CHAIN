@@ -121,8 +121,6 @@ class BlockchainConfig:
     grpc_max_retries: int = 3
 
 class RayonixBlockchain:
-    """Production-ready RAYONIX blockchain engine with enterprise features"""
-    
     def __init__(self, network_type: str = "mainnet", data_dir: str = "./rayonix_data", 
                  config: Optional[Dict[str, Any]] = None):
         self.network_type = network_type
@@ -228,13 +226,11 @@ class RayonixBlockchain:
             db_path = str(self.data_dir / 'utxo_db')
             self.utxo_set = UTXOSet(db_path)
             
-            from consensusengine.utils.config.factory import ConfigFactory
+            from config.config_manager import ConfigManager
 
-            # Create configurations using your robust factory
-            self.consensus_config = ConfigFactory.create_safe_consensus_config(**config_dict)
-            self.network_config = ConfigFactory.create_network_config(**config_dict)
+            self.config_manager = ConfigManager()
             
-            logger.info("Configurations created successfully using ConfigFactory")
+            logger.info("ConfigManager initialized successfully")
             
             # Initialize database
             #self.database = self._initialize_database_with_retry()
@@ -242,8 +238,7 @@ class RayonixBlockchain:
             # Import consensus engine here to avoid circular imports
             from consensusengine.core.consensus import ProofOfStake
             self.consensus = ProofOfStake(
-                config=self.consensus_config,
-                network_config=self.network_config
+                config_manager=self.config_manager
             )
             logger.info("Consensus engine initialized successfully")
            
@@ -252,7 +247,7 @@ class RayonixBlockchain:
             if self.contract_manager is None:
             	raise RuntimeError("Contract manager initialization failed - cannot proceed without contract manager")
             	
-            	
+            # Initialize wallet	
             self.wallet = self._initialize_wallet()
             
             # Initialize core managers with dependency injection
@@ -280,14 +275,14 @@ class RayonixBlockchain:
             self.block_producer = BlockProducer(self.state_manager, self.validation_manager, config_dict, self.wallet)
             
             # Initialize network layer
-            network_config = NodeConfig(
-                network_type=NetworkType.TESTNET if self.network_type == "testnet" else NetworkType.MAINNET,
-                listen_port=self.config.port,
-                max_connections=self.config.max_connections
-            )
+            #network_config = NodeConfig(
+                #network_type=NetworkType.TESTNET if self.network_type == "testnet" else NetworkType.MAINNET,
+                #listen_port=self.config.port,
+                #max_connections=self.config.max_connections
+            #)
             
             self.network = AdvancedP2PNetwork(
-                config=network_config,
+                config_manager=self.config_manager,
                 network_id=self._get_network_id(),                
                 node_id=self._generate_node_id()
             )
@@ -300,6 +295,7 @@ class RayonixBlockchain:
             self.consensus._initialize_with_real_data()
             
             self.health = NodeHealth.HEALTHY
+            logger.info("All blockchain components initialized successfully")
             
         except Exception as e:
             logger.error(f"Component initialization failed: {e}")
