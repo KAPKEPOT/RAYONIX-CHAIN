@@ -584,7 +584,57 @@ class PeerDiscovery(IPeerDiscovery):
             existing.last_seen = peer_info.last_seen
             existing.reputation = max(existing.reputation, peer_info.reputation)  # Keep highest reputation
             existing.capabilities = list(set(existing.capabilities + peer_info.capabilities))
-    
+           
+    async def request_peer_lists(self):
+        """Request peer lists from connected peers - required by abstract base class"""
+        try:
+        	logger.info("Requesting peer lists from connected peers...")
+        	
+        	# Get connected peers
+        	connected_peers = list(self.connected_peers)
+        	if not connected_peers:
+        		logger.debug("No connected peers to request peer lists from")
+        		return
+        	
+        	# Create peer list request message
+        	request_message = NetworkMessage(
+        	    message_id=f"peer_list_request_{int(time.time())}_{random.randint(1000, 9999)}",
+        	    message_type=MessageType.GET_PEERS,
+        	    payload={
+        	        "request": True,
+        	        "max_peers": self.config_manager.get('peer_discovery.max_peers_to_return', 50),
+        	        "network_id": self.config_manager.config.network.network_id
+        	    },
+        	    source_node=self.network.node_id,
+            timestamp=time.time()
+        	)
+        	
+        	# Send request to a subset of connected peers (avoid flooding)
+        	max_requests = min(3, len(connected_peers))
+        	peers_to_query = random.sample(connected_peers, max_requests)
+        	
+        	request_tasks = []
+        	for peer_id in peers_to_query:
+        		task = asyncio.create_task(
+        		    self.network.message_processor.send_message(peer_id, request_message)
+        		)
+        		
+        		request_tasks.append(task)
+        	
+        	# Wait for requests to complete with timeout
+        	try:
+        		await asyncio.wait_for(
+        		    asyncio.gather(*request_tasks, return_exceptions=True),
+        		    timeout=15.0
+        		)
+        		logger.debug(f"Sent peer list requests to {len(peers_to_query)} peers")
+        	
+        	except asyncio.TimeoutError:
+        		logger.warning("Peer list requests timed out")
+        
+        except Exception as e:
+        	logger.error(f"Error requesting peer lists: {e}")
+        
     def mark_peer_connected(self, connection_id: str):
         """Mark a peer as connected"""
         self.connected_peers.add(connection_id)
