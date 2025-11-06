@@ -22,9 +22,7 @@ from config.config_manager import ConfigManager
 logger = logging.getLogger('ConsensusEngine')
 
 class ProofOfStake:
-    """Production-ready Proof-of-Stake consensus engine with BFT features"""
-    
-    def __init__(self, config: init_config = None, config_manager=None, **kwargs):
+    def __init__(self, config: ConfigManager = None, config_manager=None, **kwargs):
         
         if config is None:
         	from config.config_manager import ConfigManager
