@@ -107,6 +107,7 @@ class NetworkConfig:
     rate_limit_per_peer: int = 1000
     max_message_size: int = 10 * 1024 * 1024  # 10MB
     enable_transaction_relay: bool = True
+    allow_private_peers: bool = False
     
     def __post_init__(self):
         self.apply_network_preset(self.network_type)
@@ -176,7 +177,7 @@ class APIConfig:
 
 @dataclass
 class ConsensusConfig:
-    """Consensus configuration - NO HARDCODED VALUES"""
+    """Consensus configuration """
     consensus_type: str = "pos"
     min_stake: int = 1000
     max_stake: int = 1000000
