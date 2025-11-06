@@ -28,22 +28,25 @@ class AdvancedP2PNetwork:
     """Main P2P network class"""
     
     #def __init__(self, config: NodeConfig, network_id: int = 1, node_id: str = None):
-    def __init__(self, ConfigManager, network_id: int = None, node_id: str = None):      
+    def __init__(self, config_manager=None, network_id: int = None, node_id: str = None):      
         
-        self.config = config
-       # self.network_id = network_id
-        self.node_id = node_id or self._generate_node_id()
-        self.magic = self.config.network.magic_bytes
-        self.network_id = self.config.network.network_id
-        self.tcp_port = self.config.network.listen_port
-        self.ws_port = self.config.network.websocket_port
+        self.config_manager = config_manager
+        self.config = config_manager.config if config_manager else None
+        
+        if self.config:
+            self.node_id = node_id or self._generate_node_id()
+            self.magic = self.config.network.magic_bytes
+            self.network_id = self.config.network.network_id
+            self.tcp_port = self.config.network.listen_port
+            self.ws_port = self.config.network.websocket_port
         #self.magic = self._get_magic_number(network_id)  # Network magic number
         
         # Core components
-        self.connection_manager = ConnectionManager(self)
-        self.peer_discovery = PeerDiscovery(self)
-        self.message_processor = MessageProcessor(self)
-        self.security_manager = SecurityManager(self)
+        try:
+            self.connection_manager = ConnectionManager(self)
+            self.peer_discovery = PeerDiscovery(self)
+            self.message_processor = MessageProcessor(self)
+            self.security_manager = SecurityManager(self)
         
         # Utility components
         self.rate_limiter = RateLimiter(self.config.rate_limit_per_peer)
