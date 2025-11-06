@@ -201,6 +201,9 @@ class ConsensusConfig:
     voting_period: int = 259200
     max_reorganization_depth: int = 100
     enable_auto_staking: bool = True
+    propose_timeout: int = 30
+    prevote_timeout: int = 30
+    precommit_timeout: int = 30
 
 @dataclass
 class GasConfig:
