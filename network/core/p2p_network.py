@@ -3,7 +3,7 @@ import logging
 import ssl
 import time
 from typing import Dict, List, Optional, Any
-from config.config_manager import init_config
+from config.config_manager import ConfigManager
 from network.config.network_types import NetworkType, ProtocolType, ConnectionState, MessageType
 from network.models.peer_info import PeerInfo
 from network.models.network_message import NetworkMessage
@@ -28,7 +28,7 @@ class AdvancedP2PNetwork:
     """Main P2P network class"""
     
     #def __init__(self, config: NodeConfig, network_id: int = 1, node_id: str = None):
-    def __init__(self, config, network_id: int = None, node_id: str = None):      
+    def __init__(self, ConfigManager, network_id: int = None, node_id: str = None):      
         
         self.config = config
        # self.network_id = network_id
