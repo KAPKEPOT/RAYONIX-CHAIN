@@ -24,21 +24,21 @@ logger = logging.getLogger('ConsensusEngine')
 class ProofOfStake:
     """Production-ready Proof-of-Stake consensus engine with BFT features"""
     
-    def __init__(self, config: ConsensusConfig = None, network_config=None, **kwargs):
+    def __init__(self, config: init_config = None, config_manager=None, **kwargs):
         
         if config is None:
-        	from consensusengine.utils.config.settings import ConsensusConfig
-        	self.config = ConsensusConfig(**kwargs)
+        	from config.config_manager. import init_config
+        	self.config = init_config(**kwargs)
         	
         elif isinstance(config, dict):
-        	from consensusengine.utils.config.settings import ConsensusConfig
-        	self.config = ConsensusConfig(**{**config, **kwargs})
+        	from config.config_manager. import init_config
+        	self.config = init_config(**{**config, **kwargs})
         	
         elif hasattr(config, '__dataclass_fields__'):
         	self.config = config
         else:
-        	from consensusengine.utils.config.settings import ConsensusConfig
-        	self.config = ConsensusConfig(**vars(config))
+        	from config.config_manager. import init_config
+        	self.config = init_config(**vars(config))
 
         # Core state management
         self.height = 0
