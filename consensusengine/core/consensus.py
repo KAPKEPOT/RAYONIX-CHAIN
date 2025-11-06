@@ -27,17 +27,17 @@ class ProofOfStake:
     def __init__(self, config: init_config = None, config_manager=None, **kwargs):
         
         if config is None:
-        	from config.config_manager. import init_config
+        	from config.config_manager import init_config
         	self.config = init_config(**kwargs)
         	
         elif isinstance(config, dict):
-        	from config.config_manager. import init_config
+        	from config.config_manager import init_config
         	self.config = init_config(**{**config, **kwargs})
         	
         elif hasattr(config, '__dataclass_fields__'):
         	self.config = config
         else:
-        	from config.config_manager. import init_config
+        	from config.config_manager import init_config
         	self.config = init_config(**vars(config))
 
         # Core state management
