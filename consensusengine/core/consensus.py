@@ -24,19 +24,11 @@ logger = logging.getLogger('ConsensusEngine')
 class ProofOfStake:
     def __init__(self, config: ConfigManager = None, config_manager=None, **kwargs):
         
-        if config is None:
-        	from config.config_manager import ConfigManager
-        	self.config = ConfigManager(**kwargs)
-        	
-        elif isinstance(config, dict):
-        	from config.config_manager import ConfigManager
-        	self.config = ConfigManager(**{**config, **kwargs})
-        	
-        elif hasattr(config, '__dataclass_fields__'):
-        	self.config = config
+        if config_manager:
+        	self.network = AdvancedP2PNetwork(config_manager=config_manager)
+        
         else:
-        	from config.config_manager import ConfigManager
-        	self.config = ConfigManager(**vars(config))
+        	self.network = AdvancedP2PNetwork()
 
         # Core state management
         self.height = 0
@@ -68,7 +60,7 @@ class ProofOfStake:
         self.config_manager = config_manager
         
         # Initialize network with proper config
-        self.network = AdvancedP2PNetwork(config_manager=self.config_manager)
+        self.network = AdvancedP2PNetwork(config=self.config_manager)
         
         # Block and vote storage
         self.block_proposals: Dict[str, BlockProposal] = {}
