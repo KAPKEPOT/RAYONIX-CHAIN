@@ -67,7 +67,7 @@ class ProofOfStake:
         self.state_manager = None
         
         #Network configuration
-        self.network_config = network_config
+        self.config_manager = config_manager
         
         # Initialize network with proper config
         self.network = AdvancedP2PNetwork(config=self.config_manager)
