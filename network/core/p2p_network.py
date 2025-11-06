@@ -3,7 +3,7 @@ import logging
 import ssl
 import time
 from typing import Dict, List, Optional, Any
-from config.config_manager import get_config
+from config.config_manager import init_config
 from network.config.network_types import NetworkType, ProtocolType, ConnectionState, MessageType
 from network.models.peer_info import PeerInfo
 from network.models.network_message import NetworkMessage
