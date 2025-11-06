@@ -68,7 +68,7 @@ class ProofOfStake:
         self.config_manager = config_manager
         
         # Initialize network with proper config
-        self.network = AdvancedP2PNetwork(config=self.config_manager)
+        self.network = AdvancedP2PNetwork(config_manager=self.config_manager)
         
         # Block and vote storage
         self.block_proposals: Dict[str, BlockProposal] = {}
