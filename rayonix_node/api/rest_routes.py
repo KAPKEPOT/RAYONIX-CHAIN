@@ -400,77 +400,19 @@ async def get_blocks(
 
 # Wallet Endpoints
 @router.post("/wallet/create", response_model=Dict[str, Any])
-async def create_wallet(
-    wallet_data: WalletCreateRequest,
-    request: Request,
-    background_tasks: BackgroundTasks,
-    #auth: bool = Depends(authenticate_request)
-):
+async def create_wallet(wallet_data: WalletCreateRequest, request: Request):
     """Create a new wallet with secure key generation"""
     node = request.app.state.node
-    try:
-        if node.wallet:
-            raise HTTPException(status_code=400, detail="Wallet already exists")
-        
-        # Create wallet based on type
-        if wallet_data.wallet_type == "hd":
-            wallet = RayonixWallet()
-            mnemonic = wallet.generate_mnemonic(wallet_data.mnemonic_length)
-            wallet.create_from_mnemonic(mnemonic)
-        else:
-            wallet = LegacyWallet()
-            wallet.generate_new_keypair()
-        
-        # Encrypt wallet if password provided
-        if wallet_data.password:
-            wallet.encrypt(wallet_data.password)
-        
-        node.wallet = wallet
-        
-        # Create backup directory
-        backup_dir = Path(node.config_manager.get('database.data_dir', '.')) / WALLET_BACKUP_DIR
-        backup_dir.mkdir(exist_ok=True)
-        
-        # Generate backup file
-        backup_data = {
-            'wallet_type': wallet_data.wallet_type,
-            'addresses': wallet.get_addresses(),
-            'public_keys': wallet.get_public_keys(),
-            'created_at': int(datetime.now().timestamp()),
-            'network': node.config_manager.get('network.network_type', 'testnet')
-        }
-        
-        if wallet_data.wallet_type == "hd":
-            backup_data['mnemonic'] = mnemonic
-        else:
-            backup_data['private_key'] = wallet.export_private_key() if not wallet_data.password else None
-        
-        # Schedule automatic backup
-        backup_file = backup_dir / f"wallet_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        background_tasks.add_task(
-            wallet.create_backup,
-            str(backup_file),
-            wallet_data.password
-        )
-        
-        response = {
-            "wallet_id": wallet.get_wallet_id(),
-            "address": wallet.get_addresses()[0],
-            "wallet_type": wallet_data.wallet_type,
-            "encrypted": wallet_data.password is not None,
-            "backup_file": str(backup_file)
-        }
-        
-        if wallet_data.wallet_type == "hd":
-            response["mnemonic"] = mnemonic
-            response["warning"] = "Save this mnemonic phrase securely! It cannot be recovered."
-        
-        logger.info(f"New wallet created: {response['address']}")
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error creating wallet: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    if node.wallet:
+    	raise HTTPException(400, "Wallet already exists")
+    
+    # Use node's wallet creation
+    success = await node._create_wallet_on_demand()
+    if not success or not node.wallet:
+    	raise HTTPException(500, "Failed to create wallet")
+    
+    # Now node.wallet is properly set and persisted
+    wallet = node.wallet
 
 @router.post("/wallet/load", response_model=Dict[str, Any])
 async def load_wallet(
