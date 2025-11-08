@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-RAYONIX CLI Client - Production Ready
+RAYONIX CLI Client
 Main entry point for CLI that connects to rayonixd daemon via RPC
 """
 
@@ -115,9 +115,15 @@ class RayonixRPCClient:
             
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            try:
+            	error_detail = response.json().get('detail', str(e))
+            except:
+            	error_detail = str(e)
+            raise Exception(f"API error: {error_detail}")
         except Exception as e:
-            raise Exception(f"API call failed: {e}")
-    
+           raise Exception(f"API call failed: {e}")
+           
     # Enhanced RPC methods
     def get_detailed_info(self) -> Dict[str, Any]:
         """Get detailed node information"""
