@@ -425,11 +425,24 @@ async def create_wallet(
             raise HTTPException(status_code=500, detail="Failed to create wallet")
         
         wallet = node.wallet
-        print(f"DEBUG: Wallet ID: {wallet.get_wallet_id()}")
+        print(f"DEBUG: Wallet ID: {wallet.get_wallet_id()}")       
+        print(f"DEBUG: Wallet attributes: {dir(wallet)}")
+        
+        # Get wallet ID safely
+        wallet_id = getattr(wallet, 'wallet_id', 'unknown')
+        print(f"DEBUG: Wallet ID: {wallet_id}")
+        
+        # Get addresses safely
+        addresses = []
+        if hasattr(wallet, 'get_addresses') and callable(wallet.get_addresses):
+        	addresses = wallet.get_addresses()
+        elif hasattr(wallet, 'addresses'):
+        	addresses = list(wallet.addresses.keys()) if isinstance(wallet.addresses, dict) else wallet.addresses
+        	
+        print(f"DEBUG: Found {len(addresses)} addresses")
         
         response = {
-            "wallet_id": wallet.get_wallet_id(),
-            "address": wallet.get_addresses()[0] if wallet.get_addresses() else "NO_ADDRESS",
+            "address": addresses[0] if addresses else "NO_ADDRESS_GENERATED",
             "wallet_type": "hd",
             "encrypted": False,
         }
