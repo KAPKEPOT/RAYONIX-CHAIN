@@ -48,8 +48,8 @@ class AdvancedP2PNetwork:
         self.security_manager = SecurityManager(self)
         
         # Utility components
-        self.rate_limiter = RateLimiter(self.config.rate_limit_per_peer)
-        self.ban_manager = BanManager(self.config.ban_threshold, self.config.ban_duration)
+        self.rate_limiter = RateLimiter(self.config.network.rate_limit_per_peer)
+        self.ban_manager = BanManager(self.config.network.ban_threshold, self.config.network.ban_duration)
         self.metrics_collector = MetricsCollector()
         
         # Protocol handlers
