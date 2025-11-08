@@ -414,7 +414,7 @@ async def create_wallet(
         
         # Create wallet based on type
         if wallet_data.wallet_type == "hd":
-            wallet = HDWallet()
+            wallet = RayonixWallet()
             mnemonic = wallet.generate_mnemonic(wallet_data.mnemonic_length)
             wallet.create_from_mnemonic(mnemonic)
         else:
