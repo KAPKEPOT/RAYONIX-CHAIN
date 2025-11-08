@@ -46,7 +46,7 @@ class ProofOfStake:
         self.round_states: Dict[Tuple[int, int], RoundState] = {}
         
         # Epoch management
-        self.epoch_state = EpochState(self.config.staking.epoch_blocks)
+        self.epoch_state = EpochState(self.config.consensus.epoch_blocks)
         
         # Manager instances
         self.db_manager = DatabaseManager(self.config.database.path)
@@ -261,7 +261,7 @@ class ProofOfStake:
             # Set timeout for propose step
             self.timeout_manager.set_timeout(
                 self.height, round, ConsensusState.PROPOSE,
-                self.config.timeouts.propose_timeout
+                self.config.consensus.propose_timeout
             )
             
             # If we're the proposer, create a proposal
@@ -452,7 +452,7 @@ class ProofOfStake:
             self.step = ConsensusState.PRECOMMIT
             self.timeout_manager.set_timeout(
                 height, round, ConsensusState.PRECOMMIT,
-                self.config.timeouts.precommit_timeout
+                self.config.consensus.precommit_timeout
             )
             
             # Send precommit for this block
