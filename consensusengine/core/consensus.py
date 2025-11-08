@@ -184,7 +184,7 @@ class ProofOfStake:
         
         def unavailability_checker():
             while self._running:
-                time.sleep(self.config.staking.epoch_blocks * 5)
+                time.sleep(self.config.consensus.epoch_blocks * 5)
                 try:
                     self.slashing_manager.check_unavailability()
                 except Exception as e:
@@ -200,7 +200,7 @@ class ProofOfStake:
     
     def _process_epoch_transition(self):
         """Process epoch transition and distribute rewards"""
-        if self.height % self.config.staking.epoch_blocks != 0:
+        if self.height % self.config.consensus.epoch_blocks != 0:
             return
         
         with self.lock:
