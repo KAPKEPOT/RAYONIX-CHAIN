@@ -442,6 +442,7 @@ async def create_wallet(
         print(f"DEBUG: Found {len(addresses)} addresses")
         
         response = {
+            "wallet_id": wallet_id,
             "address": addresses[0] if addresses else "NO_ADDRESS_GENERATED",
             "wallet_type": "hd",
             "encrypted": False,
