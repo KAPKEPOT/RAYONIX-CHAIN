@@ -8,12 +8,12 @@
 
 
 
-‎ Installation
+‎  # Installation
 
 
 
 ‎
-‎BASH
+‎# BASH
 
 ‎Clone repository
 
@@ -24,7 +24,7 @@ cd rayonix-blockchain
 
 
 ‎
-‎Install dependencies
+‎# Install dependencies
 
 
 ‎pip install -r requirements.txt
@@ -41,7 +41,7 @@ cd rayonix-blockchain
 
 
 ‎
-‎ Quick Start
+‎ # Quick Start
 
 
 ‎
@@ -67,7 +67,7 @@ cd rayonix-blockchain
 
 
 ‎
-‎2. Start a Node
+‎# 2. Start a Node
 ‎
 
 
@@ -88,7 +88,7 @@ cd rayonix-blockchain
 
 ‎
 ‎
-‎3. Create Transaction
+‎# 3. Create Transaction
 ‎
 
 
@@ -102,7 +102,7 @@ cd rayonix-blockchain
 ‎)
 ‎
 ‎
-‎4. Deploy Smart Contract
+# ‎4. Deploy Smart Contract
 
 
 ‎
@@ -162,7 +162,7 @@ cd rayonix-blockchain
 
 
 ‎
-‎Wallet Configuration
+# ‎Wallet Configuration
 
 
 ‎json
@@ -178,7 +178,7 @@ cd rayonix-blockchain
 ‎
 
 ‎
-‎ Performance
+‎ # Performance
 
 
 ‎
@@ -190,7 +190,7 @@ cd rayonix-blockchain
 
 
 ‎
-‎ Security Features
+‎ # Security Features
 
 
 ‎
@@ -219,7 +219,7 @@ cd rayonix-blockchain
 
 
 ‎
-‎ Testing
+‎ # Testing
 
 
 ‎
@@ -244,30 +244,30 @@ cd rayonix-blockchain
 
 
 ‎
-‎JSON-RPC Endpoints
+‎# JSON-RPC Endpoints
 
 ‎bash
 
 ‎# Get block by height
-‎curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
-‎  -d '{"jsonrpc":"2.0","method":"eth_getBlockByNumber","params":["latest", true],"id":1}'
+‎```curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
+‎  -d '{"jsonrpc":"2.0","method":"eth_getBlockByNumber""params":["latest", true],"id":1}'
 ‎
 
 
 ‎# Send transaction
 
 
-‎curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
-‎  -d '{"jsonrpc":"2.0","method":"eth_sendTransaction","params":[{"from":"0x...","to":"0x...","value":"0x..."}],"id":1}'
-
+```curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
+‎  -d '{"jsonrpc":"2.0","method":"eth_sendTransaction```","params":[{"from":"0x...","to":"0x...","value":"0x..."}],"id":1}'
+```
 
 ‎
 ‎# Call contract
 
 
-‎curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
+curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
 ‎  -d '{"jsonrpc":"2.0","method":"eth_call","params":[{"to":"0x...","data":"0x..."},"latest"],"id":1}'
-‎
+‎```
 
 ‎
 ‎ Deployment
@@ -288,12 +288,13 @@ cd rayonix-blockchain
 ‎
 
 
-‎EXPOSE 30303 8545
+# ‎EXPOSE 30303 8545
+
 ‎CMD ["python", "main.py", "--network", "mainnet"]
 ‎
 
 ‎
-‎Kubernetes Deployment
+# ‎Kubernetes Deployment
 
 
 ‎yaml
@@ -315,7 +316,7 @@ cd rayonix-blockchain
 
 
 ‎
-‎ Contributing
+‎# Contributing
 
 
 ‎
@@ -339,7 +340,7 @@ cd rayonix-blockchain
 
 
 ‎
-‎ #Security
+‎ # Security
 
 
 ‎
