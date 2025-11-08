@@ -13,6 +13,7 @@ class NetworkManager:
     
     def __init__(self, node: 'RayonixNode'):
         self.node = node
+        self.config_manager = node.config_manager
         self.network = None
         self.connected_peers: Dict[str, Dict] = {}
     
@@ -45,13 +46,9 @@ class NetworkManager:
                 enable_compression=True
             )
             self.network = AdvancedP2PNetwork(
-                #network_id=network_id,
-                #port=tcp_port,  # Pass TCP port as main port
-                #max_connections=max_connections,
-                #node_id=None,  # Let it generate its own
-                config=config,
+                config_manager=self.config_manager,
                 network_id=network_id,
-                node_id=None  # Let it generate its own
+                node_id=None
             )
             
             # Register message handlers
