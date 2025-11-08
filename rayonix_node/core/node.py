@@ -1,4 +1,4 @@
-# core/node.py - Main RayonixNode class
+# rayonix_node/core/node.py - Main RayonixNode class
 
 import asyncio
 import threading
@@ -150,10 +150,24 @@ class RayonixNode:
     async def _create_wallet_on_demand(self) -> bool:
     	"""Create wallet when explicitly requested by user"""
     	try:
-    		await self._initialize_wallet_with_blockchain()
-    		return self.wallet is not None
+    		from rayonix_wallet.core.wallet_factory import WalletFactory
+    		
+    		wallet, mnemonic = WalletFactory.create_new_wallet(
+    		    wallet_type=WalletType.HD,
+    		    network=self.config_manager.get('network.network_type', 'testnet'),
+    		    address_type=AddressType.RAYONIX
+    		)
+    		
+    		self.wallet = wallet
+    		
+    		# Save wallet to file
+    		wallet_file = Path(self.get_config_value('database.db_path', './rayonix_data')) / 'wallet.dat'
+    		if wallet.backup(str(wallet_file)):
+    			logger.info(f"New wallet saved to {wallet_file}")
+    		return True
+    	
     	except Exception as e:
-    		logger.error(f"Failed to create wallet on demand: {e}")
+    		logger.error(f"Failed to create wallet: {e}")
     		return False
 
     async def _initialize_wallet_with_blockchain(self):
