@@ -24,11 +24,18 @@ logger = logging.getLogger('ConsensusEngine')
 class ProofOfStake:
     def __init__(self, config: ConfigManager = None, config_manager=None, **kwargs):
         
+        self.config_manager = config_manager or config        
+        if not self.config_manager:
+        	self.config_manager = ConfigManager()
+        	
+        	self.config = self.config_manager.config
+        	self.network = AdvancedP2PNetwork(config_manager=config_manager)
+        
         if config_manager:
         	self.network = AdvancedP2PNetwork(config_manager=config_manager)
         
         else:
-        	self.network = AdvancedP2PNetwork()
+        	self.network = AdvancedP2PNetwork(config_manager=self.config_manager)
 
         # Core state management
         self.height = 0
