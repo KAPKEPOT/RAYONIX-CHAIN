@@ -15,7 +15,7 @@ from rayonix_node.tasks.staking_task import StakingTask
 from rayonix_node.tasks.mempool_task import MempoolTask
 from rayonix_node.tasks.peer_monitor import PeerMonitor
 from rayonix_node.network.sync_manager import SyncManager
-#from rayonix_node.config.patch_config import get_safe_genesis_config
+from rayonix_wallet.core.types import WalletType, AddressType
 
 logger = logging.getLogger("rayonix_node.core")
 
@@ -149,25 +149,56 @@ class RayonixNode:
     		
     async def _create_wallet_on_demand(self) -> bool:
     	"""Create wallet when explicitly requested by user"""
+    	print("=== DEBUG: _create_wallet_on_demand STARTED ===")
     	try:
-    		from rayonix_wallet.core.wallet_factory import WalletFactory
+    		print("DEBUG: Step 1 - Checking if rayonix_wallet package exists...")
+    		import rayonix_wallet
+    		print(f"DEBUG: rayonix_wallet package found: {rayonix_wallet.__file__}")
     		
+    		print("DEBUG: Step 2 - Attempting to import WalletFactory...")
+    		from rayonix_wallet.core.wallet_factory import WalletFactory
+    		print("DEBUG: ✅ WalletFactory imported successfully")  	
+    			
+    		print("DEBUG: Step 3 - Attempting to import WalletType and AddressType...")
+    		from rayonix_wallet.core.types import WalletType, AddressType
+    		print("DEBUG: ✅ WalletType and AddressType imported successfully")
+    		
+    		print("DEBUG: Step 4 - Creating wallet with factory...")    		
     		wallet, mnemonic = WalletFactory.create_new_wallet(
     		    wallet_type=WalletType.HD,
     		    network=self.config_manager.get('network.network_type', 'testnet'),
     		    address_type=AddressType.RAYONIX
     		)
     		
+    		print("DEBUG: ✅ Wallet created successfully")
+    		
     		self.wallet = wallet
+    		print(f"DEBUG: Wallet assigned to node.wallet: {self.wallet is not None}")
     		
     		# Save wallet to file
     		wallet_file = Path(self.get_config_value('database.db_path', './rayonix_data')) / 'wallet.dat'
+    		print(f"DEBUG: Attempting to save wallet to: {wallet_file}")
+    		
     		if wallet.backup(str(wallet_file)):
-    			logger.info(f"New wallet saved to {wallet_file}")
+    			print("DEBUG: ✅ Wallet saved successfully")
+    		else:
+    			print("DEBUG: ❌ Wallet backup failed")
+    		print("=== DEBUG: _create_wallet_on_demand COMPLETED SUCCESSFULLY ===")
+    			
     		return True
     	
+    	except ImportError as e:
+    		print(f"DEBUG: ❌ IMPORT ERROR: {e}")
+    		print(f"DEBUG: ImportError details: {type(e).__name__}: {e}")
+    		import traceback
+    		traceback.print_exc()
+    		return False
+    	
     	except Exception as e:
-    		logger.error(f"Failed to create wallet: {e}")
+    		print(f"DEBUG: ❌ GENERAL ERROR: {e}")
+    		print(f"DEBUG: Error details: {type(e).__name__}: {e}")
+    		import traceback
+    		traceback.print_exc()
     		return False
 
     async def _initialize_wallet_with_blockchain(self):
