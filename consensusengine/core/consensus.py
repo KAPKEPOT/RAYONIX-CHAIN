@@ -28,9 +28,8 @@ class ProofOfStake:
         if not self.config_manager:
         	self.config_manager = ConfigManager()
         	
-        	self.config = self.config_manager.config
-        	self.network = AdvancedP2PNetwork(config_manager=config_manager)
-        
+        self.config = self.config_manager.config
+        	
         if config_manager:
         	self.network = AdvancedP2PNetwork(config_manager=config_manager)
         
