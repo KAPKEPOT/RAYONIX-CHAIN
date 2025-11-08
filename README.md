@@ -4,56 +4,7 @@
 ‎
 
 
-‎ Features
-
-
-
-
 ‎
-‎Core Blockchain
-‎- Proof-of-Stake Consensus- Energy-efficient validation with slashing mechanisms
-‎- UTXO Model- Bitcoin-like transaction handling with advanced scripting
-‎- Smart Contracts - EVM-compatible virtual machine with Solidity support
-
-
-
-‎
-‎- Merkle Trees- Efficient block verification with compact proofs
-‎- Difficulty Adjustment- Dynamic difficulty based on network conditions
-
-
-
-
-‎
-‎Advanced Wallet System
-‎- Hierarchical Deterministic (HD) - BIP32/39/44 compliant key generation
-‎- Multi-Signature Support - M-of-N transactions with flexible configurations
-‎- Hardware Wallet Integration - Ledger/Trezor support with secure signing
-‎- Address Diversity - P2PKH, P2SH, Bech32, and Ethereum-style addresses
-‎- Military-Grade Encryption - AES-256 with proper key derivation
-
-
-
-
-‎
-‎Network Layer
-‎- P2P Protocol - Decentralized gossip protocol with NAT traversal
-‎- Multiple Transports - TCP, UDP, WebSocket, and HTTP support
-‎- Encrypted Communication - TLS-like encryption for all network messages
-‎- DHT Integration - Distributed hash table for peer discovery
-‎- Sybil Protection - Peer reputation system with blacklisting
-
-
-
-‎
-‎Enterprise Features
-‎- Database Persistence - LevelDB/RocksDB with compression and encryption
-‎- Advanced Indexing - B-Tree, Hash, Bloom Filter, and LSM tree indexes
-‎- Transaction Pool- Smart mempool management with fee optimization
-‎- Block Explorer - Complete blockchain query and analysis tools
-‎- API Server - RESTful JSON-RPC API for external integration
-‎
-
 
 
 
@@ -62,66 +13,29 @@
 
 
 ‎
-‎```bash
+‎BASH
+
 ‎Clone repository
+
+
 ‎git clone https://github.com/RayoniR/RAYONIX-CHAIN.git
-‎cd rayonix-blockchain
+‎
+cd rayonix-blockchain
 
 
 ‎
 ‎Install dependencies
+
+
 ‎pip install -r requirements.txt
 
 
 ‎
 ‎# Initialize blockchain
 ‎python main.py --network testnet --data-dir ./rayonix_data
-‎
-
-
-‎
-‎ Architecture
-
-
-‎
-‎RAYONIX-BLOCKCHAIN/
-‎├── blockchain.py          # Core blockchain implementation
 
 
 
-‎├── consensus.py           # Proof-of-Stake consensus
-
-
-
-‎├── wallet.py              # HD wallet with multi-sig support
-
-
-
-‎├── smart_contract.py      # EVM-compatible virtual machine
-
-
-
-‎├── p2p_network.py         # P2P networking layer
-
-
-
-‎├── database.py            # Persistent storage engine
-
-
-
-‎├── utxo.py               # UTXO model implementation
-
-
-
-‎├── merkle.py             # Merkle tree utilities
-
-
-
-‎├── main.py               # CLI interface & orchestration
-
-
-
-‎└── rayonix_coin.py       # RAYONIX coin implementation
 ‎
 
 
@@ -137,12 +51,14 @@
 
 
 ‎python
+
 ‎from wallet import create_new_wallet
 
 
 
 ‎
 ‎Create HD wallet
+
 ‎wallet, mnemonic, xpub = create_new_wallet()
 ‎print(f"Mnemonic: {mnemonic}")
 ‎print(f"Master xpub: {xpub}")
@@ -180,7 +96,7 @@
 ‎# Send RXY coins
 ‎transaction = rayonix.create_transaction(
 ‎    from_address="rayonix1yourwalletaddress...",
-‎    to_address="rayonix1recipientaddress...",
+‎    to_address="rayonix1recipientaddres...",
 ‎    amount=1000000,  # 1.0 RXY
 ‎    fee=100          # 0.0001 RXY fee
 ‎)
