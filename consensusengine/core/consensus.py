@@ -55,7 +55,7 @@ class ProofOfStake:
         self.epoch_state = EpochState(self.config.consensus.epoch_blocks)
         
         # Manager instances
-        self.db_manager = DatabaseManager(self.config.database.path)
+        self.db_manager = DatabaseManager(self.config.database.db_path)
         self.timeout_manager = TimeoutManager()
         self.crypto_manager = CryptoManager()
         self.staking_manager = StakingManager(self)
@@ -66,7 +66,7 @@ class ProofOfStake:
         self.config_manager = config_manager
         
         # Initialize network with proper config
-        self.network = AdvancedP2PNetwork(config=self.config_manager)
+        #self.network = AdvancedP2PNetwork(config=self.config_manager)
         
         # Block and vote storage
         self.block_proposals: Dict[str, BlockProposal] = {}
