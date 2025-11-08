@@ -425,7 +425,7 @@ async def create_wallet(
             raise HTTPException(status_code=500, detail="Failed to create wallet")
         
         wallet = node.wallet
-        print(f"DEBUG: Wallet ID: {wallet.wallet_id()}")       
+        print(f"DEBUG: Wallet ID: {wallet.wallet_id}")
         print(f"DEBUG: Wallet attributes: {dir(wallet)}")
         
         # Get wallet ID safely
