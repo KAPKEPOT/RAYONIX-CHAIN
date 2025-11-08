@@ -179,10 +179,14 @@ class RayonixNode:
     		wallet_file = Path(self.get_config_value('database.db_path', './rayonix_data')) / 'wallet.dat'
     		print(f"DEBUG: Attempting to save wallet to: {wallet_file}")
     		
-    		if wallet.backup(str(wallet_file)):
-    			print("DEBUG: ✅ Wallet saved successfully")
-    		else:
-    			print("DEBUG: ❌ Wallet backup failed")
+    		try:
+    			if hasattr(wallet, 'backup'):
+    				wallet.backup(str(wallet_file))
+    				print("DEBUG: ✅ Wallet backup attempted")
+    			else:
+    				print("DEBUG: ⚠️  Wallet backup method not available")
+    		except Exception as backup_error:
+    			print(f"DEBUG: ⚠️  Wallet backup failed: {backup_error}")
     		print("=== DEBUG: _create_wallet_on_demand COMPLETED SUCCESSFULLY ===")
     			
     		return True
