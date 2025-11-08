@@ -84,7 +84,7 @@ class AdvancedP2PNetwork:
     
     def _create_ssl_context(self) -> Optional[ssl.SSLContext]:
         """Create SSL context if encryption is enabled"""
-        if not self.config.enable_encryption:
+        if not self.config.network.enable_encryption:
             return None
         
         try:
