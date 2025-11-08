@@ -1,4 +1,4 @@
-# api/rest_routes.py - Production Ready REST API Routes
+# rayonix_node/api/rest_routes.py 
 
 import logging
 import os
@@ -404,7 +404,7 @@ async def create_wallet(
     wallet_data: WalletCreateRequest,
     request: Request,
     background_tasks: BackgroundTasks,
-    auth: bool = Depends(authenticate_request)
+    #auth: bool = Depends(authenticate_request)
 ):
     """Create a new wallet with secure key generation"""
     node = request.app.state.node
