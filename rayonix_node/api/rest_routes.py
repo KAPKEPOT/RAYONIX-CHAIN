@@ -400,19 +400,48 @@ async def get_blocks(
 
 # Wallet Endpoints
 @router.post("/wallet/create", response_model=Dict[str, Any])
-async def create_wallet(wallet_data: WalletCreateRequest, request: Request):
-    """Create a new wallet with secure key generation"""
+async def create_wallet(
+    wallet_data: WalletCreateRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    print("=== DEBUG: REST /wallet/create ENDPOINT CALLED ===")
     node = request.app.state.node
+    
+    print(f"DEBUG: Node wallet exists: {node.wallet is not None}")
+    
     if node.wallet:
-    	raise HTTPException(400, "Wallet already exists")
+        print("DEBUG: ❌ Wallet already exists, returning error")
+        raise HTTPException(status_code=400, detail="Wallet already exists")
     
-    # Use node's wallet creation
-    success = await node._create_wallet_on_demand()
-    if not success or not node.wallet:
-    	raise HTTPException(500, "Failed to create wallet")
-    
-    # Now node.wallet is properly set and persisted
-    wallet = node.wallet
+    try:
+        print("DEBUG: Calling node._create_wallet_on_demand()...")
+        success = await node._create_wallet_on_demand()
+        print(f"DEBUG: _create_wallet_on_demand result: {success}")
+        print(f"DEBUG: Node wallet after creation: {node.wallet is not None}")
+        
+        if not success or not node.wallet:
+            print("DEBUG: ❌ Wallet creation failed")
+            raise HTTPException(status_code=500, detail="Failed to create wallet")
+        
+        wallet = node.wallet
+        print(f"DEBUG: Wallet ID: {wallet.get_wallet_id()}")
+        
+        response = {
+            "wallet_id": wallet.get_wallet_id(),
+            "address": wallet.get_addresses()[0] if wallet.get_addresses() else "NO_ADDRESS",
+            "wallet_type": "hd",
+            "encrypted": False,
+        }
+        
+        print("DEBUG: ✅ Wallet creation response prepared")
+        return response
+        
+    except Exception as e:
+        print(f"DEBUG: ❌ ENDPOINT ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/wallet/load", response_model=Dict[str, Any])
 async def load_wallet(
