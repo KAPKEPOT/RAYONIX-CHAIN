@@ -430,8 +430,10 @@ class ProductionRayonixWallet:
                 	raise CryptoError("Key manager initialization failed")
                 # Generate cryptographically secure seed
                 self.master_key = self.key_manager.master_key
+                if not self.master_key:
+                	raise CryptoError("Failed to get master key from KeyManager")
                 
-                # Derive master key with cryptographic hardening
+                # Generate initial addresses
                 self._generate_addresses_cryptographic()
 
                 # Secure mnemonic storage with cryptographic protection
