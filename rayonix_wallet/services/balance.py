@@ -1,8 +1,9 @@
+#rayonix_wallet/service/balance.py
 from typing import Dict, Optional, Tuple  # Added Tuple import
 from dataclasses import asdict  # Added missing import
 import time  # Added missing import
 import logging  # Added missing import
-from rayonix_wallet.core.types import WalletBalance
+from rayonix_wallet.core.wallet_types import WalletBalance
 from rayonix_wallet.core.exceptions import WalletError
 
 # Add logger initialization

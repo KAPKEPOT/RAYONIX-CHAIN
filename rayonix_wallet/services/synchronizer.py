@@ -1,8 +1,9 @@
+#rayonix_wallet/service/synchronizer.py
 import threading
 import time
 import logging
 from typing import List, Dict, Optional
-from rayonix_wallet.core.types import Transaction, AddressInfo
+from rayonix_wallet.core.wallet_types import Transaction, AddressInfo
 from rayonix_wallet.core.exceptions import SyncError
 from database.core.database import AdvancedDatabase
 

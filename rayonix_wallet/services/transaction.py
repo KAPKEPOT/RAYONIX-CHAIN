@@ -1,6 +1,7 @@
+#rayonix_wallet/service/transaction.py
 import time
 from typing import Dict, List, Optional
-from rayonix_wallet.core.types import Transaction
+from rayonix_wallet.core.wallet_types import Transaction
 from rayonix_wallet.core.exceptions import TransactionError, InsufficientFundsError
 from rayonix_wallet.crypto.signing import TransactionSigner
 
