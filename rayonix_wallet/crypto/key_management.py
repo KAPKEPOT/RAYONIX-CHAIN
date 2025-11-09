@@ -14,7 +14,8 @@ from cryptography.hazmat.primitives import serialization
 from bip32 import BIP32
 from mnemonic import Mnemonic
 
-from rayonix_wallet.core.wallet_types import WalletType, SecureKeyPair, WalletConfig
+from rayonix_wallet.core.wallet_types import WalletType, SecureKeyPair
+from rayonix_wallet.core.config import WalletConfig
 from rayonix_wallet.core.exceptions import CryptoError
 from rayonix_wallet.utils.secure import SecureString
 from rayonix_wallet.utils.logging import logger
