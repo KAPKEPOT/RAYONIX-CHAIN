@@ -532,7 +532,7 @@ class ProductionRayonixWallet:
                 backend=self._crypto_backend
             )
             
-            stretched_seed = PBKDF2HMAC.derive(base_seed)
+            stretched_seed = pbkdf2.derive(base_seed)
             
             # Final HKDF for domain separation
             hkdf = HKDF(
