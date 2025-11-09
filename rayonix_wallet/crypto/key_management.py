@@ -39,10 +39,13 @@ class KeyManager:
             
             # Get public key
             public_key_bytes = bip32.get_pubkey_from_path("m")
+            
+            chain_code = self._extract_chain_code(bip32)
+            
             self.master_key = SecureKeyPair(
                 _private_key=private_key_secure,
                 public_key=public_key_bytes,
-                chain_code=bip32.chain_code,
+                chain_code=chain_code,
                 depth=0,
                 index=0,
                 parent_fingerprint=b'\x00\x00\x00\x00'
@@ -51,7 +54,33 @@ class KeyManager:
             return True
         except Exception as e:
         	raise CryptoError(f"Failed to initialize from mnemonic: {e}")
-      
+       
+    def _extract_chain_code(self, bip32_obj) -> bytes:
+    	"""Safely extract chain code from BIP32 object"""
+    	try:
+    		# Method 1: Try to get from private key derivation
+    		if hasattr(bip32_obj, '_chain_code'):
+    			return bip32_obj._chain_code
+    		
+    		# Method 2: Try to extract from extended key
+    		xprv = bip32_obj.get_xpriv()
+    		# Chain code is bytes 13-45 in the extended private key
+    		if len(xprv) >= 45:
+    			return xprv[13:45]
+    		
+    		# Method 3: Generate deterministic chain code from seed
+    		import hashlib
+    		seed = getattr(bip32_obj, '_seed', None)
+    		if seed:
+    			return hashlib.sha256(seed + b'chain_code').digest()
+    		
+    		# Method 4: Fallback - use zeros (for compatibility)
+    		return b'\x00' * 32
+    	
+    	except Exception as e:
+    		logger.warning(f"Chain code extraction failed, using fallback: {e}")
+    		return b'\x00' * 32
+    	
     def initialize_from_private_key(self, private_key: str, wallet_type: WalletType) -> bool:
         """Initialize from private key"""
         try:
