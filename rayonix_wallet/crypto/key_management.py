@@ -616,6 +616,11 @@ class KeyManager:
                 'bip32_cache_initialized': self._bip32_cache is not None
             }
 
+    def get_master_key(self) -> Optional[SecureKeyPair]:
+    	"""Get the master key (read-only access)"""
+    	with self._lock:
+    		return self.master_key                      
+
     def wipe(self):
         """Securely wipe all keys and sensitive data from memory"""
         with self._lock:
