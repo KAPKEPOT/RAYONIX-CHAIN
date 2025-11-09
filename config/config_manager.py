@@ -6,7 +6,7 @@ import yaml
 import os
 from pathlib import Path
 from enum import Enum
-#from rayonix_wallet.core.wallet_types import WalletType, KeyDerivation, AddressType
+from rayonix_wallet.core.wallet_types import WalletType, KeyDerivation, AddressType
 
 class NetworkType(Enum):
     MAINNET = "mainnet"
