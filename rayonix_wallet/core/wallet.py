@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidKey, InvalidTag
+from cryptography.hazmat.primitives import serialization
 from rayonix_wallet.core.wallet_types import WalletType, SecureKeyPair, Transaction, AddressInfo, WalletBalance, WalletState
 from rayonix_wallet.core.exceptions import WalletError, CryptoError, InvalidAddressError
 from rayonix_wallet.crypto.key_management import KeyManager
@@ -528,7 +529,7 @@ class ProductionRayonixWallet:
                 algorithm=hashes.SHA512(),
                 length=64,
                 salt=self._crypto_context[:16],
-                iterations=100000,  # 100,000 iterations for additional security
+                iterations=100000,
                 backend=self._crypto_backend
             )
             
