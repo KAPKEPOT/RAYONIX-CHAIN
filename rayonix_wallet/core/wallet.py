@@ -649,8 +649,8 @@ class ProductionRayonixWallet:
             
             # Get compressed public key
             public_key_bytes = public_key_obj.public_bytes(
-                encoding=ec.Encoding.X962,
-                format=ec.PublicFormat.CompressedPoint
+                encoding=serialization.Encoding.X962,  
+                format=serialization.PublicFormat.CompressedPoint
             )
             
             # Validate public key cryptographically
