@@ -72,7 +72,7 @@ class RayonixNode:
             # Initialize config if not provided via dependencies
             if not self.config_manager:
                 from config.config_manager import ConfigManager
-                self.config_manager = init_config(config_path, encryption_key, auto_reload=True)
+                self.config_manager = ConfigManager(config_path, encryption_key, auto_reload=True)
             
             # Initialize rayonix_chain if not provided via dependencies
             if not self.rayonix_chain:
