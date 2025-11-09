@@ -160,7 +160,7 @@ class RayonixNode:
     		print("DEBUG: ✅ WalletFactory imported successfully")  	
     			
     		print("DEBUG: Step 3 - Attempting to import WalletType and AddressType...")
-    		from rayonix_wallet.core.types import WalletType, AddressType
+    		from rayonix_wallet.core.wallet_types import WalletType, AddressType
     		print("DEBUG: ✅ WalletType and AddressType imported successfully")
     		
     		print("DEBUG: Step 4 - Creating wallet with factory...")    		
