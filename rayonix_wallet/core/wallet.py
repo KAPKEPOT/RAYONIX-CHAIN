@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidKey, InvalidTag
 
-from config.config_manager import ConfigManager
+#from config.config_manager import ConfigManager
 from rayonix_wallet.core.wallet_types import WalletType, SecureKeyPair, Transaction, AddressInfo, WalletBalance, WalletState
 from rayonix_wallet.core.exceptions import WalletError, CryptoError, InvalidAddressError
 from rayonix_wallet.crypto.key_management import KeyManager
