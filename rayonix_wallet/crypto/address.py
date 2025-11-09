@@ -12,7 +12,7 @@ from rayonix_wallet.core.exceptions import CryptoError, InvalidAddressError
 from rayonix_wallet.crypto.rayonix_address import RayonixAddressEngine, AddressType as RayonixAddressType, AddressVersion
 from rayonix_wallet.crypto.base32_encoding import Base32Crockford
 
-class AddressDerivation:
+class ProductionAddressDerivation:
     def __init__(self, config):
         self.config = config
         self.backend = default_backend()
@@ -385,7 +385,7 @@ class AddressDerivation(ProductionAddressDerivation):
     def _derive_p2pkh_address(self, public_key: bytes) -> str:
         """Legacy P2PKH using production methods"""
         # For compatibility, derive using standard type
-        from rayonix_wallet.core.types import AddressType
+        from rayonix_wallet.core.wallet_types import AddressType
         original_type = self.config.address_type
         self.config.address_type = AddressType.P2PKH
         
@@ -397,7 +397,7 @@ class AddressDerivation(ProductionAddressDerivation):
     
     def _derive_p2wpkh_address(self, public_key: bytes) -> str:
         """Legacy P2WPKH using production methods"""
-        from rayonix_wallet.core.types import AddressType
+        from rayonix_wallet.core.wallet_types import AddressType
         original_type = self.config.address_type
         self.config.address_type = AddressType.P2WPKH
         
@@ -409,7 +409,7 @@ class AddressDerivation(ProductionAddressDerivation):
     
     def _derive_bech32_address(self, public_key: bytes) -> str:
         """Legacy Bech32 using production methods"""
-        from rayonix_wallet.core.types import AddressType
+        from rayonix_wallet.core.wallet_types import AddressType
         original_type = self.config.address_type
         self.config.address_type = AddressType.BECH32
         
@@ -421,15 +421,15 @@ class AddressDerivation(ProductionAddressDerivation):
     
     def _validate_rayonix_address(self, address: str, network: str) -> bool:
         """Legacy validation using production implementation"""
-        from rayonix_wallet.core.types import AddressType
+        from rayonix_wallet.core.wallet_types import AddressType
         return self.validate_address(address, AddressType.RAYONIX, network)
     
     def _validate_p2pkh_address(self, address: str, network: str) -> bool:
         """Legacy P2PKH validation"""
-        from rayonix_wallet.core.types import AddressType
+        from rayonix_wallet.core.wallet_types import AddressType
         return self.validate_address(address, AddressType.P2PKH, network)
     
     def _validate_bech32_address(self, address: str, network: str) -> bool:
         """Legacy Bech32 validation"""
-        from rayonix_wallet.core.types import AddressType
+        from rayonix_wallet.core.wallet_types import AddressType
         return self.validate_address(address, AddressType.BECH32, network)
