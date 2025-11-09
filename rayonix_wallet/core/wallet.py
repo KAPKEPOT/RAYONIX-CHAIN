@@ -1,3 +1,4 @@
+#rayonix_wallet/core/wallet.py
 import threading
 import time
 import gc
@@ -35,7 +36,7 @@ from rayonix_wallet.utils.logging import logger
 from rayonix_wallet.core.config import WalletConfig
 from rayonix_wallet.utils.secure import SecureString
 
-class RayonixWallet:
+class ProductionRayonixWallet:
     
     def __init__(self, config: Optional[WalletConfig] = None, wallet_id: Optional[str] = None):
         self.config = config or WalletConfig()
