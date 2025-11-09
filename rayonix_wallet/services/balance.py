@@ -1,8 +1,8 @@
 #rayonix_wallet/service/balance.py
-from typing import Dict, Optional, Tuple  # Added Tuple import
-from dataclasses import asdict  # Added missing import
-import time  # Added missing import
-import logging  # Added missing import
+from typing import Dict, Optional, Tuple  
+from dataclasses import asdict  
+import time  
+import logging  
 from rayonix_wallet.core.wallet_types import WalletBalance
 from rayonix_wallet.core.exceptions import WalletError
 
@@ -16,37 +16,45 @@ class BalanceCalculator:
         self.wallet = wallet
         self._cache = {}
         self._cache_timeout = 300  # 5 minutes
+        
+        # Initialize with None, will be set by blockchain
+        self.rayonix_chain = None
+        self.addresses = getattr(wallet, 'addresses', {})
+        self.transactions = getattr(wallet, 'transactions', {})
+        
         # Initialize missing attributes
         self._balance_cache = None
         self._last_balance_update = None
-        self._balance_lock = None  # Should be initialized properly
-        self.rayonix_chain = None  # Should be set by parent class
-        self.addresses = {}
-        self.transactions = {}
+        self._balance_lock = threading.RLock()
+        #self.rayonix_chain = None  # Should be set by parent class
+        #self.addresses = {}
+        #self.transactions = {}
     
     def get_balance(self, force_refresh: bool = False) -> WalletBalance:
-        if not self.rayonix_chain:
-            return self._get_offline_balance()
-            
-        # Initialize lock if not exists
-        if self._balance_lock is None:
-            import threading
-            self._balance_lock = threading.RLock()
-            
-        with self._balance_lock:
-            try:
-                if force_refresh or self._should_refresh_balance():
-                    return self._calculate_comprehensive_balance()
-                else:
-                    cached = self._get_cached_balance()
-                    if cached:
-                        return cached
-                    return self._calculate_comprehensive_balance()
-                    
-            except Exception as e:
-                logger.error(f"Balance calculation failed: {e}")
-                return self._handle_balance_calculation_error(e)		
-                    
+        """get_balance with better error handling"""
+        try:
+        	# Check if we have blockchain connection
+        	if not self.rayonix_chain:
+        		logger.warning("No blockchain connection available, using offline mode")
+        		return self._get_offline_balance()
+        	
+        	# Proceed with normal balance calculation
+        	if not self._balance_lock:
+        		import threading
+        		self._balance_lock = threading.RLock()
+        	
+        	with self._balance_lock:
+        		if force_refresh or self._should_refresh_balance():
+        			return self._calculate_comprehensive_balance()
+        		else:
+        			cached = self._get_cached_balance()
+        			return cached if cached else self._calculate_comprehensive_balance()
+        			
+        except Exception as e:
+        	logger.error(f"Balance calculation failed: {e}")
+        	# Fallback to offline mode
+        	return self._get_offline_balance()
+        	
     def _get_offline_balance(self) -> WalletBalance:
         try:
             # Try to get the most recent cached balance first
