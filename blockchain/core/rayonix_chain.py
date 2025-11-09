@@ -513,12 +513,39 @@ class RayonixBlockchain:
             # Create new wallet - network comes from config
             mnemonic = wallet.initialize_new_wallet()
             
+            # CRITICAL: Connect wallet components to blockchain
+            self._connect_wallet_to_blockchain(wallet)
+            
             logger.info(f"Wallet initialized for network: {wallet_config.network}")
             return wallet
         except Exception as e:
         	logger.error(f"Wallet initialization failed: {e}")
         	raise
         	
+    
+    def _connect_wallet_to_blockchain(self, wallet: RayonixWallet):
+    	"""Connect wallet components to blockchain instance"""
+    	try:
+    		# Connect balance calculator to blockchain
+    		if hasattr(wallet, 'balance_calculator') and wallet.balance_calculator:
+    			wallet.balance_calculator.rayonix_chain = self
+    			logger.info("Connected balance calculator to blockchain")
+    		
+    		# Connect transaction manager to blockchain components
+    		if hasattr(wallet, 'transaction_manager') and wallet.transaction_manager:
+    			# The transaction manager might need state_manager reference
+    			if hasattr(self, 'state_manager'):
+    				wallet.transaction_manager.state_manager = self.state_manager
+    			
+    			logger.info("Connected transaction manager to blockchain")
+    			
+    		# Set wallet reference in components that need it
+    		if hasattr(wallet, 'synchronizer') and wallet.synchronizer:
+    			wallet.synchronizer.rayonix_chain = self
+    	
+    	except Exception as e:
+    		logger.error(f"Failed to connect wallet to blockchain: {e}")
+    	
     def _initialize_state_manager(self):
     	"""Initialize state manager with safe database wrapper"""
     	try:
@@ -1563,13 +1590,25 @@ class RayonixBlockchain:
         except Exception as e:
             logger.error(f"Failed to get block: {e}")
             return None
-
+           
+    def verify_wallet_connection(self) -> bool:
+    	"""Verify that wallet is properly connected to blockchain"""
+    	if not hasattr(self, 'wallet') or not self.wallet:
+    		logger.error("No wallet instance found")
+    		return False
+    	
+    	# Check balance calculator connection	
+    	if (hasattr(self.wallet, 'balance_calculator') and hasattr(self.wallet.balance_calculator, 'rayonix_chain')):
+    		return self.wallet.balance_calculator.rayonix_chain is self
+    	return False
+    		
     def send_transaction(self, from_address: str, to_address: str, amount: int,
                        fee_strategy: str = 'medium', **kwargs) -> Any:
         """Send a transaction"""
         return self.transaction_manager.create_transaction(
             from_address, to_address, amount, fee_strategy, **kwargs
         )
+        
 
     def get_blockchain_info(self) -> Dict[str, Any]:
         """Get comprehensive blockchain information"""
