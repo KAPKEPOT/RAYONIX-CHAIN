@@ -305,8 +305,14 @@ class WalletConfig:
         self._validate_enums_strict()
         
         # Set coin_type based on network
-        if not hasattr(self, 'coin_type') or self.coin_type is None:
-            self.coin_type = "1180" if self.network == "mainnet" else "1"
+        if self.coin_type is None:
+        	net = str(self.network).lower()
+        	if net == "mainnet":
+        		self.coin_type = 1180
+        	elif net == "testnet":
+        		self.coin_type = 1
+        	else:
+        		raise ValueError(f"Unknown network '{self.network}'")
     
     def _validate_enums_strict(self):
         """Strict enum validation - no conversions allowed"""
