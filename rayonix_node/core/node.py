@@ -166,13 +166,14 @@ class RayonixNode:
     		print("DEBUG: Step 4 - Creating wallet with factory...")    		
     		wallet, mnemonic = WalletFactory.create_new_wallet(
     		    wallet_type=WalletType.HD,
-    		    network=self.config_manager.get('network.network_type', 'testnet'),
+    		    config_manager=self.config_manager,
     		    address_type=AddressType.RAYONIX
     		)
     		
     		print("DEBUG: ✅ Wallet created successfully")
     		
     		self.wallet = wallet
+    		current_network = self.config_manager.config.network.network_type
     		print(f"DEBUG: Wallet assigned to node.wallet: {self.wallet is not None}")
     		
     		# Save wallet to file
