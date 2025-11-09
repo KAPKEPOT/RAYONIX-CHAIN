@@ -1,3 +1,4 @@
+#rayonix_wallet/crypto/address.py
 import hashlib
 import base58
 import bech32
@@ -121,10 +122,7 @@ class ProductionAddressDerivation:
         change_index = 1 if is_change else 0
         
         # BIP44 standard path with RAYONIX coin type
-        if self.config.network == "mainnet":
-            coin_type = "1180"  # RAYONIX mainnet coin type
-        else:
-            coin_type = "1"  # Testnet
+        coin_type = self.config.coin_type
         
         return f"m/44'/{coin_type}'/{self.config.account_index}'/{change_index}/{index}"
     
