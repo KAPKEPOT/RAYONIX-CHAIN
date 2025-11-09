@@ -166,8 +166,8 @@ class RayonixNode:
     		print("DEBUG: Step 4 - Creating wallet with factory...")    		
     		wallet, mnemonic = WalletFactory.create_new_wallet(
     		    wallet_type=WalletType.HD,
-    		    config_manager=self.config_manager,
-    		    address_type=AddressType.RAYONIX
+    		    address_type=AddressType.RAYONIX,
+    		    config_manager=self.config_manager
     		)
     		
     		print("DEBUG: ✅ Wallet created successfully")
