@@ -277,6 +277,47 @@ class ConnectionManagerConfig:
     connection_timeout: int = 30
     max_connection_age: int = 3600
     cleanup_interval: int = 60
+    
+@dataclass
+class WalletConfig:
+    """Wallet configuration"""
+    wallet_type: WalletType = WalletType.HD
+    key_derivation: KeyDerivation = KeyDerivation.BIP44
+    address_type: AddressType = AddressType.RAYONIX
+    encryption: bool = True
+    compression: bool = True
+    passphrase: Optional[str] = None
+    network: str = "mainnet"  # ADD THIS FIELD - it was missing!
+    account_index: int = 0
+    change_index: int = 0
+    gap_limit: int = 20
+    auto_backup: bool = True
+    backup_interval: int = 86400
+    price_alerts: bool = False
+    transaction_fees: Dict[str, int] = field(default_factory=lambda: {
+        "low": 1, "medium": 2, "high": 5
+    })
+    db_path: str = "wallet.db"
+    sync_interval: int = 300
+    
+    def __post_init__(self):
+        """Initialize with strict enum validation"""
+        self._validate_enums_strict()
+        
+        # Set coin_type based on network
+        if not hasattr(self, 'coin_type') or self.coin_type is None:
+            self.coin_type = "1180" if self.network == "mainnet" else "1"
+    
+    def _validate_enums_strict(self):
+        """Strict enum validation - no conversions allowed"""
+        if not isinstance(self.wallet_type, WalletType):
+            raise ValueError(f"wallet_type must be WalletType enum, got {type(self.wallet_type)}")
+            
+        if not isinstance(self.address_type, AddressType):
+            raise ValueError(f"address_type must be AddressType enum, got {type(self.address_type)}")
+            
+        if not isinstance(self.key_derivation, KeyDerivation):
+            raise ValueError(f"key_derivation must be KeyDerivation enum, got {type(self.key_derivation)}")   
 
 @dataclass
 class Config:
@@ -291,28 +332,8 @@ class Config:
     peer_discovery: PeerDiscoveryConfig = field(default_factory=PeerDiscoveryConfig)
     message_handler: MessageHandlerConfig = field(default_factory=MessageHandlerConfig)
     connection_manager: ConnectionManagerConfig = field(default_factory=ConnectionManagerConfig)
+    wallet: WalletConfig = field(default_factory=WalletConfig)
     
-@dataclass
-class WalletConfig:
-    """Wallet configuration"""
-    wallet_type: WalletType = WalletType.HD
-    key_derivation: KeyDerivation = KeyDerivation.BIP44
-    address_type: AddressType = AddressType.RAYONIX
-    encryption: bool = True
-    compression: bool = True
-    passphrase: Optional[str] = None
-    #network: str = "mainnet"
-    account_index: int = 0
-    change_index: int = 0
-    gap_limit: int = 20
-    auto_backup: bool = True
-    backup_interval: int = 86400
-    price_alerts: bool = False
-    transaction_fees: Dict[str, int] = field(default_factory=lambda: {
-        "low": 1, "medium": 2, "high": 5
-    })
-    db_path: str = "wallet.db"
-    sync_interval: int = 300    
 
 class ConfigManager:
     def __init__(self, config_path: Optional[str] = None, 
@@ -324,6 +345,7 @@ class ConfigManager:
         
         self._load_config()
         self._sync_network_ports()  # Ensure API ports match network ports
+        self._sync_wallet_network()  # Sync wallet network with node network
         
     def _load_config(self):
         """Load configuration from file"""
@@ -345,12 +367,16 @@ class ConfigManager:
         """Ensure API ports match network ports"""
         self.config.api.port = self.config.network.http_port
         self.config.api.websocket_port = self.config.network.websocket_port
+        
+    def _sync_wallet_network(self):
+        """Sync wallet network with node network"""
+        self.config.wallet.network = self.config.network.network_type
 
     def _update_config_from_dict(self, config_data: Dict[str, Any]):
         """Update config from dictionary"""
         sections = [
             'network', 'database', 'api', 'consensus', 'gas', 'logging',
-            'security', 'peer_discovery', 'message_handler', 'connection_manager'
+            'security', 'peer_discovery', 'message_handler', 'connection_manager', 'wallet'
         ]
         
         for section in sections:
@@ -362,6 +388,7 @@ class ConfigManager:
         
         # Re-sync ports after loading config
         self._sync_network_ports()
+        self._sync_wallet_network()
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value using dot notation"""
@@ -387,6 +414,7 @@ class ConfigManager:
         self.config.network.network_type = network_type
         self.config.network.apply_network_preset(network_type)
         self._sync_network_ports()
+        self.config.wallet.network = network_type
         
         logger.info(f"Switched to {network_type} network")
         return True
@@ -394,6 +422,10 @@ class ConfigManager:
     def get_network_preset(self) -> NetworkPreset:
         """Get current network preset"""
         return NETWORK_PRESETS[self.config.network.network_type]
+        
+    def get_wallet_config(self) -> WalletConfig:
+        """Get wallet configuration synchronized with node network"""
+        return self.config.wallet
 
     def get_all(self) -> Dict[str, Any]:
         """Get all configuration as dictionary"""
