@@ -11,7 +11,7 @@ from datetime import datetime
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidKey, InvalidTag
@@ -32,7 +32,7 @@ from rayonix_wallet.utils.validation import validate_address_format
 from rayonix_wallet.utils.qr_code import generate_qr_code
 from rayonix_wallet.interfaces.blockchain import BlockchainInterface
 from rayonix_wallet.utils.logging import logger
-#from config.config_manager import ConfigManager
+from config.config_manager import ConfigManager
 from rayonix_wallet.utils.secure import SecureString
 
 class RayonixWallet:
@@ -530,7 +530,7 @@ class RayonixWallet:
                 backend=self._crypto_backend
             )
             
-            stretched_seed = pbkdf2.derive(base_seed)
+            stretched_seed = PBKDF2HMAC.derive(base_seed)
             
             # Final HKDF for domain separation
             hkdf = HKDF(
