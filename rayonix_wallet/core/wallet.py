@@ -16,8 +16,6 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidKey, InvalidTag
-
-#from config.config_manager import ConfigManager
 from rayonix_wallet.core.wallet_types import WalletType, SecureKeyPair, Transaction, AddressInfo, WalletBalance, WalletState
 from rayonix_wallet.core.exceptions import WalletError, CryptoError, InvalidAddressError
 from rayonix_wallet.crypto.key_management import KeyManager
@@ -40,6 +38,9 @@ class ProductionRayonixWallet:
     
     def __init__(self, config: Optional[WalletConfig] = None, wallet_id: Optional[str] = None):
         self.config = config or WalletConfig()
+        
+        # INITIALIZE CRYPTO BACKEND FIRST
+        self._crypto_backend = default_backend()
         self.wallet_id = wallet_id or self._generate_cryptographic_wallet_id()
         
         # Initialize production-grade components
@@ -74,7 +75,7 @@ class ProductionRayonixWallet:
         self._aes_gcm_key: Optional[bytes] = None
         
         # Cryptographic context
-        self._crypto_context = self._initialize_cryptographic_context()
+        #self._crypto_context = self._initialize_cryptographic_context()
         
         # Load wallet state with comprehensive validation
         self._load_wallet_state_with_cryptographic_validation()
