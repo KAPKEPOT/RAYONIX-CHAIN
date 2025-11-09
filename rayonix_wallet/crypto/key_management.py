@@ -4,7 +4,8 @@ import hashlib
 import secrets
 import struct
 import threading
-from typing import Optional, Tuple, Dict, Any
+import time
+from typing import Optional, Tuple, Dict, Any, List
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -14,8 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from bip32 import BIP32
 from mnemonic import Mnemonic
 
-from rayonix_wallet.core.wallet_types import WalletType, SecureKeyPair
-from rayonix_wallet.core.config import WalletConfig
+from rayonix_wallet.core.wallet_types import WalletType, SecureKeyPair, WalletConfig
 from rayonix_wallet.core.exceptions import CryptoError
 from rayonix_wallet.utils.secure import SecureString
 from rayonix_wallet.utils.logging import logger
@@ -69,8 +69,8 @@ class KeyManager:
                 # Generate cryptographically secure seed
                 seed = self._mnemonic_to_secure_seed(mnemonic_phrase, passphrase)
                 
-                # Derive master key
-                master_key = self._derive_master_key_from_seed(seed)
+                # Derive master key using consolidated method
+                master_key = self.derive_master_key_from_seed(seed)
                 
                 # Validate key pair cryptographically
                 if not self._validate_key_pair_cryptographic(master_key):
@@ -116,6 +116,59 @@ class KeyManager:
                 logger.error(f"Private key initialization failed: {e}")
                 self._secure_cleanup()
                 raise CryptoError(f"Failed to initialize from private key: {e}")
+
+    def derive_master_key_from_seed(self, seed: bytes) -> SecureKeyPair:
+        """Derive master key from seed with comprehensive cryptographic validation"""
+        with self._lock:
+            try:
+                bip32 = BIP32.from_seed(seed)
+                
+                # Extract private key with multiple fallback methods
+                private_key_bytes = self._extract_private_key_robust(bip32)
+                
+                # Validate private key cryptographically
+                if not self._validate_private_key_cryptographic(private_key_bytes):
+                    raise CryptoError("Private key cryptographic validation failed")
+                
+                # Derive public key
+                public_key_bytes = self._derive_public_key_cryptographic(private_key_bytes)
+                
+                # Extract chain code with enhanced robust extraction
+                chain_code = self._extract_chain_code_robust(bip32)
+                
+                # Create secure key pair
+                private_key_secure = SecureString(private_key_bytes)
+                
+                master_key = SecureKeyPair(
+                    _private_key=private_key_secure,
+                    public_key=public_key_bytes,
+                    chain_code=chain_code,
+                    depth=0,
+                    index=0,
+                    parent_fingerprint=b'\x00\x00\x00\x00'
+                )
+                
+                # Validate the complete key pair
+                if not self._validate_key_pair_cryptographic(master_key):
+                    raise CryptoError("Cryptographic key pair validation failed")
+                
+                return master_key
+                
+            except Exception as e:
+                raise CryptoError(f"Master key derivation failed: {e}")
+
+    def derive_master_key_from_mnemonic(self, mnemonic: str, passphrase: str = "") -> SecureKeyPair:
+        """Derive master key directly from mnemonic"""
+        with self._lock:
+            try:
+                if not self._validate_mnemonic_cryptographic(mnemonic):
+                    raise CryptoError("Mnemonic validation failed")
+                
+                seed = self._mnemonic_to_secure_seed(mnemonic, passphrase)
+                return self.derive_master_key_from_seed(seed)
+                
+            except Exception as e:
+                raise CryptoError(f"Master key derivation from mnemonic failed: {e}")
 
     def _validate_mnemonic_cryptographic(self, mnemonic: str) -> bool:
         """Cryptographic mnemonic validation with entropy analysis"""
@@ -200,41 +253,6 @@ class KeyManager:
         except Exception as e:
             raise CryptoError(f"Secure seed generation failed: {e}")
 
-    def _derive_master_key_from_seed(self, seed: bytes) -> SecureKeyPair:
-        """Derive master key with comprehensive cryptographic validation"""
-        try:
-            bip32 = BIP32.from_seed(seed)
-            
-            # Extract private key with multiple fallback methods
-            private_key_bytes = self._extract_private_key_robust(bip32)
-            
-            # Validate private key cryptographically
-            if not self._validate_private_key_cryptographic(private_key_bytes):
-                raise CryptoError("Private key cryptographic validation failed")
-            
-            # Derive public key
-            public_key_bytes = self._derive_public_key_cryptographic(private_key_bytes)
-            
-            # Extract chain code
-            chain_code = self._extract_chain_code_robust(bip32)
-            
-            # Create secure key pair
-            private_key_secure = SecureString(private_key_bytes)
-            
-            master_key = SecureKeyPair(
-                _private_key=private_key_secure,
-                public_key=public_key_bytes,
-                chain_code=chain_code,
-                depth=0,
-                index=0,
-                parent_fingerprint=b'\x00\x00\x00\x00'
-            )
-            
-            return master_key
-            
-        except Exception as e:
-            raise CryptoError(f"Master key derivation failed: {e}")
-
     def _extract_private_key_robust(self, bip32_obj) -> bytes:
         """Robust private key extraction with multiple fallback methods"""
         extraction_methods = [
@@ -272,14 +290,18 @@ class KeyManager:
             raise CryptoError(f"Extended key parsing failed: {e}")
 
     def _extract_chain_code_robust(self, bip32_obj) -> bytes:
-        """Robust chain code extraction with validation"""
+        """Enhanced robust chain code extraction with validation"""
         extraction_methods = [
-            lambda: getattr(bip32_obj, '_chain_code', None),
-            lambda: getattr(bip32_obj, 'chain_code', None),
+            # Primary method: parse from extended key
             lambda: self._parse_chain_code_from_extended(bip32_obj),
+            # Fallback: generate deterministic chain code from private key
             lambda: self._generate_deterministic_chain_code(
                 self._extract_private_key_robust(bip32_obj)
-            )
+            ),
+            # Library-specific attributes for different BIP32 implementations
+            lambda: getattr(bip32_obj, '_c', None),
+            lambda: getattr(bip32_obj, 'chaincode', None),
+            lambda: getattr(bip32_obj, '_chaincode', None),
         ]
         
         for method in extraction_methods:
@@ -290,17 +312,36 @@ class KeyManager:
             except Exception:
                 continue
         
-        # Final fallback
+        # Final fallback - generate secure random chain code
+        logger.warning("Using fallback random chain code generation")
         return secrets.token_bytes(32)
 
     def _parse_chain_code_from_extended(self, bip32_obj) -> bytes:
-        """Parse chain code from extended key format"""
+        """Parse chain code from extended key format with multiple approaches"""
         try:
+            # Method 1: Get extended private key and parse
             xprv = bip32_obj.get_xpriv()
             if len(xprv) >= 78:
                 # Chain code is typically at bytes 13-45 in extended format
-                return xprv[13:45]
-            raise CryptoError("Extended key too short")
+                chain_code = xprv[13:45]
+                if len(chain_code) == 32:
+                    return chain_code
+            
+            # Method 2: Try extended public key as fallback
+            xpub = bip32_obj.get_xpub()
+            if len(xpub) >= 78:
+                chain_code = xpub[13:45]
+                if len(chain_code) == 32:
+                    return chain_code
+                    
+            # Method 3: Try library-specific methods
+            if hasattr(bip32_obj, 'get_chain_code'):
+                chain_code = bip32_obj.get_chain_code()
+                if chain_code and len(chain_code) == 32:
+                    return chain_code
+                
+            raise CryptoError("Cannot extract chain code from extended keys")
+            
         except Exception as e:
             raise CryptoError(f"Chain code extraction failed: {e}")
 
@@ -545,6 +586,22 @@ class KeyManager:
             if not self.master_key:
                 raise CryptoError("Master key not available")
             return self.master_key.public_key
+
+    def get_master_key_info(self) -> Dict[str, Any]:
+        """Get comprehensive master key information"""
+        with self._lock:
+            if not self.master_key:
+                return {'has_master_key': False}
+            
+            return {
+                'has_master_key': True,
+                'public_key_hex': self.master_key.public_key.hex(),
+                'chain_code_hex': self.master_key.chain_code.hex() if self.master_key.chain_code else None,
+                'depth': self.master_key.depth,
+                'index': self.master_key.index,
+                'parent_fingerprint': self.master_key.parent_fingerprint.hex(),
+                'wallet_type': self.config.wallet_type.value if self.config.wallet_type else None,
+            }
 
     def get_key_info(self) -> Dict[str, Any]:
         """Get key management information for debugging"""
