@@ -15,7 +15,7 @@ from rayonix_node.tasks.staking_task import StakingTask
 from rayonix_node.tasks.mempool_task import MempoolTask
 from rayonix_node.tasks.peer_monitor import PeerMonitor
 from rayonix_node.network.sync_manager import SyncManager
-from rayonix_wallet.core.types import WalletType, AddressType
+from rayonix_wallet.core.wallet_types import WalletType, AddressType
 
 logger = logging.getLogger("rayonix_node.core")
 
