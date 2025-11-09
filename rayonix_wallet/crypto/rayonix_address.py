@@ -55,11 +55,7 @@ class AddressComponents:
     def is_testnet(self) -> bool:
         return self.prefix == "ryxt"
 
-class RayonixAddressEngine:
-    """
-    Production-grade RAYONIX address engine with complete cryptographic implementation
-    """
-    
+class RayonixAddressEngine:   
     # Cryptographic constants
     HASH_ALGORITHM = hashes.SHA256()
     RIPEMD160_DIGEST_SIZE = 20

@@ -1,3 +1,4 @@
+# rayonix_wallet/crypto/base32_encoding.py
 import struct
 import secrets
 from typing import Tuple, Optional, List

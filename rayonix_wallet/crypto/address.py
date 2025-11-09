@@ -7,14 +7,12 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.backends import default_backend
 
-from rayonix_wallet.core.types import AddressType
+from rayonix_wallet.core.wallet_types import AddressType
 from rayonix_wallet.core.exceptions import CryptoError, InvalidAddressError
 from rayonix_wallet.crypto.rayonix_address import RayonixAddressEngine, AddressType as RayonixAddressType, AddressVersion
 from rayonix_wallet.crypto.base32_encoding import Base32Crockford
 
-class ProductionAddressDerivation:
-    """Production-grade address derivation with complete cryptographic stack"""
-    
+class AddressDerivation:
     def __init__(self, config):
         self.config = config
         self.backend = default_backend()
