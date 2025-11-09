@@ -75,7 +75,7 @@ class ProductionRayonixWallet:
         self._aes_gcm_key: Optional[bytes] = None
         
         # Cryptographic context
-        #self._crypto_context = self._initialize_cryptographic_context()
+        self._crypto_context = self._initialize_cryptographic_context()
         
         # Load wallet state with comprehensive validation
         self._load_wallet_state_with_cryptographic_validation()
