@@ -425,21 +425,15 @@ class ProductionRayonixWallet:
                 # Comprehensive mnemonic cryptographic validation
                 if not self._validate_mnemonic_cryptographic(mnemonic_phrase):
                     raise CryptoError("Mnemonic validation failed")
+                    
                 if not self.key_manager.initialize_from_mnemonic(mnemonic_phrase, passphrase):
                 	raise CryptoError("Key manager initialization failed")
                 # Generate cryptographically secure seed
-                seed = self._generate_cryptographic_seed(mnemonic_phrase, passphrase)
+                self.master_key = self.key_manager.master_key
                 
                 # Derive master key with cryptographic hardening
-                master_key = self._derive_master_key_cryptographic(seed)
-                
-                # Initialize key manager with cryptographic parameters
-                if not self.key_manager.initialize_from_master_key(master_key, self.config):
-                    raise CryptoError("Cryptographic key manager initialization failed")
-                
-                # Generate  addresses
                 self._generate_addresses_cryptographic()
-                
+
                 # Secure mnemonic storage with cryptographic protection
                 self._store_mnemonic_cryptographic(mnemonic_phrase, passphrase)
                 
