@@ -501,33 +501,23 @@ class RayonixBlockchain:
             wallet_dir.mkdir(parents=True, exist_ok=True)
             
             wallet_config = WalletConfig(
-                network=self.network_type,          
-                encryption=True,
-                auto_backup=True,
-                db_path=str(self.data_dir / "wallet" / "wallet.db"),
-                address_type='rayonix',  # or appropriate default
-                gap_limit=20,
-                account_index=0
+                network=self.network_type,
+                wallet_type=WalletType.HD,         
+                #network=self.network,
+                address_type=AddressType.RAYONIX,
+                db_path=self._get_wallet_db_path()
             )    
-            wallet = RayonixWallet(wallet_config)
+            wallet = RayonixWallet(config=wallet_config)
             
-            # Initialize wallet if not exists
-            if not wallet.is_initialized():
-                logger.info("Initializing new wallet...")
-                mnemonic = wallet.initialize_new_wallet()
-                logger.info(f"New wallet created with mnemonic (first 10 chars): {mnemonic[:10]}...")
+            # Create new wallet - network comes from config
+            mnemonic = wallet.initialize_new_wallet()
             
-            # Generate initial addresses
-            for i in range(5):
-                wallet.derive_address(i)
-            
-            logger.info(f"Wallet initialized with {len(wallet.addresses)} addresses")
+            logger.info(f"Wallet initialized for network: {wallet_config.network}")
             return wallet
-            
         except Exception as e:
-            logger.error(f"Wallet initialization failed: {e}")
-            raise
-            
+        	logger.error(f"Wallet initialization failed: {e}")
+        	raise
+        	
     def _initialize_state_manager(self):
     	"""Initialize state manager with safe database wrapper"""
     	try:
