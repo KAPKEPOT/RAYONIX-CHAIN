@@ -287,7 +287,8 @@ class WalletConfig:
     encryption: bool = True
     compression: bool = True
     passphrase: Optional[str] = None
-    network: str = "mainnet"  # ADD THIS FIELD - it was missing!
+    network: str = "mainnet"
+    coin_type: int = field(default=None)
     account_index: int = 0
     change_index: int = 0
     gap_limit: int = 20
@@ -306,13 +307,17 @@ class WalletConfig:
         
         # Set coin_type based on network
         if self.coin_type is None:
-        	net = str(self.network).lower()
-        	if net == "mainnet":
-        		self.coin_type = 1180
-        	elif net == "testnet":
-        		self.coin_type = 1
-        	else:
-        		raise ValueError(f"Unknown network '{self.network}'")
+            net = str(self.network).lower()
+            if net == "mainnet":
+                self.coin_type = 1180
+            elif net == "testnet":
+                self.coin_type = 1
+            elif net == "devnet":
+                self.coin_type = 1  # Use testnet coin type for devnet
+            elif net == "regtest":
+                self.coin_type = 1  # Use testnet coin type for regtest
+            else:
+                raise ValueError(f"Unknown network '{self.network}'")
     
     def _validate_enums_strict(self):
         """Strict enum validation - no conversions allowed"""
