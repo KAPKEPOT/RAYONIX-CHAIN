@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-RAYONIX Blockchain Daemon - Production Ready
-Pure background service with enterprise-grade features
-"""
-
 import argparse
 import asyncio
 import signal
@@ -418,8 +413,12 @@ class RayonixDaemon:
     		
     	# Set production timeouts
     	if self.node.config_manager:
-    		self.node.config_manager.set('api.timeout', 30)
-    		self.node.config_manager.set('network.connection_timeout', 60)
+    		# Access the config objects directly instead of using non-existent 'set' method
+    		if hasattr(self.node.config_manager.config.api, 'timeout'):
+    			self.node.config_manager.config.api.timeout = 30
+    		
+    		if hasattr(self.node.config_manager.config.network, 'connection_timeout'):
+    			self.node.config_manager.config.network.connection_timeout = 60
     		
     async def _validate_components(self) -> bool:
     	components = [
@@ -441,23 +440,32 @@ class RayonixDaemon:
   
     async def _apply_config_overrides(self):
         """Apply command line configuration overrides"""
+        if not self.node.config_manager:
+        	return
+        
+        config = self.node.config_manager.config
+        
         if self.config.network:
-            self.node.config_manager.set('network.network_type', self.config.network)
+        	config.network.network_type = self.config.network
+        	config.network.apply_network_preset(self.config.network)
         
         if self.config.port:
-            self.node.config_manager.set('network.listen_port', self.config.port)
+        	config.network.listen_port = self.config.port
         
         if self.config.api_port:
-            self.node.config_manager.set('api.port', self.config.api_port)
+        	config.api.port = self.config.api_port
         
         if self.config.no_api:
-            self.node.config_manager.set('api.enabled', False)
+        	config.api.enabled = False
         
         if self.config.no_network:
-            self.node.config_manager.set('network.enabled', False)
+        	config.network.enabled = False
         
         if self.config.data_dir:
-            self.node.config_manager.set('database.db_path', self.config.data_dir)
+        	config.database.db_path = self.config.data_dir
+        
+        self.node.config_manager._sync_network_ports()
+        self.node.config_manager._sync_wallet_network()
     
     async def _verify_components(self) -> bool:
         """Verify critical components are properly initialized"""
