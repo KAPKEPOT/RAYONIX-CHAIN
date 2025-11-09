@@ -1,6 +1,4 @@
-"""
-Wallet factory for creating and managing wallet instances
-"""
+#rayonix_wallet/core/wallet_factory.py
 import logging
 from typing import Optional, Tuple
 from pathlib import Path
@@ -22,17 +20,8 @@ class WalletFactory:
         config: Optional[WalletConfig] = None
     ) -> Tuple[RayonixWallet, str]:
         """
-        Create a new wallet and return both wallet instance and mnemonic
-        
-        Args:
-            wallet_type: Type of wallet to create
-            network: Network type (mainnet/testnet)
-            address_type: Address format type
-            config: Optional wallet configuration
-            
-        Returns:
-            Tuple of (wallet_instance, mnemonic_phrase)
-        """
+    Create a new wallet and return both wallet instance and mnemonic
+    """
         try:
             # Create wallet configuration
             if config is None:
@@ -41,6 +30,12 @@ class WalletFactory:
                     network=network,
                     address_type=address_type
                 )
+                
+                # Ensure coin_type is set based on network
+                if network == "mainnet":
+                	config.coin_type = "1180"
+                else:
+                	config.coin_type = "1"
             
             # Create wallet instance
             wallet = RayonixWallet(config)
