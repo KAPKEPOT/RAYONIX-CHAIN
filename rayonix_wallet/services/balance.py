@@ -3,6 +3,7 @@ from typing import Dict, Optional, Tuple
 from dataclasses import asdict  
 import time  
 import logging  
+import threading
 from rayonix_wallet.core.wallet_types import WalletBalance
 from rayonix_wallet.core.exceptions import WalletError
 
