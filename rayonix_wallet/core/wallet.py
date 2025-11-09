@@ -71,7 +71,7 @@ class ProductionRayonixWallet:
         self.running = False
         self.background_thread: Optional[threading.Thread] = None
         self._state_lock = threading.RLock()
-        self._crypto_backend = default_backend()
+        #self._crypto_backend = default_backend()
         self._aes_gcm_key: Optional[bytes] = None
         
         # Cryptographic context
@@ -524,7 +524,7 @@ class ProductionRayonixWallet:
             base_seed = mnemo.to_seed(mnemonic, passphrase)
             
             # Additional key stretching using PBKDF2
-            pbkdf2 = PBKDF2(
+            pbkdf2 = PBKDF2HMAC(
                 algorithm=hashes.SHA512(),
                 length=64,
                 salt=self._crypto_context[:16],
