@@ -71,7 +71,7 @@ class RayonixNode:
             
             # Initialize config if not provided via dependencies
             if not self.config_manager:
-                from rayonix_node.config.config_manager import init_config
+                from config.config_manager import ConfigManager
                 self.config_manager = init_config(config_path, encryption_key, auto_reload=True)
             
             # Initialize rayonix_chain if not provided via dependencies
@@ -156,6 +156,7 @@ class RayonixNode:
     		print(f"DEBUG: rayonix_wallet package found: {rayonix_wallet.__file__}")
     		
     		print("DEBUG: Step 2 - Attempting to import WalletFactory...")
+    		from config.config_manager import ConfigManager
     		from rayonix_wallet.core.wallet_factory import WalletFactory
     		print("DEBUG: ✅ WalletFactory imported successfully")  	
     			
