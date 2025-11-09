@@ -17,7 +17,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidKey, InvalidTag
 
 from rayonix_wallet.core.config import WalletConfig
-from rayonix_wallet.core.types import WalletType, SecureKeyPair, Transaction, AddressInfo, WalletBalance, WalletState
+from rayonix_wallet.core.wallet_types import WalletType, SecureKeyPair, Transaction, AddressInfo, WalletBalance, WalletState
 from rayonix_wallet.core.exceptions import WalletError, CryptoError, InvalidAddressError
 from rayonix_wallet.crypto.key_management import KeyManager
 from rayonix_wallet.crypto.address import AddressDerivation
@@ -35,8 +35,7 @@ from rayonix_wallet.utils.logging import logger
 from rayonix_wallet.core.config import WalletConfig
 from rayonix_wallet.utils.secure import SecureString
 
-class ProductionRayonixWallet:
-    """Production-grade RAYONIX wallet with complete cryptographic implementation"""
+class RayonixWallet:
     
     def __init__(self, config: Optional[WalletConfig] = None, wallet_id: Optional[str] = None):
         self.config = config or WalletConfig()
@@ -79,7 +78,7 @@ class ProductionRayonixWallet:
         # Load wallet state with comprehensive validation
         self._load_wallet_state_with_cryptographic_validation()
         
-        logger.info(f"Production RAYONIX wallet initialized with ID: {self.wallet_id}")
+        logger.info(f"RAYONIX wallet initialized with ID: {self.wallet_id}")
     
     def _generate_cryptographic_wallet_id(self) -> str:
         """Generate cryptographically secure wallet ID with domain separation"""
@@ -247,7 +246,7 @@ class ProductionRayonixWallet:
     def _validate_address_cryptographic(self, address: str) -> bool:
         """Cryptographic address validation"""
         try:
-            # Use production address engine for validation
+            
             return self.address_derivation.validate_address(
                 address, self.config.address_type, self.config.network
             )
@@ -434,8 +433,8 @@ class ProductionRayonixWallet:
                 if not self.key_manager.initialize_from_master_key(master_key, self.config):
                     raise CryptoError("Cryptographic key manager initialization failed")
                 
-                # Generate production addresses
-                self._generate_production_addresses_cryptographic()
+                # Generate  addresses
+                self._generate_addresses_cryptographic()
                 
                 # Secure mnemonic storage with cryptographic protection
                 self._store_mnemonic_cryptographic(mnemonic_phrase, passphrase)
@@ -696,8 +695,8 @@ class ProductionRayonixWallet:
         except Exception:
             return False
     
-    def _generate_production_addresses_cryptographic(self):
-        """Generate production addresses with cryptographic derivation"""
+    def _generate_addresses_cryptographic(self):
+        """Generate  addresses with cryptographic derivation"""
         with self._state_lock:
             try:
                 # Generate receiving addresses
@@ -707,7 +706,7 @@ class ProductionRayonixWallet:
                     # Generate change addresses
                     change_address = self.derive_address_cryptographic(i, True)
                 
-                logger.info(f"Generated {self.config.gap_limit * 2} cryptographic production addresses")
+                logger.info(f"Generated {self.config.gap_limit * 2} cryptographic addresses")
                 
             except Exception as e:
                 logger.error(f"Cryptographic address generation failed: {e}")
@@ -741,7 +740,7 @@ class ProductionRayonixWallet:
                 if not self._validate_public_key_cryptographic(derived_public_key):
                     raise CryptoError(f"Derived public key validation failed for path: {derivation_path}")
                 
-                # Generate address using production derivation
+                # Generate address using pderivation
                 address = self.address_derivation._derive_address(derived_public_key, index, is_change)
                 
                 # Cryptographic validation of generated address

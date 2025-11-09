@@ -6,8 +6,8 @@ from typing import Optional, Tuple
 from pathlib import Path
 
 from rayonix_wallet.core.wallet import RayonixWallet
-from rayonix_wallet.core.config import WalletConfig
-from rayonix_wallet.core.types import WalletType, AddressType
+from config.config_manager import ConfigManager
+from rayonix_wallet.core.wallet_types import WalletType, AddressType
 
 logger = logging.getLogger(__name__)
 
