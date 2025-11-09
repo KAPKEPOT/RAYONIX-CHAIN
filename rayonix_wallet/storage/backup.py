@@ -1,14 +1,15 @@
+#rayonix_wallet/storage/backup.py
 import os
 import json
 import zipfile
 import tempfile
 from datetime import datetime
 from typing import Optional
-
+import json
 from rayonix_wallet.core.exceptions import BackupError
 from rayonix_wallet.crypto.encryption import EncryptionManager
 from rayonix_wallet.utils.secure import SecureString
-from rayonix_wallet.core.types import AddressInfo, Transaction, WalletState
+from rayonix_wallet.core.wallet_types import AddressInfo, Transaction, WalletState
 
 class BackupManager:
     """Backup and restore functionality"""

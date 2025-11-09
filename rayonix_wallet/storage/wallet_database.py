@@ -1,7 +1,4 @@
-"""
-Wallet-specific database operations
-"""
-
+#rayonix_wallet/storage/wallet_database.py
 from typing import List, Optional
 from database.core.database import AdvancedDatabase
 
