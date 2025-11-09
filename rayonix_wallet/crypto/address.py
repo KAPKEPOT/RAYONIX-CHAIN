@@ -85,6 +85,9 @@ class ProductionAddressDerivation:
     
     def _convert_address_type_cryptographic(self, wallet_address_type: AddressType) -> RayonixAddressType:
         """Cryptographic address type conversion"""
+        if not isinstance(wallet_address_type, AddressType):
+        	raise CryptoError(f"Expected AddressType enum, got {type(wallet_address_type)}")
+        	
         type_mapping = {
             AddressType.RAYONIX: RayonixAddressType.STANDARD_P2PKH,
             AddressType.P2PKH: RayonixAddressType.STANDARD_P2PKH,
