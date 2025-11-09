@@ -72,7 +72,6 @@ class ProductionRayonixWallet:
         self.running = False
         self.background_thread: Optional[threading.Thread] = None
         self._state_lock = threading.RLock()
-        #self._crypto_backend = default_backend()
         self._aes_gcm_key: Optional[bytes] = None
         
         # Cryptographic context
@@ -249,7 +248,6 @@ class ProductionRayonixWallet:
     def _validate_address_cryptographic(self, address: str) -> bool:
         """Cryptographic address validation"""
         try:
-            
             return self.address_derivation.validate_address(
                 address, self.config.address_type, self.config.network
             )
@@ -425,17 +423,19 @@ class ProductionRayonixWallet:
                 # Comprehensive mnemonic cryptographic validation
                 if not self._validate_mnemonic_cryptographic(mnemonic_phrase):
                     raise CryptoError("Mnemonic validation failed")
-                    
-                if not self.key_manager.initialize_from_mnemonic(mnemonic_phrase, passphrase):
-                	raise CryptoError("Key manager initialization failed")
-                # Generate cryptographically secure seed
-                self.master_key = self.key_manager.master_key
-                if not self.master_key:
-                	raise CryptoError("Failed to get master key from KeyManager")
                 
-                # Generate initial addresses
+                # Use KeyManager for all cryptographic operations
+                if not self.key_manager.initialize_from_mnemonic(mnemonic_phrase, passphrase):
+                    raise CryptoError("Key manager initialization failed")
+                
+                # Get master key from KeyManager
+                self.master_key = self.key_manager.get_master_key()
+                if not self.master_key:
+                    raise CryptoError("Failed to get master key from KeyManager")
+                
+                # Generate initial addresses through proper delegation
                 self._generate_addresses_cryptographic()
-
+                
                 # Secure mnemonic storage with cryptographic protection
                 self._store_mnemonic_cryptographic(mnemonic_phrase, passphrase)
                 
@@ -513,54 +513,8 @@ class ProductionRayonixWallet:
         except Exception:
             return None
     
-    def _generate_cryptographic_seed(self, mnemonic: str, passphrase: str) -> bytes:
-        """Generate cryptographically secure seed with key stretching"""
-        try:
-            from mnemonic import Mnemonic
-            
-            mnemo = Mnemonic("english")
-            base_seed = mnemo.to_seed(mnemonic, passphrase)
-            
-            # Additional key stretching using PBKDF2
-            pbkdf2 = PBKDF2HMAC(
-                algorithm=hashes.SHA512(),
-                length=64,
-                salt=self._crypto_context[:16],
-                iterations=100000,
-                backend=self._crypto_backend
-            )
-            
-            stretched_seed = pbkdf2.derive(base_seed)
-            
-            # Final HKDF for domain separation
-            hkdf = HKDF(
-                algorithm=hashes.SHA512(),
-                length=64,
-                salt=stretched_seed[:32],
-                info=b'rayonix-wallet-seed-final',
-                backend=self._crypto_backend
-            )
-            
-            return hkdf.derive(stretched_seed)
-            
-        except Exception as e:
-            raise CryptoError(f"Cryptographic seed generation failed: {e}")
- 
-    def _derive_private_key_from_extended(self, bip32_obj) -> bytes:
-        """Derive private key from extended key format"""
-        try:
-            xprv = bip32_obj.get_xpriv()
-            # Extract private key from extended private key format
-            # This is implementation-specific and may vary by BIP32 library
-            if hasattr(bip32_obj, '_k'):
-                return bip32_obj._k
-            else:
-                raise CryptoError("Extended private key derivation not supported")
-        except Exception as e:
-            raise CryptoError(f"Extended private key derivation failed: {e}")
-    
     def _generate_addresses_cryptographic(self):
-        """Generate  addresses with cryptographic derivation"""
+        """Generate addresses with cryptographic derivation through proper delegation"""
         with self._state_lock:
             try:
                 # Generate receiving addresses
@@ -577,39 +531,25 @@ class ProductionRayonixWallet:
                 raise
     
     def derive_address_cryptographic(self, index: int, is_change: bool = False) -> str:
-        """Cryptographic address derivation with comprehensive validation"""
+        """Cryptographic address derivation with proper delegation"""
         if not self.master_key:
             raise WalletError("Wallet is locked or not initialized")
         
         with self._state_lock:
             try:
-                # Cache key with cryptographic context
-                cache_key = f"{index}_{is_change}_{self.config.address_type.value}"
+                # Handle both enum and string address_type for cache key
+                address_type_str = self.config.address_type.value if hasattr(self.config.address_type, 'value') else str(self.config.address_type)
+                cache_key = f"{index}_{is_change}_{address_type_str}"
+                
                 if cache_key in self._key_derivation_cache:
                     return self._key_derivation_cache[cache_key]
                 
-                from bip32 import BIP32
+                # DELEGATE to KeyManager for key derivation
+                derivation_path = self.key_manager.get_derivation_path(index, is_change)
+                derived_public_key = self.key_manager.derive_public_key(derivation_path)
                 
-                # Create BIP32 object from master key
-                bip32 = BIP32.from_seed(self.master_key.private_key)
-                
-                # BIP44 derivation path
-                change_index = 1 if is_change else 0
-                derivation_path = f"m/44'/0'/{self.config.account_index}'/{change_index}/{index}"
-                
-                # Derive child public key cryptographically
-                derived_public_key = bip32.get_pubkey_from_path(derivation_path)
-                
-                # Validate derived public key
-                if not self._validate_public_key_cryptographic(derived_public_key):
-                    raise CryptoError(f"Derived public key validation failed for path: {derivation_path}")
-                
-                # Generate address using pderivation
+                # DELEGATE to AddressDerivation for address generation
                 address = self.address_derivation._derive_address(derived_public_key, index, is_change)
-                
-                # Cryptographic validation of generated address
-                if not self._validate_generated_address_cryptographic(address, derived_public_key):
-                    raise CryptoError(f"Generated address validation failed: {address}")
                 
                 # Create comprehensive address info
                 address_info = AddressInfo(
@@ -646,22 +586,6 @@ class ProductionRayonixWallet:
                 logger.error(f"Cryptographic address derivation failed for index {index}: {e}")
                 self._log_security_event("address_derivation_failed", f"Index {index}: {str(e)}")
                 raise WalletError(f"Cryptographic address derivation failed: {e}")
-    
-    def _validate_generated_address_cryptographic(self, address: str, public_key: bytes) -> bool:
-        """Cryptographic validation of generated address"""
-        try:
-            # Use production validation
-            if not self.address_derivation.validate_address(address, self.config.address_type, self.config.network):
-                return False
-            
-            # Additional validation: verify address corresponds to public key
-            # This would involve recreating the address and comparing
-            # For now, we trust the production address engine
-            
-            return True
-            
-        except Exception:
-            return False
     
     def _store_mnemonic_cryptographic(self, mnemonic: str, passphrase: str):
         """Cryptographic mnemonic storage with encryption"""
@@ -919,8 +843,6 @@ class ProductionRayonixWallet:
         self.close()
 
 class RayonixWallet(ProductionRayonixWallet):
-    """Public interface maintaining backward compatibility"""
-    
     def __init__(self, config: Optional[WalletConfig] = None, wallet_id: Optional[str] = None):
         super().__init__(config, wallet_id)
     
