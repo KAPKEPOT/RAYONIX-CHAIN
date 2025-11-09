@@ -30,7 +30,7 @@ from utxo_system.core.utxoset import UTXOSet
 from consensusengine.core.consensus import ProofOfStake
 from blockchain.utils.genesis import GenesisBlockGenerator
 from network.core.p2p_network import AdvancedP2PNetwork
-from blockchain.config.consensus_config import ConsensusConfig
+from config.config_manager import ConfigManager
 from merkle_system.merkle import MerkleTree, CompactMerkleTree, MerkleTreeConfig, HashAlgorithm, ProofFormat, MerkleTreeFactory, MerkleTreeStats, global_stats, create_merkle_tree_from_file, create_merkle_tree_from_large_file, batch_verify_proofs, batch_verify_proofs_async, create_merkle_mountain_range
 from network.config.node_config import NodeConfig
 from network.config.network_types import NetworkType
