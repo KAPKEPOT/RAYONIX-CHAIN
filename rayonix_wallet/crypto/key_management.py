@@ -8,7 +8,7 @@ from cryptography.hazmat.backends import default_backend
 from bip32 import BIP32
 from mnemonic import Mnemonic
 
-from rayonix_wallet.core.types import WalletType, SecureKeyPair
+from rayonix_wallet.core.wallet_types import WalletType, SecureKeyPair
 from rayonix_wallet.core.exceptions import CryptoError
 from rayonix_wallet.utils.secure import SecureString
 
