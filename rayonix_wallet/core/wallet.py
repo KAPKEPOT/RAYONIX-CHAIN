@@ -799,7 +799,63 @@ class ProductionRayonixWallet:
             
         except Exception:
             return False
+           
+    def get_balance(self, address: Optional[str] = None, force_refresh: bool = False):
+        """ Get balance for wallet or specific address"""
+        try:
+        	if not hasattr(self, 'balance_calculator') or not self.balance_calculator:
+        		return self._create_error_balance("Balance calculator not available")
+        	
+        	# Check if we have blockchain connection
+        	if hasattr(self.balance_calculator, 'rayonix_chain') and self.balance_calculator.rayonix_chain:
+        		return self.balance_calculator.get_balance(force_refresh=force_refresh)
+        	
+        	else:
+        		# Fallback to offline balance
+        		logger.warning("Using offline balance calculation - no blockchain connection")
+        		return self.balance_calculator._get_offline_balance()
+        
+        except Exception as e:
+        	logger.error(f"Error getting balance: {e}")
+        	return self._create_error_balance(str(e))
+        
+    def get_address_balance(self, address: str) -> int:
+    	"""Get balance for specific address"""
+    	try:
+    		# First try through balance calculator if available
+    		if (hasattr(self, 'balance_calculator') and hasattr(self.balance_calculator, 'rayonix_chain') and self.balance_calculator.rayonix_chain):
+    			return self.balance_calculator.rayonix_chain.get_address_balance(address)
+    		
+    		#else:
+    			# Fallback: check local wallet state
+    			#if address in self.addresses:
+    				#return self.addresses[address].balance
+    			#return 0
+    	except Exception as e:
+    		logger.error(f"Error getting address balance for {address}: {e}")
+    		return 0
+    	
+    def _create_error_balance(self, error_message: str):
+    	"""Create an error balance response"""
+    	from rayonix_wallet.core.wallet_types import WalletBalance
+    	return WalletBalance(
+    	    total=-1,
+    	    confirmed=-1,
+    	    unconfirmed=-1,
+    	    locked=-1,
+    	    available=-1,
+    	    by_address={},
+    	    tokens={},
+    	    error=error_message,
+    	    error_type="balance_calculation_error"
+    	)
     
+    def is_connected_to_blockchain(self) -> bool:
+    	"""Check if wallet is properly connected to a blockchain"""
+    	return (hasattr(self, 'balance_calculator') and 
+            hasattr(self.balance_calculator, 'rayonix_chain') and 
+            self.balance_calculator.rayonix_chain is not None)
+    	
     def get_security_report(self) -> Dict[str, Any]:
         """Get comprehensive cryptographic security report"""
         return {
