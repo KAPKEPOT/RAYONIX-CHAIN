@@ -537,9 +537,8 @@ class ProductionRayonixWallet:
         
         with self._state_lock:
             try:
-                # Handle both enum and string address_type for cache key
-                address_type_str = self.config.address_type.value if hasattr(self.config.address_type, 'value') else str(self.config.address_type)
-                cache_key = f"{index}_{is_change}_{address_type_str}"
+                #  Use enum value directly - no string conversion             
+                cache_key = f"{index}_{is_change}_{self.config.address_type.value}"
                 
                 if cache_key in self._key_derivation_cache:
                     return self._key_derivation_cache[cache_key]

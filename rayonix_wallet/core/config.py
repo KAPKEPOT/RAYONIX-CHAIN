@@ -28,8 +28,23 @@ class WalletConfig:
     
     def __post_init__(self):
         """Initialize derived properties after object creation"""
+        # Ensure enums are preserved and not converted to strings
+        self._validate_enum_types()
+        
         if not hasattr(self, 'coin_type') or self.coin_type is None:
             if self.network == "mainnet":
                 self.coin_type = "1180"  # RAYONIX mainnet coin type
             else:
                 self.coin_type = "1"    # Testnet coin type
+    
+    def _validate_enum_types(self):
+        """Ensure all enum fields remain as enum types"""
+        # If any enum field was converted to string (from serialization), convert it back
+        if isinstance(self.wallet_type, str):
+            self.wallet_type = WalletType[self.wallet_type.upper()]
+        
+        if isinstance(self.key_derivation, str):
+            self.key_derivation = KeyDerivation[self.key_derivation.upper()]
+            
+        if isinstance(self.address_type, str):
+            self.address_type = AddressType[self.address_type.upper()]

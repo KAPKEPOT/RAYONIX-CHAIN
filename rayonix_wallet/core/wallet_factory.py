@@ -37,6 +37,13 @@ class WalletFactory:
                 else:
                 	config.coin_type = "1"
             
+            # VALIDATE: Ensure we're using enums, not strings
+            if not isinstance(config.address_type, AddressType):
+            	raise ValueError(f"address_type must be AddressType enum, got {type(config.address_type)}")
+            
+            if not isinstance(config.wallet_type, WalletType):
+            	raise ValueError(f"wallet_type must be WalletType enum, got {type(config.wallet_type)}")
+            
             # Create wallet instance
             wallet = RayonixWallet(config)
             
