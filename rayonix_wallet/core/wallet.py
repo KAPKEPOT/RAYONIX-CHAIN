@@ -424,8 +424,9 @@ class ProductionRayonixWallet:
             try:
                 # Comprehensive mnemonic cryptographic validation
                 if not self._validate_mnemonic_cryptographic(mnemonic_phrase):
-                    raise CryptoError("Mnemonic phrase cryptographic validation failed")
-                
+                    raise CryptoError("Mnemonic validation failed")
+                if not self.key_manager.initialize_from_mnemonic(mnemonic_phrase, passphrase):
+                	raise CryptoError("Key manager initialization failed")
                 # Generate cryptographically secure seed
                 seed = self._generate_cryptographic_seed(mnemonic_phrase, passphrase)
                 
@@ -548,61 +549,7 @@ class ProductionRayonixWallet:
             
         except Exception as e:
             raise CryptoError(f"Cryptographic seed generation failed: {e}")
-    
-    def _derive_master_key_cryptographic(self, seed: bytes) -> SecureKeyPair:
-        """Derive master key with comprehensive cryptographic validation"""
-        try:
-            from bip32 import BIP32
-            
-            # Generate BIP32 master key
-            bip32 = BIP32.from_seed(seed)
-            
-            # Extract and cryptographically validate private key
-            private_key_bytes = self._extract_private_key_cryptographic(bip32)
-            
-            # Derive and validate public key
-            public_key_bytes = self._derive_public_key_cryptographic(private_key_bytes)
-            
-            # Create secure key pair with memory protection
-            private_key_secure = SecureString(private_key_bytes)
-            
-            master_key = SecureKeyPair(
-                _private_key=private_key_secure,
-                public_key=public_key_bytes,
-                chain_code=bip32.chain_code,
-                depth=0,
-                index=0,
-                parent_fingerprint=b'\x00\x00\x00\x00'
-            )
-            
-            # Validate the complete key pair
-            if not self._validate_key_pair_cryptographic(master_key):
-                raise CryptoError("Cryptographic key pair validation failed")
-            
-            return master_key
-            
-        except Exception as e:
-            raise CryptoError(f"Cryptographic master key derivation failed: {e}")
-    
-    def _extract_private_key_cryptographic(self, bip32_obj) -> bytes:
-        """Cryptographic private key extraction with validation"""
-        extraction_methods = [
-            lambda: bip32_obj.get_privkey_from_path("m"),
-            lambda: getattr(bip32_obj, '_privkey', None),
-            lambda: getattr(bip32_obj, 'private_key', None),
-            lambda: self._derive_private_key_from_extended(bip32_obj)
-        ]
-        
-        for method in extraction_methods:
-            try:
-                private_key = method()
-                if private_key and self._validate_private_key_cryptographic(private_key):
-                    return private_key
-            except Exception:
-                continue
-        
-        raise CryptoError("Cryptographic private key extraction failed - no valid method succeeded")
-    
+ 
     def _derive_private_key_from_extended(self, bip32_obj) -> bytes:
         """Derive private key from extended key format"""
         try:
@@ -615,88 +562,6 @@ class ProductionRayonixWallet:
                 raise CryptoError("Extended private key derivation not supported")
         except Exception as e:
             raise CryptoError(f"Extended private key derivation failed: {e}")
-    
-    def _validate_private_key_cryptographic(self, private_key: bytes) -> bool:
-        """Cryptographic private key validation"""
-        if len(private_key) != 32:
-            return False
-        
-        # Check key is within valid range for secp256k1
-        key_int = int.from_bytes(private_key, 'big')
-        curve_order = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-        
-        if key_int <= 1 or key_int >= curve_order - 1:
-            return False
-        
-        # Additional cryptographic checks
-        # Check for weak keys (though statistically very unlikely with proper RNG)
-        if key_int < 2**128:
-            return False  # Too small
-        
-        return True
-    
-    def _derive_public_key_cryptographic(self, private_key: bytes) -> bytes:
-        """Cryptographic public key derivation with validation"""
-        try:
-            # Use cryptography library for robust key derivation
-            private_key_obj = ec.derive_private_key(
-                int.from_bytes(private_key, 'big'),
-                ec.SECP256K1(),
-                self._crypto_backend
-            )
-            
-            public_key_obj = private_key_obj.public_key()
-            
-            # Get compressed public key
-            public_key_bytes = public_key_obj.public_bytes(
-                encoding=serialization.Encoding.X962,  
-                format=serialization.PublicFormat.CompressedPoint
-            )
-            
-            # Validate public key cryptographically
-            if not self._validate_public_key_cryptographic(public_key_bytes):
-                raise CryptoError("Derived public key cryptographic validation failed")
-            
-            return public_key_bytes
-            
-        except Exception as e:
-            raise CryptoError(f"Cryptographic public key derivation failed: {e}")
-    
-    def _validate_public_key_cryptographic(self, public_key: bytes) -> bool:
-        """Cryptographic public key validation"""
-        try:
-            # Verify the point is on the curve
-            ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256K1(), public_key)
-            
-            # Additional validation for compressed format
-            if len(public_key) == 33:
-                prefix = public_key[0]
-                if prefix not in [0x02, 0x03]:
-                    return False
-            
-            return True
-            
-        except Exception:
-            return False
-    
-    def _validate_key_pair_cryptographic(self, key_pair: SecureKeyPair) -> bool:
-        """Cryptographic validation of key pair consistency"""
-        try:
-            # Verify private and public keys are mathematically consistent
-            derived_public = self._derive_public_key_cryptographic(key_pair.private_key)
-            
-            # Constant-time comparison
-            if len(derived_public) != len(key_pair.public_key):
-                return False
-            
-            result = 0
-            for x, y in zip(derived_public, key_pair.public_key):
-                result |= x ^ y
-            
-            return result == 0
-            
-        except Exception:
-            return False
     
     def _generate_addresses_cryptographic(self):
         """Generate  addresses with cryptographic derivation"""
