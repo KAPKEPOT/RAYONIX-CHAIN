@@ -506,7 +506,7 @@ class RayonixBlockchain:
                 wallet_type=WalletType.HD,         
                 #network=self.network,
                 address_type=AddressType.RAYONIX,
-                db_path=self._get_wallet_db_path()
+                db_path=str(wallet_dir / "wallet.db") 
             )    
             wallet = RayonixWallet(config=wallet_config)
             
