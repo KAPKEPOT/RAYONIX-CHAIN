@@ -948,12 +948,16 @@ class RayonixWallet(ProductionRayonixWallet):
         
         # Generate new mnemonic
         mnemonic = self._generate_new_mnemonic_cryptographic()
+        # Store the mnemonic BEFORE calling create_from_mnemonic
+        temp_mnemonic = mnemonic  # Keep reference
         
         # Create wallet from mnemonic
         if not self.create_from_mnemonic(mnemonic, ""):
             raise WalletError("Failed to initialize new wallet")
         
-        return mnemonic
+        # Return the mnemonic BEFORE it gets wiped
+        
+        return temp_mnemonic
     
     def _generate_new_mnemonic_cryptographic(self) -> str:
         """Generate new BIP39 mnemonic cryptographically"""
