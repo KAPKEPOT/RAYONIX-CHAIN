@@ -184,7 +184,7 @@ class CommandHandler:
             },
             'stats': {
                 'function': self.cmd_stats,
-                'description': 'Show CLI statistics'
+                'description': 'Show CLI statistics',
                 'usage': 'stats',
                 'category': 'System'
             },
