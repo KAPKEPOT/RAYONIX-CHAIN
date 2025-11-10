@@ -1,7 +1,7 @@
 # rayonix_node/cli/base_commands/network_commands.py
 
 from typing import List, Dict, Any
-from rayonix_node.cli.base_command.base_commands import BaseCommand
+from rayonix_node.cli.base_commands.base_command import BaseCommand
 
 
 class NetworkCommands(BaseCommand):
