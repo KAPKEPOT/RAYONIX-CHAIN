@@ -142,7 +142,7 @@ stats              # Show CLI statistics
 
 Project Structure
 
-```
+
 ```
 RAYONIX-CHAIN/
 ├── 🏗️  Core Modules
