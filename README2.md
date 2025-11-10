@@ -148,7 +148,7 @@ contracts          # List smart contracts
 
 🏗️ Module Overview
 
-```
+
 Module Purpose Key Features
 blockchain/ Core chain logic Block validation, chain organization
 consensusengine/ PoS Consensus Validator selection, block finality
@@ -158,7 +158,7 @@ rayonix_wallet/ Wallet management HD wallets, key derivation, signing
 smart_contract/ Contract engine VM execution, contract deployment
 merkle_system/ Data integrity Merkle trees, proof generation
 database/ Storage Data persistence, efficient querying
-```
+
 
 🛠️ Development
 
