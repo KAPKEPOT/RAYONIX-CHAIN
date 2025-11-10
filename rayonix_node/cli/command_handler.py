@@ -184,9 +184,27 @@ class CommandHandler:
             },
             'stats': {
                 'function': self.cmd_stats,
-                'description': 'Show CLI statistics',
+                'description': 'Show CLI statistics'
                 'usage': 'stats',
                 'category': 'System'
+            },
+            'generate-api-key': {
+                'function': self.cmd_generate_api_key,
+                'description': 'Generate API KEY',
+                'usage': 'generate-api-key',
+                'category': 'API System'              
+            },
+            'validate-api-key': {
+            'function': self.cmd_validate_api_key,
+            'description': 'Validate api key',
+            'usage': 'validate-api-key "your-key-here"',
+            'category': 'API System'
+            },
+            'api-info': {
+            'function': self.cmd_api_key_info,
+            'description': 'Show api info',
+            'usage': 'api-info',
+            'category': 'API System'
             }
         }
     
