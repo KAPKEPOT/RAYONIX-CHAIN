@@ -781,6 +781,13 @@ class ProductionRayonixWallet:
                 logger.error(f"Cryptographic lock failed: {e}")
                 self._log_security_event("lock_failed", str(e))
 
+    def get_wallet_type(self) -> WalletType:
+    	"""Get the wallet type"""
+    	with self._state_lock:
+    		if not hasattr(self.config, 'wallet_type') or not self.config.wallet_type:
+    			  raise WalletError("Wallet type not configured")
+    		return self.config.wallet_type    
+    			
     def get_addresses(self) -> Dict[str, AddressInfo]:
     	"""Get all wallet addresses with complete information"""
     	with self._state_lock:
@@ -882,6 +889,30 @@ class ProductionRayonixWallet:
             'validation_cache_size': len(self._address_validation_cache)
         }
     
+    def get_wallet_info(self) -> Dict[str, Any]:
+    	"""Get comprehensive wallet information for API responses"""
+    	with self._state_lock:
+    		info = {
+    		    'wallet_id': self.wallet_id,
+    		    'wallet_type': self.config.wallet_type.name if self.config.wallet_type else 'UNKNOWN',
+    		    'wallet_type_code': self.config.wallet_type.value if self.config.wallet_type else -1,
+    		    'address_type': self.config.address_type.name if self.config.address_type else 'UNKNOWN',
+    		    'network': self.config.network,
+    		    'is_initialized': self.is_initialized(),
+    		    'is_locked': self.locked,
+    		    'address_count': len(self.addresses),
+    		    'transaction_count': len(self.transactions),
+    		}
+    		
+    		# Add security information if available
+    		if hasattr(self, 'state'):
+    			info.update({
+    			    'security_score': self.state.security_score,
+    			    'sync_height': self.state.sync_height,
+    			    'last_updated': self.state.last_updated
+    			})
+    		return info
+    
     def close(self):
         """Cryptographic wallet shutdown"""
         try:
@@ -955,4 +986,12 @@ class RayonixWallet(ProductionRayonixWallet):
 
     def get_addresses(self) -> Dict[str, AddressInfo]:
     	"""Backward compatibility method"""
-    	return super().get_addresses()              
+    	return super().get_addresses()
+    	
+    def get_wallet_type(self) -> WalletType:
+    	"""Get wallet type - backward compatibility method"""
+    	return super().get_wallet_type()
+    
+    def get_wallet_info(self) -> Dict[str, Any]:
+    	"""Get wallet information - backward compatibility method"""
+    	return super().get_wallet_info()
