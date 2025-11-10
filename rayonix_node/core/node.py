@@ -174,6 +174,7 @@ class RayonixNode:
     		print("DEBUG: ✅ Wallet created successfully")
     		
     		self.wallet = wallet
+    		self.wallet.creation_mnemonic = mnemonic
     		current_network = self.config_manager.config.network.network_type
     		print(f"DEBUG: Wallet assigned to node.wallet: {self.wallet is not None}")
     		
