@@ -185,7 +185,7 @@ class RayonixRPCClient:
         """Create a new wallet"""
         data = {
             "wallet_type": wallet_type,
-            "password": password
+            "password": password,
             "mnemonic_length": mnemonic_length
         }
         return self.call_rest_api("wallet/create", "POST", data)
@@ -194,7 +194,7 @@ class RayonixRPCClient:
         """Load wallet from mnemonic with type support"""
         data = {
             "mnemonic": mnemonic,
-            "password": password
+            "password": password,
             "wallet_type": wallet_type
         }
         return self.call_rest_api("wallet/load", "POST", data)
