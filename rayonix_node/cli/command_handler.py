@@ -500,7 +500,7 @@ API Enabled:    {info.get('api_enabled', False)}"""
         return self.blockchain_cmd.execute_block(args)
     
     def cmd_transaction(self, args: List[str]) -> str:
-        def cmd_transaction
+        return self.blockchain_cmd.execute_transaction(args)
     
     def cmd_mempool(self, args: List[str]) -> str:
         """Show mempool information"""
