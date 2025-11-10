@@ -1,385 +1,186 @@
-# RAYONIX-CHAIN
-‎
-‎RAYONIX  is a complete, enterprise-grade blockchain implementation featuring Proof-of-Stake consensus, smart contracts, advanced wallet system, and peer-to-peer networking. Built from scratch in pure Python with zero external dependencies beyond cryptographic libraries.
-‎
 
+RAYONIX-CHAIN
 
-‎
+A complete blockchain implementation with Proof-of-Stake consensus, smart contracts, and UTXO system—built from scratch in Python.
 
+🚀 Get Started in 2 Minutes
 
+1. Install & Setup
 
-‎  # Installation
+```bash
+# Clone and enter
+git clone https://github.com/RayoniR/RAYONIX-CHAIN.git
+cd RAYONIX-CHAIN
 
-
-
-‎
-‎# BASH
-
-‎Clone repository
-
-
-‎git clone https://github.com/RayoniR/RAYONIX-CHAIN.git
-‎
-cd rayonix-blockchain
-
-
-‎
-‎# Install dependencies
-
-
-‎pip install -r requirements.txt
-
-
-‎
-‎# Initialize blockchain
-‎python main.py --network testnet --data-dir ./rayonix_data
-
-
-
-‎
-
-
-
-‎
-‎ # Quick Start
-
-
-‎
-‎1. Create a Wallet
-‎
-
-
-
-‎python
-
-‎from wallet import create_new_wallet
-
-
-
-‎
-‎Create HD wallet
-
-‎wallet, mnemonic, xpub = create_new_wallet()
-‎print(f"Mnemonic: {mnemonic}")
-‎print(f"Master xpub: {xpub}")
-‎
-
-
-
-‎
-‎# 2. Start a Node
-‎
-
-
-‎python
-‎from rayonix_coin import RayonixCoin
-
-
-‎
-‎# Initialize blockchain
-‎rayonix = RayonixCoin("testnet")
-
-
-‎
-‎#Connect to network and start staking
-‎rayonix.connect_to_network()
-‎rayonix.start_mining()
-
-
-‎
-‎
-‎# 3. Create Transaction
-‎
-
-
-‎python
-‎# Send RXY coins
-‎transaction = rayonix.create_transaction(
-‎    from_address="rayonix1yourwalletaddress...",
-‎    to_address="rayonix1recipientaddres...",
-‎    amount=1000000,  # 1.0 RXY
-‎    fee=100          # 0.0001 RXY fee
-‎)
-‎
-‎
-# ‎4. Deploy Smart Contract
-
-
-‎
-‎python
-‎# Deploy ERC20 token
-‎contract_address = rayonix.deploy_contract("""
-‎pragma solidity ^0.8.0;
-‎
-
-
-‎contract MyToken {
-‎    mapping(address => uint256) public balances;
-‎    
-‎    constructor(uint256 initialSupply) {
-‎        balances[msg.sender] = initialSupply;
-‎    }
-‎    
-‎    function transfer(address to, uint256 amount) public {
-‎        require(balances[msg.sender] >= amount);
-‎        balances[msg.sender] -= amount;
-‎        balances[to] += amount;
-‎    }
-‎}
-‎""", initial_balance=0)
-‎
-‎ Configuration
-
-
-‎
-‎# Network Types
-
-
-‎
-‎yaml
-‎mainnet:
-‎  port: 30303
-‎  bootnodes: ["node1.rayonix.org:30303", "node2.rayonix.org:30303"]
-‎  block_reward: 50
-‎  halving_interval: 210000
-‎
-
-
-‎testnet:
-‎  port: 30304
-‎  bootnodes: ["testnet.rayonix.org:30304"]
-‎  block_reward: 100
-‎  halving_interval: 105000
-‎
-
-
-‎devnet:
-‎  port: 30305
-‎  bootnodes: []
-‎  block_reward: 500
-‎  halving_interval: 52500
-‎
-
-
-‎
-# ‎Wallet Configuration
-
-
-‎json
-‎{
-‎  "wallet_type": "HD",
-‎  "address_type": "RAYONIX",
-‎  "encryption": true,
-‎  "compression": true,
-‎  "network": "mainnet",
-‎  "gap_limit": 20,
-‎  "auto_backup": true
-‎}
-‎
-
-‎
-‎ # Performance
-
-
-‎
-‎- Block Time: 30 seconds target
-‎- Transaction Throughput: 1000+ TPS
-‎- Block Size: 4MB maximum
-‎- Finality: 12 blocks (6 minutes)
-‎- Consensus: Instant finality with BFT-style voting
-
-
-‎
-‎ # Security Features
-
-
-‎
-‎- Cryptographic Agility - Multiple signature algorithms supported
-‎- Quantum Resistance - Optional post-quantum cryptography ready
-‎- Zero-Knowledge Proofs - zk-SNARKs integration available
-‎- Secure Enclave Support - TPM and HSM integration
-‎- Audit Trail - Complete transaction history with non-repudiation
-‎
-‎ Network Statistics
-
-
-‎
-‎python
-‎
-
-
-‎# Get network info
-‎info = rayonix.get_blockchain_info()
-‎print(f"Block Height: {info['height']}")
-‎print(f"Total Supply: {info['total_supply']} RXY")
-‎print(f"Staking Rewards: {info['staking_rewards']} RXY")
-‎print(f"Active Validators: {info['validators']}")
-‎print(f"Network Difficulty: {info['difficulty']}")
-‎```
-
-
-‎
-‎ # Testing
-
-
-‎
-‎```bash
-‎# Run unit tests
-‎python -m pytest tests/ -v
-‎
-‎# Run integration tests
-‎python -m pytest tests/integration/ -v
-‎
-‎# Run performance tests
-‎python tests/performance_test.py
-‎
-‎# Run security audit
-‎python -m bandit -r ./
-‎python -m safety check
-‎```
-‎
-‎ API Documentation
-
-
-
-
-‎
-‎# JSON-RPC Endpoints
-
-‎bash
-
-‎# Get block by height
-‎```curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
-‎  -d '{"jsonrpc":"2.0","method":"eth_getBlockByNumber""params":["latest", true],"id":1}'
-‎
-
-
-‎# Send transaction
-
-
-```curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
-‎  -d '{"jsonrpc":"2.0","method":"eth_sendTransaction```","params":[{"from":"0x...","to":"0x...","value":"0x..."}],"id":1}'
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-‎
-‎# Call contract
+2. Start Blockchain Node
 
+```bash
+# Terminal 1 - Run the node daemon
+./rayonixd.py
+```
 
-curl -X POST http://localhost:8545 -H "Content-Type: application/json" \
-‎  -d '{"jsonrpc":"2.0","method":"eth_call","params":[{"to":"0x...","data":"0x..."},"latest"],"id":1}'
-‎```
+Wait for node to start up and begin syncing
 
-‎
-‎ Deployment
+3. Use the Interactive Client
 
+```bash
+# Terminal 2 - Open the CLI client
+./rayonix_cli.py
+```
 
-‎
-‎Docker Deployment
+You'll see the RAYONIX interface:
 
+```
+=============================
+RAYONIX BLOCKCHAIN CLI
+Connected to daemon via RPC
+=============================
+Node Status: Unknown
+Block Height: 0
+Connected Peers: 0
 
-‎dockerfile
-‎FROM python:3.9-slim
-‎
+Type 'help' for available commands
+Type 'exit' or 'quit' to exit
+=============================
+RAYONIX Blockchain CLI
+Type 'help' for available commands
+rayonix>
+```
 
+🎯 Quick Start Guide
 
-‎WORKDIR /app
-‎COPY . .
-‎RUN pip install -r requirements.txt
-‎
+First Steps in the CLI
 
+```
+rayonix> help                    # See all available commands
+rayonix> create-wallet           # Create your first wallet
+rayonix> balance                 # Check your balance
+rayonix> info                    # See node status
+```
 
-# ‎EXPOSE 30303 8545
+🆘 Getting Help
 
-‎CMD ["python", "main.py", "--network", "mainnet"]
-‎
+```
+rayonix> help                    # Show all commands by category
+rayonix> help send               # Get detailed help for specific command
+```
 
-‎
-# ‎Kubernetes Deployment
+📋 Complete Command Reference
 
+👛 Wallet Commands
 
-‎yaml
-‎apiVersion: apps/v1
-‎kind: Deployment
-‎metadata:
-‎  name: rayonix-node
-‎spec:
-‎  replicas: 3
-‎  template:
-‎    spec:
-‎      containers:
-‎      - name: rayonix
-‎        image: rayonix/node:latest
-‎        ports:
-‎        - containerPort: 30303
-‎        - containerPort: 8545
+```
+create-wallet      # Create a new wallet
+load-wallet        # Load wallet from mnemonic phrase  
+import-wallet      # Import wallet from backup file
+backup-wallet      # Backup wallet to file
+address            # Generate new address
+list-addresses     # List all wallet addresses
+balance            # Show detailed wallet balance
+wallet-info        # Show detailed wallet information
+send               # Send coins to address
+```
 
+⛓️ Blockchain Commands
 
+```
+blockchain-info    # Show detailed blockchain information
+block              # Show block information
+transaction        # Show transaction information
+history            # Show transaction history
+mempool            # Show mempool information
+sync-status        # Show synchronization status
+```
 
-‎
-‎# Contributing
+🌐 Network Commands
 
+```
+network            # Show network statistics
+peers              # Show connected peers with details
+```
 
-‎
-‎We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+🖥️ Node Commands
 
+```
+info               # Show detailed node information
+status             # Show node status
+```
 
-‎
-‎1. Fork the repository
-‎2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-‎3. Commit your changes (`git commit -m 'Add amazing feature'`)
-‎4. Push to the branch (`git push origin feature/amazing-feature`)
-‎5. Open a Pull Request
+⚡ Staking & Validation
 
+```
+stake              # Stake tokens for validation
+staking            # Show staking information
+validator-info     # Show validator information
+```
 
-‎
-‎ License
+🤖 Smart Contracts
 
+```
+deploy-contract    # Deploy smart contract
+call-contract      # Call contract function
+contracts          # List smart contracts
+```
 
-‎
-‎This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+⚙️ System Commands
 
+```
+config             # Show configuration information
+stats              # Show CLI statistics
+```
 
-‎
-‎ # Security
+🛠️ For Developers
 
+Project Structure
 
-‎
-‎If you discover any security vulnerabilities, please disclose them responsibly by emailing security@rayonix.org. We appreciate your help in making RAYONIX secure.
-‎
-‎
+```
+RAYONIX-CHAIN/
+├── rayonixd.py           # Main node daemon (RPC server)
+├── rayonix_cli.py        # Interactive CLI client
+├── main.py               # Alternative entry point
+├── smart_contract/       # Smart contract engine
+├── utxo_system/          # UTXO transaction system
+├── rayonix.yaml          # Configuration file
+└── requirements.txt      # Python dependencies
+```
 
-# Star History
-‎
-‎[![Star History Chart](https://api.star-history.com/svg?repos=RayoniR/RAYONIX-BLOCKCHAIN &type=Date)](https://star-history.com/RayoniR/RAYONIX-BLOCKCHAIN&Date)
-‎
+Package Installation
 
+```bash
+# Install as editable package
+pip install -e .
 
-‎# Community
-‎
+# Use command-line tools (after installation)
+rayonix-node    # Start node daemon
+rayonix-cli     # Start CLI client
+```
 
-‎- Discord: [ Join our community](https://discord.gg/rayonix)
+❓ Troubleshooting
 
+Common Issues
 
-‎- Twitter: [@rayonix_chain](https://twitter.com/rayonix_chain)
+· "Node Status: Unknown": Ensure rayonixd.py is running in another terminal
+· "Connected Peers: 0": Node is still starting up or firewall blocking connections
+· Command not found: Make sure you're in the RAYONIX-CHAIN directory
 
+Getting Support
 
-‎- Reddit: [/r/rayonix](https://reddit.com/r/rayonix)
+· 📚 Documentation: https://docs.rayonix.site
+· 🐛 Report Issues: GitHub Issues
+· 💬 Community: Discord
 
+📜 License
 
-‎- Documentation: [Read the docs](https://docs.rayonix.org)
-‎
+AGPL-3.0 - See LICENSE for details.
 
+---
 
-‎# Acknowledgments
-‎
+Ready to explore? Start with create-wallet and balance to begin your RAYONIX journey! 🚀
 
+Built with Python · Proof-of-Stake · Smart Contracts · Open Source
 
-‎- Bitcoin Core team for UTXO model inspiration
-‎- Ethereum Foundation for EVM specification
-‎- Tendermint team for BFT consensus research
-‎- Cryptography researchers for advanced cryptographic primitives
-‎
-
-‎
-‎RAYONIX - Building the future of decentralized finance, one block at a time. 
-‎
+---
