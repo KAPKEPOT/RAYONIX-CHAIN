@@ -484,34 +484,26 @@ async def load_wallet(
     try:
         if node.wallet:
             raise HTTPException(status_code=400, detail="Wallet already loaded")
+            
+        # Use the new node method
+        success = await node.load_wallet_on_demand(
+            wallet_data.mnemonic,
+            wallet_data.password
+        )
         
-        # Create wallet based on type
-        if wallet_data.wallet_type == "hd":
-            wallet = HDWallet()
-            if not wallet.validate_mnemonic(wallet_data.mnemonic):
-                raise HTTPException(status_code=400, detail="Invalid mnemonic phrase")
-            wallet.create_from_mnemonic(wallet_data.mnemonic)
-        else:
-            # For legacy wallets, mnemonic is treated as private key
-            wallet = LegacyWallet()
-            wallet.import_from_private_key(wallet_data.mnemonic)
+        if not success:
+        	raise HTTPException(status_code=400, detail="Failed to load wallet")
         
-        # Encrypt wallet if password provided
-        if wallet_data.password:
-            wallet.encrypt(wallet_data.password)
-        
-        node.wallet = wallet
-        
-        # Scan for transactions
-        await node.scan_wallet_transactions()
+        wallet_info = node.wallet.get_wallet_info()
+        addresses = node.wallet.get_addresses()
         
         response = {
-            "wallet_id": wallet.get_wallet_id(),
-            "addresses": wallet.get_addresses(),
+            "wallet_id": wallet_info.get('wallet_id', 'unknown'),
+            "addresses": list(addresses.keys()),
+            "address_count": len(addresses),
+            "wallet_type": wallet_info.get('wallet_type'),
             "balance": wallet.get_balance(),
-            "wallet_type": wallet_data.wallet_type,
-            "encrypted": wallet_data.password is not None,
-            "address_count": len(wallet.get_addresses())
+            "loaded": True
         }
         
         logger.info(f"Wallet loaded: {response['wallet_id']}")
