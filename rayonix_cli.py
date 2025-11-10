@@ -43,18 +43,18 @@ class RayonixRPCClient:
         #self.session.mount('https://', adapter)
         
         # Headers
-        self.session.headers.update({
+        headers = {
             'Content-Type': 'application/json',
             'User-Agent': 'Rayonix-CLI/2.0.0',
             'Accept': 'application/json'
-        })
+        }
         
         # Add Authorization header if API key provided
         if api_key:
         	headers['Authorization'] = f'Bearer {api_key}'
         	logger.debug("API key authentication enabled")
         
-        self.session.headers.update(headers)
+        
         
         adapter = requests.adapters.HTTPAdapter(
             pool_connections=20,
