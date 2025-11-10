@@ -1,12 +1,18 @@
 
-RAYONIX-CHAIN
+# RAYONIX-CHAIN
 
 A complete blockchain implementation with Proof-of-Stake consensus, smart contracts, and UTXO system—built from scratch in Python.
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
+![Python](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/License-AGPL--3.0-orange)
 ![Version](https://img.shields.io/badge/Version-0.1.0-green)
-![Build](https://img.shields.io/badge/Build-Passing-success)
+![Consensus](https://img.shields.io/badge/Consensus-Proof_of_Stake-success)
+![Smart Contracts](https://img.shields.io/badge/Smart_Contracts-Enabled-brightgreen)
+![Status](https://img.shields.io/badge/Status-Active-success)
 ![Contributions](https://img.shields.io/badge/Contributions-Welcome-brightgreen)
+![Last Commit](https://img.shields.io/github/last-commit/RayoniR/RAYONIX-CHAIN)
+
+A complete blockchain implementation with Proof-of-Stake consensus...
 
 🚀 Get Started in 2 Minutes
 
