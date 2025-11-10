@@ -146,18 +146,18 @@ call-contract      # Call contract function
 contracts          # List smart contracts
 ```
 
-🏗️ Module Overview
+## 🏗️ Module Overview
 
-
-Module Purpose Key Features
-blockchain/ Core chain logic Block validation, chain organization
-consensusengine/ PoS Consensus Validator selection, block finality
-network/ P2P Networking Peer discovery, message propagation
-utxo_system/ Transaction model UTXO management, transaction verification
-rayonix_wallet/ Wallet management HD wallets, key derivation, signing
-smart_contract/ Contract engine VM execution, contract deployment
-merkle_system/ Data integrity Merkle trees, proof generation
-database/ Storage Data persistence, efficient querying
+| Module | Purpose | Key Features |
+|--------|---------|--------------|
+| 🏗️ **blockchain/** | Core chain logic | Block validation, chain organization |
+| ⚡ **consensusengine/** | PoS Consensus | Validator selection, block finality |
+| 🌐 **network/** | P2P Networking | Peer discovery, message propagation |
+| 💰 **utxo_system/** | Transaction model | UTXO management, transaction verification |
+| 👛 **rayonix_wallet/** | Wallet management | HD wallets, key derivation, signing |
+| 🤖 **smart_contract/** | Contract engine | VM execution, contract deployment |
+| 🌳 **merkle_system/** | Data integrity | Merkle trees, proof generation |
+| 💾 **database/** | Storage | Data persistence, efficient querying |
 
 
 🛠️ Development
