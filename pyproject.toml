@@ -125,14 +125,14 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rayonix/rayonix-chain"
-Repository = "https://github.com/rayonix/rayonix-chain"
+Homepage = "https://github.com/RayoniR/rayonix-chain"
+Repository = "https://github.com/RayoniR/rayonix-chain"
 Documentation = "https://rayonix-chain.readthedocs.io"
-"Issue Tracker" = "https://github.com/rayonix/rayonix-chain/issues"
+"Issue Tracker" = "https://github.com/RayoniR/rayonix-chain/issues"
 
 [project.scripts]
-rayonix-node = "rayonix.cli:main"
-rayonix-wallet = "rayonix.wallet:main"
+rayonix-node = "rayonixd:main"
+rayonix = "rayonix_cli:main"
 
 [tool.setuptools]
 packages = {find = {}}
