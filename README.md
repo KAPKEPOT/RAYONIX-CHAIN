@@ -3,6 +3,11 @@ RAYONIX-CHAIN
 
 A complete blockchain implementation with Proof-of-Stake consensus, smart contracts, and UTXO system—built from scratch in Python.
 
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
+![Version](https://img.shields.io/badge/Version-0.1.0-green)
+![Build](https://img.shields.io/badge/Build-Passing-success)
+![Contributions](https://img.shields.io/badge/Contributions-Welcome-brightgreen)
+
 🚀 Get Started in 2 Minutes
 
 1. Install & Setup
@@ -138,14 +143,35 @@ stats              # Show CLI statistics
 Project Structure
 
 ```
+```
 RAYONIX-CHAIN/
-├── rayonixd.py           # Main node daemon (RPC server)
-├── rayonix_cli.py        # Interactive CLI client
-├── main.py               # Alternative entry point
-├── smart_contract/       # Smart contract engine
-├── utxo_system/          # UTXO transaction system
-├── rayonix.yaml          # Configuration file
-└── requirements.txt      # Python dependencies
+├── 🏗️  Core Modules
+│   ├── blockchain/           # Blockchain core logic
+│   ├── consensusengine/      # Proof-of-Stake consensus
+│   ├── network/              # P2P networking
+│   ├── database/             # Data persistence
+│   └── merkle_system/        # Merkle tree implementation
+│
+├── 💰  Financial Modules
+│   ├── rayonix_wallet/       # HD wallet management
+│   ├── utxo_system/          # UTXO transaction model
+│   └── smart_contract/       # Smart contract engine
+│
+├── 🖥️  Runtime
+│   ├── rayonix_node/         # Node management
+│   ├── rayonixd.py           # Main node daemon
+│   ├── rayonix_cli.py        # Interactive CLI client
+│   └── main.py               # Alternative entry point
+│
+├── ⚙️  Configuration
+│   ├── config/               # Configuration management
+│   ├── rayonix.yaml          # Node settings
+│   └── pyproject.toml        # Package configuration
+│
+└── 📄  Documentation
+    ├── README.md             # This file
+    ├── LICENSE               # AGPL-3.0 License
+    └── structure.txt         # Project structure
 ```
 
 Package Installation
