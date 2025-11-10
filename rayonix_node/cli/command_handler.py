@@ -647,7 +647,7 @@ API Enabled:    {info.get('api_enabled', False)}"""
         
     def cmd_generate_api_key(self, args: List[str]) -> str:
     	"""Generate a strong API key"""
-    	def cmd_generate_api_key
+    	return self.system_cmd.execute_generate_api_key(args)
     
     def cmd_validate_api_key(self, args: List[str]) -> str:
     	"""Validate API key strength"""
