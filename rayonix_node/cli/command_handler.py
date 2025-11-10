@@ -19,13 +19,13 @@ class CommandHandler:
         self.commands = self._setup_commands()
         
         # Initialize command modules
-        self.create_wallet_cmd = CreateWalletCommand(self)
-        self.load_wallet_cmd = LoadWalletCommand(self)
-        self.api_cmd = APICommands(self)
-        self.node_cmd = NodeCommands(self)
-        self.blockchain_cmd = BlockchainCommands(self)
-        self.network_cmd = NetworkCommands(self)
-        self.system_cmd = SystemCommands(self)
+        self.create_wallet_cmd = CreateWalletCommand(self.client)
+        self.load_wallet_cmd = LoadWalletCommand(self.client)
+        self.node_cmd = NodeCommands(self.client)
+        self.blockchain_cmd = BlockchainCommands(self.client)
+        self.network_cmd = NetworkCommands(self.client)
+        self.system_cmd = SystemCommands(self.client)
+        self.api_cmd = APICommands(self.client)
     
     def _setup_commands(self) -> Dict[str, Dict]:
         """Setup commands beyond main.py"""
