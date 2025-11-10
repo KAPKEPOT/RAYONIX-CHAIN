@@ -433,19 +433,26 @@ async def create_wallet(
         print(f"DEBUG: Wallet ID: {wallet_id}")
         
         # Get addresses safely
-        addresses = []
+        addresses_dict = {}
         if hasattr(wallet, 'get_addresses') and callable(wallet.get_addresses):
-        	addresses = wallet.get_addresses()
+        	addresses_dict = wallet.get_addresses()
         elif hasattr(wallet, 'addresses'):
-        	addresses = list(wallet.addresses.keys()) if isinstance(wallet.addresses, dict) else wallet.addresses
+        	addresses_dict = wallet.addresses
+        
+        first_address = "NO_ADDRESS_GENERATED"
+        if addresses_dict:
+        	address_keys = list(addresses_dict.keys())
+        	if address_keys:
+        		first_address = address_keys[0]
         	
         print(f"DEBUG: Found {len(addresses)} addresses")
         
         response = {
             "wallet_id": wallet_id,
-            "address": addresses[0] if addresses else "NO_ADDRESS_GENERATED",
+            "address": first_address,
             "wallet_type": "hd",
             "encrypted": False,
+            "address_count": len(addresses_dict)
         }
         
         print("DEBUG: ✅ Wallet creation response prepared")
