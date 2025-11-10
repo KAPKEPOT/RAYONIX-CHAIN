@@ -3,9 +3,12 @@ RAYONIX-CHAIN
 
 A complete blockchain implementation with Proof-of-Stake consensus, smart contracts, and UTXO system—built from scratch in Python.
 
-https://img.shields.io/badge/Architecture-Modular-blue
-https://img.shields.io/badge/Python-3.8%2B-green
-https://img.shields.io/badge/License-AGPL--3.0-orange
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
+![Version](https://img.shields.io/badge/Version-0.1.0-green)
+![Build](https://img.shields.io/badge/Build-Passing-success)
+![Contributions](https://img.shields.io/badge/Contributions-Welcome-brightgreen)
+
+
 
 🏗️ Modular Architecture
 
