@@ -7,7 +7,7 @@ from pathlib import Path
 from rayonix_node.cli.base_commands.base_command import BaseCommand
 
 
-class APICommands:
+class APICommands(BaseCommand):
     """API key management and authentication commands"""
     
     def execute_api_key_info(self, args: List[str]) -> str:
