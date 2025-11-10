@@ -780,7 +780,16 @@ class ProductionRayonixWallet:
             except Exception as e:
                 logger.error(f"Cryptographic lock failed: {e}")
                 self._log_security_event("lock_failed", str(e))
-    
+
+    def get_addresses(self) -> Dict[str, AddressInfo]:
+    	"""Get all wallet addresses with complete information"""
+    	with self._state_lock:
+    	      if not self.is_initialized():
+    	      	raise WalletError("Wallet is not initialized")
+    	      
+    	      # Return a defensive copy to prevent external modification
+    	      return {addr: AddressInfo(**asdict(info)) for addr, info in self.addresses.items()}
+    	      
     def validate_address(self, address: str) -> bool:
         """Cryptographic address validation"""
         if address in self._address_validation_cache:
@@ -943,3 +952,7 @@ class RayonixWallet(ProductionRayonixWallet):
     def create_new_wallet(self) -> str:
         """Backward compatibility method"""
         return self.initialize_new_wallet()
+
+    def get_addresses(self) -> Dict[str, AddressInfo]:
+    	"""Backward compatibility method"""
+    	return super().get_addresses()              
