@@ -1,0 +1,162 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rayonix-chain"
+version = "0.1.0"
+description = "RAYONIX Chain - Blockchain implementation"
+authors = [
+    {name = "RAYONIX Team", email = "team@rayonix.site"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["blockchain", "cryptocurrency", "rayonix"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+    "aiodns",
+    "aiofiles",
+    "aiohappyeyeballs",
+    "aiohttp",
+    "aioprocessing",
+    "aiosignal",
+    "anyio",
+    "asn1crypto",
+    "async-timeout",
+    "attrs",
+    "base58",
+    "bech32",
+    "bencode.py",
+    "bip32",
+    "bloom-filter",
+    "cachetools",
+    "certifi",
+    "cffi",
+    "charset-normalizer",
+    "cramjam",
+    "crc32c",
+    "cryptography",
+    "dnspython",
+    "ecdsa",
+    "fastapi",
+    "frozenlist",
+    "gas",
+    "google-api-core",
+    "google-api-python-client",
+    "google-auth",
+    "google-auth-httplib2",
+    "googleapis-common-protos",
+    "httplib2",
+    "idna",
+    "importlib_resources",
+    "jsonschema",
+    "jsonschema-specifications",
+    "jsonrpcserver",
+    "lmdb",
+    "lz4",
+    "mnemonic",
+    "msgpack",
+    "multidict",
+    "numpy",
+    "plyvel",
+    "propcache",
+    "proto-plus",
+    "protobuf",
+    "psutil",
+    "pyasn1",
+    "pyasn1-modules",
+    "pycares",
+    "pycparser",
+    "pycryptodome",
+    "pyparsing",
+    "python-dateutil",
+    "python-dotenv",
+    "python-snappy",
+    "python-whois",
+    "PyYAML",
+    "qrcode",
+    "referencing",
+    "requests",
+    "rpds-py",
+    "rsa",
+    "secure",
+    "six",
+    "sniffio",
+    "sortedcontainers",
+    "toml",
+    "typing_extensions",
+    "uritemplate",
+    "urllib3",
+    "uvloop",
+    "uvicorn",
+    "wasmtime",
+    "watchgod",
+    "websockets",
+    "yarl",
+    "zstandard",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "black",
+    "flake8",
+    "mypy",
+    "pre-commit",
+]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+]
+
+[project.urls]
+Homepage = "https://github.com/rayonix/rayonix-chain"
+Repository = "https://github.com/rayonix/rayonix-chain"
+Documentation = "https://rayonix-chain.readthedocs.io"
+"Issue Tracker" = "https://github.com/rayonix/rayonix-chain/issues"
+
+[project.scripts]
+rayonix-node = "rayonix.cli:main"
+rayonix-wallet = "rayonix.wallet:main"
+
+[tool.setuptools]
+packages = {find = {}}
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
