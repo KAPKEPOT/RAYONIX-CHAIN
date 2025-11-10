@@ -1,9 +1,15 @@
 # rayonix_node/cli/command_handler.py -command handler
-
 import json
 import getpass
 from typing import Dict, List, Any
 from datetime import datetime
+from rayonix_node.cli.wallet_commands.create_wallet import CreateWalletCommand
+from rayonix_node.cli.wallet_commands.load_wallet import LoadWalletCommand
+from rayonix_node.cli.base_commands.api_commands import APICommands
+from rayonix_node.cli.base_commands.node_commands import NodeCommands
+from rayonix_node.cli.base_commands.blockchain_commands import BlockchainCommands
+from rayonix_node.cli.base_commands.network_commands import NetworkCommands
+from rayonix_node.cli.base_commands.system_commands import SystemCommands
 
 class CommandHandler:
     """ command handler"""
@@ -11,6 +17,15 @@ class CommandHandler:
     def __init__(self, rpc_client):
         self.client = rpc_client
         self.commands = self._setup_commands()
+        
+        # Initialize command modules
+        self.create_wallet_cmd = CreateWalletCommand(self)
+        self.load_wallet_cmd = LoadWalletCommand(self)
+        self.api_cmd = APICommands(self)
+        self.node_cmd = NodeCommands(self)
+        self.blockchain_cmd = BlockchainCommands(self)
+        self.network_cmd = NetworkCommands(self)
+        self.system_cmd = SystemCommands(self)
     
     def _setup_commands(self) -> Dict[str, Dict]:
         """Setup commands beyond main.py"""
@@ -37,13 +52,13 @@ class CommandHandler:
             'create-wallet': {
                 'function': self.cmd_create_wallet,
                 'description': 'Create a new wallet',
-                'usage': 'create-wallet [type] [password]',
+                'usage': 'create-wallet',
                 'category': 'Wallet'
             },
             'load-wallet': {
                 'function': self.cmd_load_wallet,
                 'description': 'Load wallet from mnemonic phrase',
-                'usage': 'load-wallet <mnemonic> [password]',
+                'usage': 'load-wallet',
                 'category': 'Wallet'
             },
             'import-wallet': {
@@ -195,16 +210,22 @@ class CommandHandler:
                 'category': 'API System'              
             },
             'validate-api-key': {
-            'function': self.cmd_validate_api_key,
-            'description': 'Validate api key',
-            'usage': 'validate-api-key "your-key-here"',
-            'category': 'API System'
+                'function': self.cmd_validate_api_key,
+                'description': 'Validate API key strength',
+                'usage': 'validate-api-key <key>',
+                'category': 'API'
             },
-            'api-info': {
-            'function': self.cmd_api_key_info,
-            'description': 'Show api info',
-            'usage': 'api-info',
-            'category': 'API System'
+            'api-key-info': {
+                'function': self.cmd_api_key_info,
+                'description': 'Show API key authentication status',
+                'usage': 'api-key-info',
+                'category': 'API'
+            },
+            'setup-api-auth': {
+                'function': self.cmd_setup_api_auth,
+                'description': 'Interactive API authentication setup',
+                'usage': 'setup-api-auth',
+                'category': 'API'
             }
         }
     
@@ -272,90 +293,17 @@ API Enabled:    {info.get('api_enabled', False)}"""
     
     def cmd_status(self, args: List[str]) -> str:
         """ node status"""
-        try:
-            status = self.client.get_node_status()
-            node_info = self.client.get_detailed_info()
-            
-            status_text = "📊 NODE STATUS\n"
-            status_text += "────────────────────────────────\n"
-            status_text += f"Status:         {status.get('status', 'Unknown')}\n"
-            status_text += f"Block Height:   {node_info.get('block_height', 0):,}\n"
-            status_text += f"Network:        {node_info.get('network', 'Unknown').upper()}\n"
-            status_text += f"Peers:          {node_info.get('peers_connected', 0)}\n"
-            status_text += f"Sync Progress:  {status.get('sync_progress', 0)}%\n"
-            status_text += f"Uptime:         {self._format_uptime(node_info.get('uptime', 0))}\n"
-            
-            # Add wallet balance if available
-            try:
-                balance = self.client.get_balance()
-                status_text += f"Wallet Balance: {balance:,.6f} RYX\n"
-            except:
-                status_text += "Wallet Balance: Not available\n"
-            
-            return status_text
-        except Exception as e:
-            return f"❌ Error getting status: {e}"
+        return self.node_cmd.execute_status(args)
 
     # Wallet Management Commands
     def cmd_create_wallet(self, args: List[str]) -> str:
-        """Create a new wallet with  options"""
-        print("=== DEBUG: CLI create-wallet COMMAND ===")
-        try:
-            wallet_type = args[0] if len(args) > 0 else "hd"
-            password = args[1] if len(args) > 1 else None
-            
-            if not password:
-                password = getpass.getpass("🔐 Enter wallet password: ")
-                confirm = getpass.getpass("🔐 Confirm password: ")
-                if password != confirm:
-                    return "❌ Error: Passwords do not match"
-            
-            data = {
-                "wallet_type": wallet_type,
-                "password": password
-            }
-            
-            result = self.client.create_wallet(wallet_type, password)
-            
-            response = "✅ WALLET CREATED SUCCESSFULLY\n"
-            response += "────────────────────────────────\n"
-            response += f"Wallet ID:      {result.get('wallet_id', 'Unknown')}\n"
-            response += f"First Address:  {result.get('address', 'Unknown')}\n"
-            response += f"Wallet Type:    {wallet_type.upper()}\n"
-            
-            if 'mnemonic' in result:
-                response += f"\n⚠️  IMPORTANT SECURITY INFORMATION\n"
-                response += f"────────────────────────────────\n"
-                response += f"MNEMONIC PHRASE (Save this securely!):\n"
-                response += f"┌{'─' * 40}┐\n"
-                response += f"│ {result['mnemonic']:38} │\n"
-                response += f"└{'─' * 40}┘\n"
-                response += "This is the ONLY way to recover your wallet!\n"
-                response += "Store it in a secure location and never share it.\n"
-            
-            return response
-        except Exception as e:
-            return f"❌ Error creating wallet: {e}"
+        """Delegate to CreateWalletCommand module"""
+        return self.create_wallet_cmd.execute(args)
     
     def cmd_load_wallet(self, args: List[str]) -> str:
-        """Load wallet from mnemonic"""
-        if not args:
-            return "❌ Usage: load-wallet <mnemonic_phrase> [password]"
+        """Delegate to LoadWalletCommand module"""
+        return self.load_wallet_cmd.execute(args)
         
-        try:
-            mnemonic = args[0]
-            password = getpass.getpass("🔐 Enter wallet password: ") if len(args) < 2 else args[1]
-            
-            result = self.client.load_wallet(mnemonic, password)
-            
-            return f"✅ WALLET LOADED SUCCESSFULLY\n" \
-                   f"────────────────────────────────\n" \
-                   f"Addresses: {len(result.get('addresses', []))}\n" \
-                   f"Balance:   {result.get('balance', 0):,.6f} RYX\n" \
-                   f"First Address: {result.get('addresses', ['Unknown'])[0]}"
-        except Exception as e:
-            return f"❌ Error loading wallet: {e}"
-    
     def cmd_import_wallet(self, args: List[str]) -> str:
         """Import wallet from backup file"""
         if not args:
@@ -517,68 +465,14 @@ API Enabled:    {info.get('api_enabled', False)}"""
 
     # Network Commands
     def cmd_peers(self, args: List[str]) -> str:
-        """Show connected peers"""
-        try:
-            peers = self.client.get_peers()
-            if not peers:
-                return "🌐 No peers connected"
-            
-            response = f"🌐 CONNECTED PEERS ({len(peers)} total)\n"
-            response += "────────────────────────────────\n"
-            for i, peer in enumerate(peers):
-                address = peer.get('address', 'Unknown')
-                peer_id = peer.get('id', 'Unknown')[:16] + '...' if len(peer.get('id', '')) > 16 else peer.get('id', 'Unknown')
-                version = peer.get('version', 'Unknown')
-                response += f"{i+1}. {address} (v{version})\n"
-                response += f"    ID: {peer_id}\n"
-            
-            return response
-        except Exception as e:
-            return f"❌ Error getting peers: {e}"
+        return self.network_cmd.execute_peers(args)
     
     def cmd_network_stats(self, args: List[str]) -> str:
-        """Network statistics"""
-        try:
-            stats = self.client.get_network_stats()
-            return f"🌐 NETWORK STATISTICS\n" \
-                   f"────────────────────────────────\n" \
-                   f"Connected Peers:    {stats.get('peers_connected', 0)}\n" \
-                   f"Messages Sent:      {stats.get('messages_sent', 0):,}\n" \
-                   f"Messages Received:  {stats.get('messages_received', 0):,}\n" \
-                   f"Bytes Sent:         {self._format_bytes(stats.get('bytes_sent', 0))}\n" \
-                   f"Bytes Received:     {self._format_bytes(stats.get('bytes_received', 0))}\n" \
-                   f"Uptime:             {self._format_uptime(stats.get('uptime', 0))}"
-        except Exception as e:
-            return f"❌ Error getting network stats: {e}"
+        return self.network_cmd.execute_network(args)
 
     # Blockchain Commands
     def cmd_blockchain_info(self, args: List[str]) -> str:
-        """Show detailed blockchain information"""
-        try:
-            blockchain_status = self.client.get_blockchain_status()
-            node_info = self.client.get_detailed_info()
-            
-            response = "⛓️  BLOCKCHAIN INFORMATION\n"
-            response += "────────────────────────────────\n"
-            response += f"Block Height:      {blockchain_status.get('block_height', 0):,}\n"
-            response += f"Network:           {node_info.get('network', 'Unknown').upper()}\n"
-            response += f"Consensus:         {node_info.get('consensus', 'Unknown').upper()}\n"
-            response += f"Difficulty:        {blockchain_status.get('difficulty', 0):.6f}\n"
-            response += f"Total Transactions: {blockchain_status.get('total_transactions', 0):,}\n"
-            response += f"Mempool Size:      {blockchain_status.get('mempool_size', 0):,}\n"
-            response += f"Chain Work:        {blockchain_status.get('chain_work', 'Unknown')}\n"
-            response += f"Best Block Hash:   {blockchain_status.get('best_block_hash', 'Unknown')[:20]}...\n"
-            
-            # Add sync information
-            if blockchain_status.get('syncing', False):
-                response += f"Sync Progress:     {blockchain_status.get('sync_progress', 0)}%\n"
-                response += f"Sync Status:       ⚡ Syncing\n"
-            else:
-                response += f"Sync Status:       ✅ Fully synced\n"
-            
-            return response
-        except Exception as e:
-            return f"❌ Error getting blockchain info: {e}"
+        return self.blockchain_cmd.execute_blockchain_info(args)
     
     def cmd_sync_status(self, args: List[str]) -> str:
         """Show synchronization status"""
@@ -603,46 +497,10 @@ API Enabled:    {info.get('api_enabled', False)}"""
             return f"❌ Error getting sync status: {e}"
     
     def cmd_block(self, args: List[str]) -> str:
-        """Show block information"""
-        if not args:
-            return "❌ Usage: block <height_or_hash>"
-        
-        try:
-            block = self.client.get_block(args[0])
-            if not block:
-                return "❌ Block not found"
-            
-            return f"📦 BLOCK #{block.get('height', 'Unknown')}\n" \
-                   f"────────────────────────────────\n" \
-                   f"Hash:          {block.get('hash', 'Unknown')}\n" \
-                   f"Previous Hash: {block.get('previous_hash', 'Genesis')}\n" \
-                   f"Timestamp:     {self._format_timestamp(block.get('timestamp', 0))}\n" \
-                   f"Transactions:  {len(block.get('transactions', []))}\n" \
-                   f"Validator:     {block.get('validator', 'Unknown')}\n" \
-                   f"Signature:     {block.get('signature', 'Unknown')[:20]}..."
-        except Exception as e:
-            return f"❌ Error getting block: {e}"
+        return self.blockchain_cmd.execute_block(args)
     
     def cmd_transaction(self, args: List[str]) -> str:
-        """Show transaction information"""
-        if not args:
-            return "❌ Usage: transaction <hash>"
-        
-        try:
-            transaction = self.client.get_transaction(args[0])
-            if not transaction:
-                return "❌ Transaction not found"
-            
-            return f"💸 TRANSACTION DETAILS\n" \
-                   f"────────────────────────────────\n" \
-                   f"Hash:      {transaction.get('hash', 'Unknown')}\n" \
-                   f"Block:     {transaction.get('block_height', 'Unconfirmed')}\n" \
-                   f"Timestamp: {self._format_timestamp(transaction.get('timestamp', 0))}\n" \
-                   f"Inputs:    {len(transaction.get('inputs', []))}\n" \
-                   f"Outputs:   {len(transaction.get('outputs', []))}\n" \
-                   f"Amount:    {sum(out.get('amount', 0) for out in transaction.get('outputs', [])):,.6f} RYX"
-        except Exception as e:
-            return f"❌ Error getting transaction: {e}"
+        def cmd_transaction
     
     def cmd_mempool(self, args: List[str]) -> str:
         """Show mempool information"""
@@ -661,28 +519,7 @@ API Enabled:    {info.get('api_enabled', False)}"""
             return f"❌ Error getting mempool info: {e}"
     
     def cmd_history(self, args: List[str]) -> str:
-        """Transaction history"""
-        try:
-            count = int(args[0]) if args else 10
-            transactions = self.client.get_transaction_history(count)
-            
-            if not transactions:
-                return "📜 No transactions found"
-            
-            response = f"📜 RECENT TRANSACTIONS (last {len(transactions)})\n"
-            response += "────────────────────────────────\n"
-            for tx in transactions:
-                tx_hash = tx.get('hash', 'Unknown')[:16] + '...'
-                amount = tx.get('amount', 0)
-                timestamp = tx.get('timestamp', 0)
-                date = self._format_timestamp(timestamp)
-                direction = "➡️  SENT" if amount < 0 else "⬅️  RECEIVED"
-                response += f"{date} - {direction} - {abs(amount):,.6f} RYX\n"
-                response += f"    Hash: {tx_hash}\n"
-            
-            return response
-        except Exception as e:
-            return f"❌ Error getting transaction history: {e}"
+        return self.blockchain_cmd.execute_history(args)
 
     # Features
     def cmd_staking(self, args: List[str]) -> str:
@@ -803,73 +640,14 @@ API Enabled:    {info.get('api_enabled', False)}"""
     # System Commands
     def cmd_config(self, args: List[str]) -> str:
         """Show configuration information"""
-        try:
-            config = self.client.get_config()
-            if args:
-                # Show specific config key
-                key = args[0]
-                keys = key.split('.')
-                value = config
-                for k in keys:
-                    if isinstance(value, dict):
-                        value = value.get(k, {})
-                    else:
-                        value = "Not found"
-                        break
-                return f"⚙️  CONFIG: {key}\n" \
-                       f"────────────────────────────────\n" \
-                       f"Value: {value}"
-            else:
-                # Show all config sections
-                response = "⚙️  CONFIGURATION SECTIONS\n"
-                response += "────────────────────────────────\n"
-                for section, settings in config.items():
-                    response += f"{section}:\n"
-                    for key, value in settings.items():
-                        response += f"  {key}: {value}\n"
-                    response += "\n"
-                return response
-        except Exception as e:
-            return f"❌ Error getting config: {e}"
+        return self.node_cmd.execute_config(args)
     
     def cmd_stats(self, args: List[str]) -> str:
-        """Show CLI statistics"""
-        try:
-            metrics = self.client.get_performance_metrics()
-            hit_rate = (metrics['cache_hits'] / metrics['requests_made'] * 100) if metrics['requests_made'] > 0 else 0
-            
-            return f"📈 CLI PERFORMANCE METRICS\n" \
-                   f"────────────────────────────────\n" \
-                   f"Total Requests:      {metrics['requests_made']:,}\n" \
-                   f"Cache Hits:          {metrics['cache_hits']:,}\n" \
-                   f"Average Response:    {metrics['average_response_time']:.3f}s\n" \
-                   f"Cache Hit Rate:      {hit_rate:.1f}%"
-        except:
-            return "📈 Performance metrics not available"
+        return self.system_cmd.execute_stats(args)
         
     def cmd_generate_api_key(self, args: List[str]) -> str:
     	"""Generate a strong API key"""
-    	from rayonix_node.utils.api_key_manager import APIKeyManager
-    	
-    	length = int(args[0]) if args and args[0].isdigit() else 128    	
-    	key = APIKeyManager.generate_strong_api_key(length)
-    	
-    	response = "🔐 GENERATED STRONG API KEY\n"
-    	response += "=" * 60 + "\n"
-    	response += key + "\n"
-    	response += "=" * 60 + "\n\n"
-    	response += "⚠️  SECURITY INSTRUCTIONS:\n"
-    	response += "────────────────────────────────\n"
-    	response += "1. Set this key in your node configuration:\n"
-    	response += "   api.auth_key = \"YOUR_KEY_HERE\"\n\n"
-    	response += "2. Use with CLI commands:\n"
-    	response += "   rayonix-cli --api-key \"KEY\" wallet-info\n"
-    	response += "   OR: export RAYONIX_API_KEY=\"KEY\"\n"
-    	response += "   rayonix-cli --api-key-env wallet-info\n\n"
-    	response += "3. Store securely - this key cannot be recovered!\n"
-    	response += "4. Never commit to version control or share\n"
-    	
-    	return response
+    	def cmd_generate_api_key
     
     def cmd_validate_api_key(self, args: List[str]) -> str:
     	"""Validate API key strength"""
@@ -887,23 +665,13 @@ API Enabled:    {info.get('api_enabled', False)}"""
     
     def cmd_api_key_info(self, args: List[str]) -> str:
     	"""Show current API key authentication status"""
-    	try:
-    		# Test authentication
-    		info = self.client.get_detailed_info()
-    		
-    		response = "🔐 API KEY AUTHENTICATION STATUS\n"
-    		response += "────────────────────────────────\n"
-    		response += "Status: ✅ Authenticated\n"
-    		response += f"Node: {info.get('network', 'Unknown')}\n"
-    		response += f"Block Height: {info.get('block_height', 0):,}\n"
-    		
-    		return response
-    	
-    	except Exception as e:
-    		if "401" in str(e) or "authentication" in str(e).lower():
-    			return "🔐 API KEY AUTHENTICATION STATUS\n────────────────────────────────\nStatus: ❌ Authentication Failed\nError: Invalid or missing API key"
-    		else:
-    			return f"🔐 API KEY AUTHENTICATION STATUS\n────────────────────────────────\nStatus: ⚠️  Unknown\nError: {e}"
+    	return self.api_cmd.execute_api_key_info(args)
+    
+    def cmd_setup_api_auth(self, args: List[str]) -> str:
+    	return self.api_cmd.execute_setup_api_auth(args)
+    
+    def cmd_validate_api_key(self, args: List[str]) -> str:
+    	return self.api_cmd.execute_validate_api_key(args)
 
     # Utility Methods
     def _format_uptime(self, seconds: int) -> str:
@@ -957,3 +725,15 @@ API Enabled:    {info.get('api_enabled', False)}"""
             return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
         except:
             return "Unknown"
+
+    def _format_rpc_error(self, error: Exception) -> str:
+        """Format RPC errors consistently"""
+        error_msg = str(error)
+        if "404" in error_msg or "endpoint" in error_msg:
+            return "❌ Command not supported by node. Ensure node supports this operation."
+        elif "401" in error_msg or "authentication" in error_msg:
+            return "❌ Authentication failed. Check your API key."
+        elif "connection" in error_msg.lower():
+            return "❌ Cannot connect to node. Ensure rayonixd is running."
+        else:
+            return f"❌ Error: {error_msg}"                    
