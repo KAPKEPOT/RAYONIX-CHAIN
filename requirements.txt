@@ -17,7 +17,7 @@ cachetools
 certifi
 cffi
 charset-normalizer
-coincurve
+#coincurve
 cramjam
 crc32c
 cryptography
