@@ -2,7 +2,7 @@
 
 import getpass
 from typing import Optional, Dict, Any
-from rayonix_node.cli.wallet_commands.command_handler import CommandHandler
+from rayonix_node.cli.command_handler import CommandHandler
 
 
 class CreateWalletCommand:
