@@ -445,7 +445,7 @@ async def create_wallet(
         	if address_keys:
         		first_address = address_keys[0]
         	
-        print(f"DEBUG: Found {len(addresses)} addresses")
+        #print(f"DEBUG: Found {len(addresses)} addresses")
         
         response = {
             "wallet_id": wallet_id,
