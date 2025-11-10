@@ -181,19 +181,21 @@ class RayonixRPCClient:
         return self.call_rest_api("contracts/call", "POST", data)
 
     # Wallet Management Methods
-    def create_wallet(self, wallet_type: str = "hd", password: str = None) -> Dict[str, Any]:
+    def create_wallet(self, wallet_type: str = "hd", password: str = None, mnemonic_length: int = 12) -> Dict[str, Any]:
         """Create a new wallet"""
         data = {
             "wallet_type": wallet_type,
             "password": password
+            "mnemonic_length": mnemonic_length
         }
         return self.call_rest_api("wallet/create", "POST", data)
     
-    def load_wallet(self, mnemonic: str, password: str = None) -> Dict[str, Any]:
-        """Load wallet from mnemonic"""
+    def load_wallet(self, mnemonic: str, password: str = None, wallet_type: str = "hd") -> Dict[str, Any]:
+        """Load wallet from mnemonic with type support"""
         data = {
             "mnemonic": mnemonic,
             "password": password
+            "wallet_type": wallet_type
         }
         return self.call_rest_api("wallet/load", "POST", data)
     
