@@ -4,15 +4,11 @@ import getpass
 import os
 from typing import List, Dict, Any
 from pathlib import Path
-from ..command_handler import CommandHandler
+from rayonix_node.cli.base_commands.base_command import BaseCommand
 
 
 class APICommands:
     """API key management and authentication commands"""
-    
-    def __init__(self, command_handler: CommandHandler):
-        self.handler = command_handler
-        self.client = command_handler.client
     
     def execute_api_key_info(self, args: List[str]) -> str:
         """Show current API key authentication status"""

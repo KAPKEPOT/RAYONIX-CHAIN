@@ -1,15 +1,11 @@
 # rayonix_node/cli/base_commands/node_commands.py
 
 from typing import List, Dict, Any
-from rayonix_node.cli.command_handler import CommandHandler
+from rayonix_node.cli.base_commands.base_command import BaseCommand
 
 
-class NodeCommands:
+class NodeCommands(BaseCommand):
     """Node management and information commands"""
-    
-    def __init__(self, command_handler: CommandHandler):
-        self.handler = command_handler
-        self.client = command_handler.client
     
     def execute_info(self, args: List[str]) -> str:
         """Show detailed node information"""
@@ -23,12 +19,12 @@ Block Height:   {info.get('block_height', 0):,}
 Connected Peers: {info.get('peers_connected', 0)}
 Sync Status:    {info.get('sync_status', 'Unknown')}
 Consensus:      {info.get('consensus', 'Unknown').upper()}
-Uptime:         {self.handler._format_uptime(info.get('uptime', 0))}
+Uptime:         {self._format_uptime(info.get('uptime', 0))}
 Memory Usage:   {info.get('memory_usage', 0)} MB
 Wallet Loaded:  {info.get('wallet_loaded', False)}
 API Enabled:    {info.get('api_enabled', False)}"""
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)
     
     def execute_status(self, args: List[str]) -> str:
         """Show node status"""
@@ -43,7 +39,7 @@ API Enabled:    {info.get('api_enabled', False)}"""
             status_text += f"Network:        {node_info.get('network', 'Unknown').upper()}\n"
             status_text += f"Peers:          {node_info.get('peers_connected', 0)}\n"
             status_text += f"Sync Progress:  {status.get('sync_progress', 0)}%\n"
-            status_text += f"Uptime:         {self.handler._format_uptime(node_info.get('uptime', 0))}\n"
+            status_text += f"Uptime:         {self._format_uptime(node_info.get('uptime', 0))}\n"
             
             # Add wallet balance if available
             try:
@@ -54,7 +50,7 @@ API Enabled:    {info.get('api_enabled', False)}"""
             
             return status_text
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)
     
     def execute_config(self, args: List[str]) -> str:
         """Show configuration information"""
@@ -83,4 +79,4 @@ API Enabled:    {info.get('api_enabled', False)}"""
                     response += "\n"
                 return response
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)

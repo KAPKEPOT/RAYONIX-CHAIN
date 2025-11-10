@@ -1,15 +1,11 @@
 # rayonix_node/cli/base_commands/system_commands.py
 
 from typing import List, Dict, Any
-from rayonix_node.cli.command_handler import CommandHandler
+from rayonix_node.cli.base_commands.base_command import BaseCommand
 
 
-class SystemCommands:
+class SystemCommands(BaseCommand):
     """System utility and maintenance commands"""
-    
-    def __init__(self, command_handler: CommandHandler):
-        self.handler = command_handler
-        self.client = command_handler.client
     
     def execute_stats(self, args: List[str]) -> str:
         """Show CLI statistics"""

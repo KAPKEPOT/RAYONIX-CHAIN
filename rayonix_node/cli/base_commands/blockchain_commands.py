@@ -1,15 +1,11 @@
 # rayonix_node/cli/base_commands/blockchain_commands.py
 
 from typing import List, Dict, Any
-from rayonix_node.cli.command_handler import CommandHandler
+from rayonix_node.cli.base_commands.base_command import BaseCommand
 
 
-class BlockchainCommands:
+class BlockchainCommands(BaseCommand):
     """Blockchain query and exploration commands"""
-    
-    def __init__(self, command_handler: CommandHandler):
-        self.handler = command_handler
-        self.client = command_handler.client
     
     def execute_blockchain_info(self, args: List[str]) -> str:
         """Show detailed blockchain information"""
@@ -37,7 +33,7 @@ class BlockchainCommands:
             
             return response
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)
     
     def execute_block(self, args: List[str]) -> str:
         """Show block information"""
@@ -53,12 +49,12 @@ class BlockchainCommands:
                    f"────────────────────────────────\n" \
                    f"Hash:          {block.get('hash', 'Unknown')}\n" \
                    f"Previous Hash: {block.get('previous_hash', 'Genesis')}\n" \
-                   f"Timestamp:     {self.handler._format_timestamp(block.get('timestamp', 0))}\n" \
+                   f"Timestamp:     {self._format_timestamp(block.get('timestamp', 0))}\n" \
                    f"Transactions:  {len(block.get('transactions', []))}\n" \
                    f"Validator:     {block.get('validator', 'Unknown')}\n" \
                    f"Signature:     {block.get('signature', 'Unknown')[:20]}..."
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)
     
     def execute_transaction(self, args: List[str]) -> str:
         """Show transaction information"""
@@ -74,12 +70,12 @@ class BlockchainCommands:
                    f"────────────────────────────────\n" \
                    f"Hash:      {transaction.get('hash', 'Unknown')}\n" \
                    f"Block:     {transaction.get('block_height', 'Unconfirmed')}\n" \
-                   f"Timestamp: {self.handler._format_timestamp(transaction.get('timestamp', 0))}\n" \
+                   f"Timestamp: {self._format_timestamp(transaction.get('timestamp', 0))}\n" \
                    f"Inputs:    {len(transaction.get('inputs', []))}\n" \
                    f"Outputs:   {len(transaction.get('outputs', []))}\n" \
                    f"Amount:    {sum(out.get('amount', 0) for out in transaction.get('outputs', [])):,.6f} RYX"
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)
     
     def execute_history(self, args: List[str]) -> str:
         """Transaction history"""
@@ -96,11 +92,11 @@ class BlockchainCommands:
                 tx_hash = tx.get('hash', 'Unknown')[:16] + '...'
                 amount = tx.get('amount', 0)
                 timestamp = tx.get('timestamp', 0)
-                date = self.handler._format_timestamp(timestamp)
+                date = self._format_timestamp(timestamp)
                 direction = "➡️  SENT" if amount < 0 else "⬅️  RECEIVED"
                 response += f"{date} - {direction} - {abs(amount):,.6f} RYX\n"
                 response += f"    Hash: {tx_hash}\n"
             
             return response
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)

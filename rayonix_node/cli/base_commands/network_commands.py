@@ -1,15 +1,11 @@
 # rayonix_node/cli/base_commands/network_commands.py
 
 from typing import List, Dict, Any
-from .lrayonix_node.cli.command_handler import CommandHandler
+from rayonix_node.cli.base_command.base_commands import BaseCommand
 
 
-class NetworkCommands:
+class NetworkCommands(BaseCommand):
     """Network and peer management commands"""
-    
-    def __init__(self, command_handler: CommandHandler):
-        self.handler = command_handler
-        self.client = command_handler.client
     
     def execute_peers(self, args: List[str]) -> str:
         """Show connected peers"""
@@ -29,7 +25,7 @@ class NetworkCommands:
             
             return response
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)
     
     def execute_network(self, args: List[str]) -> str:
         """Network statistics"""
@@ -40,8 +36,8 @@ class NetworkCommands:
                    f"Connected Peers:    {stats.get('peers_connected', 0)}\n" \
                    f"Messages Sent:      {stats.get('messages_sent', 0):,}\n" \
                    f"Messages Received:  {stats.get('messages_received', 0):,}\n" \
-                   f"Bytes Sent:         {self.handler._format_bytes(stats.get('bytes_sent', 0))}\n" \
-                   f"Bytes Received:     {self.handler._format_bytes(stats.get('bytes_received', 0))}\n" \
-                   f"Uptime:             {self.handler._format_uptime(stats.get('uptime', 0))}"
+                   f"Bytes Sent:         {self._format_bytes(stats.get('bytes_sent', 0))}\n" \
+                   f"Bytes Received:     {self._format_bytes(stats.get('bytes_received', 0))}\n" \
+                   f"Uptime:             {self._format_uptime(stats.get('uptime', 0))}"
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)
