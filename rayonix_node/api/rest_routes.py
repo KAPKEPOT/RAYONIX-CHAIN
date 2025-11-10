@@ -445,13 +445,21 @@ async def create_wallet(
         	if address_keys:
         		first_address = address_keys[0]
         	
-        #print(f"DEBUG: Found {len(addresses)} addresses")
+        # Get the mnemonic from wallet creation
+        mnemonic = None
+        if hasattr(wallet, '_creation_mnemonic'):
+        	# If encrypted, we need to handle this properly
+        	mnemonic = "ENCRYPTED_MNEMONIC_NEEDS_DECRYPTION"
+        else:
+        	# For new wallets, the mnemonic should be available
+        	mnemonic = getattr(wallet, 'creation_mnemonic', None)
         
         response = {
             "wallet_id": wallet_id,
             "address": first_address,
             "wallet_type": "hd",
             "encrypted": False,
+            "mnemonic": mnemonic,
             "address_count": len(addresses_dict)
         }
         
