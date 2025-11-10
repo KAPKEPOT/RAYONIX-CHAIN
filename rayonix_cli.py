@@ -22,26 +22,25 @@ from rayonix_node.cli.history_manager import HistoryManager
 from rayonix_node.cli.command_handler import CommandHandler
 from rayonix_node.cli.interactive import run_interactive_mode
 from rayonix_node.utils.helpers import configure_logging
+from rayonix_node.utils.api_key_manager import APIKeyManager, validate_api_key
 
 logger = logging.getLogger("rayonix_cli")
 
 class RayonixRPCClient:
-    """RPC client"""
-    
-    def __init__(self, api_url: str = "http://127.0.0.1:52557", timeout: int = 30):
+    def __init__(self, api_url: str = "http://127.0.0.1:52557", timeout: int = 30, api_key: str = None):
         self.api_url = api_url.rstrip('/')
         self.timeout = timeout
         self.session = requests.Session()
         
         # Connection pooling
-        adapter = requests.adapters.HTTPAdapter(
-            pool_connections=20,
-            pool_maxsize=100,
-            max_retries=5,
-            pool_block=True
-        )
-        self.session.mount('http://', adapter)
-        self.session.mount('https://', adapter)
+        #adapter = requests.adapters.HTTPAdapter(
+            #pool_connections=20,
+            #pool_maxsize=100,
+            #max_retries=5,
+            #pool_block=True
+        #)
+        #self.session.mount('http://', adapter)
+        #self.session.mount('https://', adapter)
         
         # Headers
         self.session.headers.update({
@@ -49,6 +48,23 @@ class RayonixRPCClient:
             'User-Agent': 'Rayonix-CLI/2.0.0',
             'Accept': 'application/json'
         })
+        
+        # Add Authorization header if API key provided
+        if api_key:
+        	headers['Authorization'] = f'Bearer {api_key}'
+        	logger.debug("API key authentication enabled")
+        
+        self.session.headers.update(headers)
+        
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=20,
+            pool_maxsize=100,
+            max_retries=5,
+            pool_block=True
+        )
+        
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
         
         # Features
         self.cache = {}
@@ -264,6 +280,9 @@ class RayonixRPCClient:
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get CLI performance metrics"""
         return self.performance_metrics
+        
+#def parse_arguments():
+	
 
 def main():
     """CLI entry point"""
@@ -272,6 +291,21 @@ def main():
                        help='Daemon API URL (default: http://127.0.0.1:52557)')
     parser.add_argument('--timeout', type=int, default=30,
                        help='Request timeout in seconds (default: 30)')
+    
+    # API Key authentication options
+    api_key_group = parser.add_argument_group('API Authentication')
+    api_key_group.add_argument('--api-key', help='API key for authentication')
+    api_key_group.add_argument('--api-key-env', action='store_true', 
+                              help='Use RAYONIX_API_KEY environment variable')
+    api_key_group.add_argument('--api-key-file', help='Read API key from file')
+    api_key_group.add_argument('--api-key-interactive', action='store_true',
+                              help='Prompt for API key interactively')
+    api_key_group.add_argument('--generate-api-key', action='store_true',
+                              help='Generate a strong API key and exit')
+    api_key_group.add_argument('--validate-api-key', metavar='KEY',
+                              help='Validate API key strength and exit')
+                              
+              
     parser.add_argument('--data-dir', default='~/.rayonix',
                        help='Data directory for CLI history (default: ~/.rayonix)')
     parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
@@ -372,6 +406,79 @@ def main():
     
     # Create RPC client
     client = RayonixRPCClient(args.url, args.timeout)
+    
+    # Handle API key generation/validation commands first
+    if args.generate_api_key:
+        key = APIKeyManager.generate_strong_api_key()
+        print("🔐 GENERATED STRONG API KEY:")
+        print("=" * 80)
+        print(key)
+        print("=" * 80)
+        print("\n⚠️  SECURITY WARNING:")
+        print("• Store this key securely - it cannot be recovered")
+        print("• Use with --api-key or RAYONIX_API_KEY environment variable")
+        print("• Never commit to version control or share publicly")
+        return
+    
+    if args.validate_api_key:
+        is_valid, reason = validate_api_key(args.validate_api_key)
+        status = "✅ VALID" if is_valid else "❌ INVALID"
+        print(f"{status}: {reason}")
+        return
+    
+    # Configure logging (existing code)...
+    configure_logging(level=args.log_level, component='cli')
+    
+    # Handle API key selection
+    api_key = None
+    key_source = "none"
+    
+    if args.api_key:
+        api_key = args.api_key
+        key_source = "command_line"
+        # Validate key strength when provided via command line
+        is_valid, reason = validate_api_key(api_key)
+        if not is_valid:
+            print(f"❌ Weak API key: {reason}")
+            print("Use --generate-api-key to create a strong key")
+            sys.exit(1)
+            
+    elif args.api_key_env:
+        api_key = os.environ.get('RAYONIX_API_KEY')
+        key_source = "environment"
+        if not api_key:
+            print("❌ RAYONIX_API_KEY environment variable not set")
+            print("Export it with: export RAYONIX_API_KEY='your-key-here'")
+            sys.exit(1)
+            
+    elif args.api_key_file:
+        try:
+            with open(os.path.expanduser(args.api_key_file), 'r') as f:
+                api_key = f.read().strip()
+                key_source = f"file:{args.api_key_file}"
+        except Exception as e:
+            print(f"❌ Error reading API key file: {e}")
+            sys.exit(1)
+            
+    elif args.api_key_interactive:
+        api_key = getpass.getpass("🔐 Enter API key: ")
+        key_source = "interactive"
+    
+    # Log authentication method
+    if api_key:
+        logger.info(f"Using API key authentication (source: {key_source})")
+        # Mask key in logs
+        masked_key = api_key[:8] + "..." + api_key[-4:] if len(api_key) > 12 else "***"
+        logger.debug(f"API key: {masked_key}")
+    else:
+        logger.warning("No API key provided - authentication disabled")
+    
+    # Expand data directory path
+    data_dir = os.path.expanduser(args.data_dir)
+    os.makedirs(data_dir, exist_ok=True)
+    
+    # Create RPC client with API key
+    client = RayonixRPCClient(args.url, args.timeout, api_key)
     
     try:
         if args.command == 'interactive' or not args.command:
