@@ -2,7 +2,7 @@
 
 import asyncio
 import threading
-from typing import Optional, Set, Any  # Add Any import
+from typing import Optional, Set, Any  
 from pathlib import Path
 import logging
 import time
@@ -210,51 +210,29 @@ class RayonixNode:
 
     async def _initialize_wallet_with_blockchain(self):
         """Initialize wallet with proper blockchain reference integration"""
+        if not self.wallet:
+        	return False
+        	
         try:
-        	from rayonix_wallet.core.wallet_factory import WalletFactory
-        	from rayonix_wallet.core.types import WalletType, AddressType
+        	# Method 1: Use set_blockchain_reference if available
+        	if hasattr(self.wallet, 'set_blockchain_reference'):
+        		return self.wallet.set_blockchain_reference(self.rayonix_chain)
         	
-        	wallet_file = Path(self.config_manager.get('database.db_path', './rayonix_data')) / 'wallet.dat'
-        	network_type = self.config_manager.get('network.network_type', 'testnet')
+        	# Method 2: Set directly if attribute exists
+        	elif hasattr(self.wallet, 'rayonix_chain'):
+        		self.wallet.rayonix_chain = self.rayonix_chain
+        		return True
         	
-        	if wallet_file.exists():
-        		try:
-        			# Try to load existing wallet
-        			self.wallet = WalletFactory.load_wallet_from_file(str(wallet_file))
-        			logger.info("Wallet loaded successfully from file")
-        			
-        			# Unlock wallet for backup if needed
-        			if hasattr(self.wallet, 'locked') and self.wallet.locked:
-        				# For new wallets, try empty passphrase or create new one
-        				if not self.wallet.unlock("", timeout=300):
-        					logger.warning("Could not unlock existing wallet, creating new one")
-        					self._create_new_wallet_with_factory(wallet_file, network_type)
-        			
-        		except Exception as e:
-        			logger.warning(f"Failed to load wallet from {wallet_file}: {e}")
-        			logger.info("Creating new wallet...")
-        			# Create new wallet if loading fails
-        			self._create_new_wallet_with_factory(wallet_file, network_type)
-        	else:
-        		# Create new wallet
-        		self._create_new_wallet_with_factory(wallet_file, network_type)
-        	
-        	# Establish blockchain reference
-        	if self.wallet and hasattr(self.wallet, 'set_blockchain_reference'):
-        		
-        		if self.wallet.set_blockchain_reference(self.rayonix_chain):
-        			logger.info("Wallet blockchain integration established successfully")
-        		else:
-        			logger.error("Failed to establish wallet blockchain integration")
-        			self.wallet = None
-        	else:
-        		logger.error("Wallet initialization failed - no valid wallet created")
+        	# Method 3: Set via balance calculator
+        	elif (hasattr(self.wallet, 'balance_calculator') and hasattr(self.wallet.balance_calculator, 'rayonix_chain')):
+        	     self.wallet.balance_calculator.rayonix_chain = self.rayonix_chain
+        	     return True
+        	logger.warning("No blockchain reference method found for wallet")
+        	return False
+        	     
         except Exception as e:
-        	logger.error(f"Wallet initialization failed: {e}")
-        	import traceback
-        	traceback.print_exc()
-        	self.wallet = None
-        	
+        	logger.error(f"Failed to set blockchain reference: {e}")
+        	return False  
     def _create_new_wallet_with_factory(self, wallet_file: Path, network_type: str):
     	"""Create new wallet using factory pattern"""
     	try:
@@ -314,7 +292,31 @@ class RayonixNode:
         except Exception as e:
             logger.error(f"Failed to create new wallet: {e}")
             self.wallet = None
-    
+            
+    async def load_wallet_on_demand(self, mnemonic: str, password: str = None) -> bool:
+    	"""Load existing wallet from mnemonic"""
+    	try:
+    		from rayonix_wallet.core.wallet_factory import WalletFactory
+    		wallet = WalletFactory.create_wallet_from_mnemonic(
+    		    mnemonic=mnemonic,
+    		    passphrase=password or "",
+    		    wallet_type=WalletType.HD,
+    		    address_type=AddressType.RAYONIX,
+    		    config_manager=self.config_manager
+    		)
+    		
+    		if wallet:
+    			self.wallet = wallet
+    			# Establish blockchain reference
+    			if hasattr(wallet, 'set_blockchain_reference'):
+    				wallet.set_blockchain_reference(self.rayonix_chain)
+    			return True
+    		return False
+    		
+    	except Exception as e:
+    		logger.error(f"Failed to load wallet: {e}")
+    		return False
+    		
     def get_config_value(self, key: str, default: Any = None) -> Any:
         """Get configuration value using dot notation"""
         return self.config_manager.get(key, default)
@@ -350,6 +352,23 @@ class RayonixNode:
         logger.info("Network compatibility check passed")
         return True
     
+    async def persist_wallet_state(self):
+    	"""Persist wallet state to disk"""
+    	if not self.wallet:
+    		return False
+    	try:
+    		wallet_file = Path(self.get_config_value('database.db_path', './rayonix_data')) / 'wallet.dat'
+    		
+    		if hasattr(self.wallet, 'backup'):
+    			return self.wallet.backup(str(wallet_file))
+    		else:
+    			logger.warning("Wallet backup method not available")
+    			return False
+    			
+    	except Exception as e:
+    		logger.error(f"Failed to persist wallet state: {e}")
+    		return False
+    		
     async def start(self):
         """Start the node"""
         if self.running:
