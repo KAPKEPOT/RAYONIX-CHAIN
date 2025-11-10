@@ -2,16 +2,10 @@
 
 import getpass
 from typing import Optional, Dict, Any
-from rayonix_node.cli.command_handler import CommandHandler
+from rayonix_node.cli.wallet_commands.base_wallet_command import BaseWalletCommand
 
 
-class CreateWalletCommand:
-    """Interactive wallet creation wizard"""
-    
-    def __init__(self, command_handler: CommandHandler):
-        self.handler = command_handler
-        self.client = command_handler.client
-    
+class CreateWalletCommand(BaseWalletCommand):
     def execute(self, args: list) -> str:
         """Execute the wallet creation wizard"""
         try:
