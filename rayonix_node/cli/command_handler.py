@@ -1,4 +1,4 @@
-# cli/advanced_command_handler.py -command handler
+# rayonix_node/cli/command_handler.py -command handler
 
 import json
 import getpass
@@ -281,6 +281,7 @@ API Enabled:    {info.get('api_enabled', False)}"""
     # Wallet Management Commands
     def cmd_create_wallet(self, args: List[str]) -> str:
         """Create a new wallet with  options"""
+        print("=== DEBUG: CLI create-wallet COMMAND ===")
         try:
             wallet_type = args[0] if len(args) > 0 else "hd"
             password = args[1] if len(args) > 1 else None
@@ -827,6 +828,64 @@ API Enabled:    {info.get('api_enabled', False)}"""
                    f"Cache Hit Rate:      {hit_rate:.1f}%"
         except:
             return "📈 Performance metrics not available"
+        
+    def cmd_generate_api_key(self, args: List[str]) -> str:
+    	"""Generate a strong API key"""
+    	from rayonix_node.utils.api_key_manager import APIKeyManager
+    	
+    	length = int(args[0]) if args and args[0].isdigit() else 128    	
+    	key = APIKeyManager.generate_strong_api_key(length)
+    	
+    	response = "🔐 GENERATED STRONG API KEY\n"
+    	response += "=" * 60 + "\n"
+    	response += key + "\n"
+    	response += "=" * 60 + "\n\n"
+    	response += "⚠️  SECURITY INSTRUCTIONS:\n"
+    	response += "────────────────────────────────\n"
+    	response += "1. Set this key in your node configuration:\n"
+    	response += "   api.auth_key = \"YOUR_KEY_HERE\"\n\n"
+    	response += "2. Use with CLI commands:\n"
+    	response += "   rayonix-cli --api-key \"KEY\" wallet-info\n"
+    	response += "   OR: export RAYONIX_API_KEY=\"KEY\"\n"
+    	response += "   rayonix-cli --api-key-env wallet-info\n\n"
+    	response += "3. Store securely - this key cannot be recovered!\n"
+    	response += "4. Never commit to version control or share\n"
+    	
+    	return response
+    
+    def cmd_validate_api_key(self, args: List[str]) -> str:
+    	"""Validate API key strength"""
+    	from rayonix_node.utils.api_key_manager import validate_api_key
+    	
+    	if not args:
+    		return "❌ Usage: validate-api-key <api_key>"
+    	api_key = args[0]
+    	is_valid, reason = validate_api_key(api_key)
+    	
+    	if is_valid:
+    		return f"✅ API KEY VALIDATION PASSED\n────────────────────────────────\n{reason}"
+    	else:
+    		return f"❌ API KEY VALIDATION FAILED\n────────────────────────────────\n{reason}\n\nUse 'generate-api-key' to create a strong key."
+    
+    def cmd_api_key_info(self, args: List[str]) -> str:
+    	"""Show current API key authentication status"""
+    	try:
+    		# Test authentication
+    		info = self.client.get_detailed_info()
+    		
+    		response = "🔐 API KEY AUTHENTICATION STATUS\n"
+    		response += "────────────────────────────────\n"
+    		response += "Status: ✅ Authenticated\n"
+    		response += f"Node: {info.get('network', 'Unknown')}\n"
+    		response += f"Block Height: {info.get('block_height', 0):,}\n"
+    		
+    		return response
+    	
+    	except Exception as e:
+    		if "401" in str(e) or "authentication" in str(e).lower():
+    			return "🔐 API KEY AUTHENTICATION STATUS\n────────────────────────────────\nStatus: ❌ Authentication Failed\nError: Invalid or missing API key"
+    		else:
+    			return f"🔐 API KEY AUTHENTICATION STATUS\n────────────────────────────────\nStatus: ⚠️  Unknown\nError: {e}"
 
     # Utility Methods
     def _format_uptime(self, seconds: int) -> str:

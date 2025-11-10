@@ -1,4 +1,4 @@
-# cli/history_manager.py - Command history management
+# rayonix_node/cli/history_manager.py - Command history management
 
 import os
 import readline

@@ -1,4 +1,4 @@
-# cli/advanced_interactive.py - interactive mode implementation
+# rayonix_node/cli/interactive.py - interactive mode implementation
 
 import cmd
 import os
@@ -8,7 +8,7 @@ from datetime import datetime
 from rayonix_node.cli.history_manager import HistoryManager
 
 class RayonixInteractiveCLI(cmd.Cmd):
-    """interactive CLI """
+    """Interactive CLI """
     
     def __init__(self, rpc_client, history_manager=None):
         super().__init__()
@@ -299,7 +299,24 @@ class RayonixInteractiveCLI(cmd.Cmd):
             print(f"  Uptime: {node_info.get('uptime', 0)} seconds")
         except Exception as e:
             print(f"  Node stats: {e}")
+            
+    def do_generate_api_key(self, arg):
+    	"""Generate a strong API key for authentication"""
+    	args = arg.split() if arg else []
+    	result = self.command_handler.execute_command('generate-api-key', args)
+    	print(result)
     
+    def do_validate_api_key(self, arg):
+    	"""Validate API key strength"""
+    	args = arg.split() if arg else []
+    	result = self.command_handler.execute_command('validate-api-key', args)
+    	print(result)
+    
+    def do_api_key_info(self, arg):
+    	"""Show current API key authentication status"""
+    	result = self.command_handler.execute_command('api-key-info', [])
+    	print(result)
+    	
     def do_clear(self, arg):
         """Clear the screen"""
         os.system('cls' if os.name == 'nt' else 'clear')
