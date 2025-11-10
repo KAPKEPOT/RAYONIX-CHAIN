@@ -447,12 +447,13 @@ async def create_wallet(
         	
         # Get the mnemonic from wallet creation
         mnemonic = None
-        if hasattr(wallet, '_creation_mnemonic'):
+        if hasattr(wallet, 'creation_mnemonic') and wallet.creation_mnemonic:
+        	mnemonic = wallet.creation_mnemonic
+        elif hasattr(wallet, '_creation_mnemonic'):
         	# If encrypted, we need to handle this properly
         	mnemonic = "ENCRYPTED_MNEMONIC_NEEDS_DECRYPTION"
         else:
-        	# For new wallets, the mnemonic should be available
-        	mnemonic = getattr(wallet, 'creation_mnemonic', None)
+        	mnemonic = "MNEMONIC_NOT_AVAILABLE"
         
         response = {
             "wallet_id": wallet_id,
