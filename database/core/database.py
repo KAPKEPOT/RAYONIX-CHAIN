@@ -807,19 +807,21 @@ class AdvancedDatabase:
         """Extract value and metadata from stored data"""
         if not prepared_value:
         	raise ValueError("Prepared value cannot be empty")
+        
+        # Validate minimum length
+        if len(prepared_value) < 4:
+        	raise DatabaseError("Invalid prepared value: too short for header")
         	
         try:
-            # Unpack header (4 bytes for metadata length)
-            if len(prepared_value) < 4:
-            	raise DatabaseError("Invalid prepared value: too short for header")
-            	
+            # Unpack header with validation
             metadata_len = struct.unpack('!I', prepared_value[:4])[0]
+            
+            # Validate metadata length is reasonable	
             max_reasonable_size = 10 * 1024 * 1024  # 10MB max for metadata
             
             # Validate metadata length
-            if metadata_len > len(prepared_value) - 4 or metadata_len > max_reasonable_size:
-            	logger.error(f"Corrupted metadata length: {metadata_len}")
-            	raise DatabaseError(f"Invalid metadata length: {metadata_len}")
+            if (metadata_len > len(prepared_value) - 4 or metadata_len > max_reasonable_metadata_size or metadata_len == 0):
+            	raise DatabaseError(f"Corrupted metadata length: {metadata_len}")
             	
             metadata_bytes = prepared_value[4:4 + metadata_len]
             value_bytes = prepared_value[4 + metadata_len:]
@@ -860,9 +862,8 @@ class AdvancedDatabase:
             	raise DatabaseError(f"Deserialization failed: {e}")
             return value, metadata
             
-        except Exception as e:
-        	logger.error(f"Value extraction failed: {e}")
-        	raise DatabaseError(f"Value extraction failed: {e}")
+        except struct.error as e:
+        	raise DatabaseError(f"Invalid data structure: {e}")
   
     def _calculate_index_updates(self, key: bytes, new_value: Any, 
                                old_value: Any, ttl: Optional[int]) -> Dict[str, Any]:
