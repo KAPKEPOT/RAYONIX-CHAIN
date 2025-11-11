@@ -211,20 +211,70 @@ class RayonixNode:
 
     async def _initialize_wallet_with_blockchain(self):
         """Initialize wallet with proper blockchain reference integration"""
-        if not self.wallet:
-        	return False
-        	
         try:
-        	# Set blockchain reference on wallet's balance calculator
-        	if hasattr(self.wallet, 'balance_calculator'):
+        	# Validate prerequisites
+        	if not self.wallet:
+        		raise RuntimeError("Cannot initialize blockchain connection: wallet is None")
+        	
+        	if not self.rayonix_chain:
+        		raise RuntimeError("Cannot initialize blockchain connection: rayonix_chain is None")
+        	
+        	logger.info("Initializing wallet-blockchain connection...")
+        	
+        	# Set direct blockchain reference on wallet
+        	self.wallet.rayonix_chain = self.rayonix_chain
+        	logger.info("Set direct blockchain reference on wallet")
+        	
+        	# Connect balance calculator to blockchain - CRITICAL
+        	if hasattr(self.wallet, 'balance_calculator') and self.wallet.balance_calculator:
         		self.wallet.balance_calculator.rayonix_chain = self.rayonix_chain
-        		return True
-        	return False
+        		logger.info("Connected balance calculator to blockchain instance")
+        		
+        		# Verify connection
+        		if self.wallet.balance_calculator.rayonix_chain is not self.rayonix_chain:
+        			raise RuntimeError("Balance calculator blockchain reference mismatch")
+        	
+        	else:
+        		raise RuntimeError("Wallet balance calculator not available")
+        	
+        	# Perform connection validation
+        	await self._validate_wallet_blockchain_connection()
+        	logger.info("Wallet-blockchain connection initialized successfully")
+        	return True
         
         except Exception as e:
-        	logger.error(f"Failed to set blockchain reference: {e}")
-        	return False
+        	logger.error(f"CRITICAL: Failed to initialize wallet-blockchain connection: {e}")
+        	# NO FALLBACK - fail fast and clear references to prevent partial state
+        	if hasattr(self, 'wallet') and self.wallet:
+        		self.wallet.rayonix_chain = None
+        		if hasattr(self.wallet, 'balance_calculator') and self.wallet.balance_calculator:
+        			self.wallet.balance_calculator.rayonix_chain = None
         	
+        	raise RuntimeError(f"Wallet-blockchain initialization failed: {e}")
+    
+    async def _validate_wallet_blockchain_connection(self):
+    	"""Validate that wallet is properly connected to blockchain"""
+    	try:
+    		# Check direct reference
+    		if not hasattr(self.wallet, 'rayonix_chain') or self.wallet.rayonix_chain is not self.rayonix_chain:
+    			raise RuntimeError("Wallet direct blockchain reference invalid")
+    		
+    		# Check balance calculator reference
+    		if (not hasattr(self.wallet, 'balance_calculator') or not self.wallet.balance_calculator or self.wallet.balance_calculator.rayonix_chain is not self.rayonix_chain):
+    			raise RuntimeError("Balance calculator blockchain reference invalid")
+    		
+    		# Test blockchain functionality through wallet
+    		if hasattr(self.wallet, 'is_connected_to_blockchain'):
+    			connected = self.wallet.is_connected_to_blockchain()
+    			if not connected:
+    				raise RuntimeError("Wallet reports no blockchain connection")
+    		
+    		logger.info("Wallet-blockchain connection validation passed")
+    	
+    	except Exception as e:
+    		logger.error(f"Wallet-blockchain connection validation failed: {e}")
+    		raise
+    	
     def _create_new_wallet_with_factory(self, wallet_file: Path, network_type: str):
     	"""Create new wallet using factory pattern"""
     	try:
