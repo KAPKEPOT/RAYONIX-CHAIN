@@ -1,6 +1,8 @@
+import decimal
 import json
 import msgpack
 import pickle
+import decimal
 from typing import Any, Dict, Optional
 from enum import Enum, auto
 import logging
@@ -10,6 +12,7 @@ import uuid
 import struct
 from io import BytesIO
 from dataclasses import asdict
+
 
 # Avro imports
 try:
