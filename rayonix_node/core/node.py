@@ -74,6 +74,12 @@ class RayonixNode:
                 from config.config_manager import ConfigManager
                 self.config_manager = ConfigManager(config_path, encryption_key, auto_reload=True)
             
+            # Validate config is properly loaded
+            if (not self.config_manager or not hasattr(self.config_manager, 'config') or not hasattr(self.config_manager.config, 'network')):
+            	logger.error("Configuration not properly loaded - missing network config")
+            	return False
+            logger.info(f"Config loaded for network: {self.config_manager.config.network.network_type}")
+            
             # Initialize rayonix_chain if not provided via dependencies
             if not self.rayonix_chain:
                 from blockchain.core.rayonix_chain import RayonixBlockchain
