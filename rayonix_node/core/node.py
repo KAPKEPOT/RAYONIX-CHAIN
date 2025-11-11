@@ -174,6 +174,7 @@ class RayonixNode:
     		print("DEBUG: ✅ Wallet created successfully")
     		
     		self.wallet = wallet
+    		await self._initialize_wallet_with_blockchain()
     		self.wallet.creation_mnemonic = mnemonic
     		current_network = self.config_manager.config.network.network_type
     		print(f"DEBUG: Wallet assigned to node.wallet: {self.wallet is not None}")
@@ -214,25 +215,16 @@ class RayonixNode:
         	return False
         	
         try:
-        	# Method 1: Use set_blockchain_reference if available
-        	if hasattr(self.wallet, 'set_blockchain_reference'):
-        		return self.wallet.set_blockchain_reference(self.rayonix_chain)
-        	
-        	# Method 2: Set directly if attribute exists
-        	elif hasattr(self.wallet, 'rayonix_chain'):
-        		self.wallet.rayonix_chain = self.rayonix_chain
+        	# Set blockchain reference on wallet's balance calculator
+        	if hasattr(self.wallet, 'balance_calculator'):
+        		self.wallet.balance_calculator.rayonix_chain = self.rayonix_chain
         		return True
-        	
-        	# Method 3: Set via balance calculator
-        	elif (hasattr(self.wallet, 'balance_calculator') and hasattr(self.wallet.balance_calculator, 'rayonix_chain')):
-        	     self.wallet.balance_calculator.rayonix_chain = self.rayonix_chain
-        	     return True
-        	logger.warning("No blockchain reference method found for wallet")
         	return False
-        	     
+        
         except Exception as e:
         	logger.error(f"Failed to set blockchain reference: {e}")
-        	return False  
+        	return False
+        	
     def _create_new_wallet_with_factory(self, wallet_file: Path, network_type: str):
     	"""Create new wallet using factory pattern"""
     	try:
