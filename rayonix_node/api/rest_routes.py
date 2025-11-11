@@ -502,7 +502,7 @@ async def load_wallet(
             "addresses": list(addresses.keys()),
             "address_count": len(addresses),
             "wallet_type": wallet_info.get('wallet_type'),
-            "balance": wallet.get_balance(),
+            "balance": node.wallet.get_balance(),
             "loaded": True
         }
         
