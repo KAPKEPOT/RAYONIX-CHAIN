@@ -477,7 +477,7 @@ async def create_wallet(
 async def load_wallet(
     wallet_data: WalletLoadRequest,
     request: Request,
-    auth: bool = Depends(authenticate_request)
+    #auth: bool = Depends(authenticate_request)
 ):
     """Load wallet from mnemonic phrase"""
     node = request.app.state.node
@@ -517,7 +517,7 @@ async def load_wallet(
 async def import_wallet(
     wallet_data: WalletImportRequest,
     request: Request,
-    auth: bool = Depends(authenticate_request)
+    #auth: bool = Depends(authenticate_request)
 ):
     """Import wallet from backup file"""
     node = request.app.state.node
@@ -581,7 +581,7 @@ async def import_wallet(
 async def backup_wallet(
     backup_data: WalletBackupRequest,
     request: Request,
-    auth: bool = Depends(authenticate_request)
+    #auth: bool = Depends(authenticate_request)
 ):
     """Backup wallet to encrypted file"""
     node = request.app.state.node
