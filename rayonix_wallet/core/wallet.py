@@ -897,7 +897,7 @@ class ProductionRayonixWallet:
     		    'wallet_type': self.config.wallet_type.name if self.config.wallet_type else 'UNKNOWN',
     		    'wallet_type_code': self.config.wallet_type.value if self.config.wallet_type else -1,
     		    'address_type': self.config.address_type.name if self.config.address_type else 'UNKNOWN',
-    		    'network': self.config.network,
+    		    'network': getattr(self.config, 'network', 'Unknown'),
     		    'is_initialized': self.is_initialized(),
     		    'is_locked': self.locked,
     		    'address_count': len(self.addresses),
