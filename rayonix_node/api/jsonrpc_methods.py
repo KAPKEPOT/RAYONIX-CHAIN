@@ -1,5 +1,4 @@
-# api/jsonrpc_methods.py - Production Ready JSON-RPC Methods
-
+# rayonix_node/api/jsonrpc_methods.py 
 import json
 import time
 import hashlib
@@ -390,21 +389,25 @@ async def getbalance(context, account: str = "*", minconf: int = 1, include_watc
             return Success(0.0)
         
         wallet = context.wallet
+        balance_obj = wallet.get_balance()
         
-        # Get confirmed balance
-        confirmed_balance = wallet.get_balance()
+        # Extract the numeric balance from the object
+        if hasattr(balance_obj, 'total'):
+        	confirmed_balance = balance_obj.total
+        elif hasattr(balance_obj, 'confirmed'):
+        	confirmed_balance = balance_obj.confirmed
+        else:
+        	confirmed_balance = 0.0
         
-        # Get unconfirmed balance if minconf is 0
+        # Handle unconfirmed balance
         total_balance = confirmed_balance
-        if minconf == 0:
-            unconfirmed_balance = wallet.get_unconfirmed_balance()
-            total_balance += unconfirmed_balance
-        
+        if minconf == 0 and hasattr(balance_obj, 'unconfirmed'):
+        	total_balance += balance_obj.unconfirmed
         return Success(float(total_balance))
     except Exception as e:
-        logger.error(f"Error in getbalance: {e}")
-        return Error(-32603, f"Internal error: {str(e)}")
-
+    	logger.error(f"Error in getbalance: {e}")
+    	return Error(-32603, f"Internal error: {str(e)}")
+    	
 @method
 async def getreceivedbyaddress(context, address: str, minconf: int = 1) -> Result:
     """JSON-RPC method to get total received by address"""
