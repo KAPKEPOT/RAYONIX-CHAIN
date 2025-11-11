@@ -177,8 +177,19 @@ class LoadWalletCommand(BaseWalletCommand):
         # Show balance if available
         balance = result.get('balance')
         if balance is not None:
-            response += f"\nBalance:      {balance:,.6f} RYX"
-        
+            # Handle different balance types
+            if isinstance(balance, dict):
+            	total_balance = balance.get('total', 0)
+            	response += f"\nBalance:      {total_balance:,.6f} RYX"
+            
+            elif isinstance(balance, (int, float)):
+            	# Simple numeric balance
+            	response += f"\nBalance:      {balance:,.6f} RYX"
+            
+            else:
+            	# Unknown balance type
+            	response += f"\nBalance:      (Unavailable)"
+
         response += "\n\n💡 Next steps:"
         response += "\n• Use 'wallet-info' to see detailed wallet information"
         response += "\n• Use 'balance' to check your balance"
