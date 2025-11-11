@@ -526,25 +526,60 @@ class RayonixBlockchain:
     def _connect_wallet_to_blockchain(self, wallet: RayonixWallet):
     	"""Connect wallet components to blockchain instance"""
     	try:
-    		# Connect balance calculator to blockchain
-    		if hasattr(wallet, 'balance_calculator') and wallet.balance_calculator:
+    		# Validate inputs
+    		if not wallet:
+    			raise ValueError("Wallet cannot be None")
+    		
+    		if not hasattr(wallet, 'balance_calculator'):
+    			raise ValueError("Wallet missing balance calculator")
+    		
+    		# Set direct blockchain reference on wallet
+    		wallet.rayonix_chain = self
+    		logger.info(f"Set direct blockchain reference on wallet: {wallet.wallet_id}")
+    		
+    		# Connect balance calculator to blockchain - CRITICAL
+    		if wallet.balance_calculator:
     			wallet.balance_calculator.rayonix_chain = self
     			logger.info("Connected balance calculator to blockchain")
+    			
+    			# Verify the connection was established
+    			if wallet.balance_calculator.rayonix_chain is not self:
+    				raise RuntimeError("Failed to set blockchain reference in balance calculator")
     		
-    		# Connect transaction manager to blockchain components
-    		if hasattr(wallet, 'transaction_manager') and wallet.transaction_manager:
-    			# The transaction manager might need state_manager reference
-    			if hasattr(self, 'state_manager'):
-    				wallet.transaction_manager.state_manager = self.state_manager
-    			
-    			logger.info("Connected transaction manager to blockchain")
-    			
-    		# Set wallet reference in components that need it
-    		if hasattr(wallet, 'synchronizer') and wallet.synchronizer:
-    			wallet.synchronizer.rayonix_chain = self
+    		else:
+    			raise RuntimeError("Wallet balance calculator is None")
+    		
+    		# Verify the connection is working
+    		self._verify_wallet_blockchain_connection(wallet)
+    		logger.info(f"Wallet {wallet.wallet_id} successfully connected to blockchain")
     	
     	except Exception as e:
-    		logger.error(f"Failed to connect wallet to blockchain: {e}")
+    		logger.error(f"CRITICAL: Failed to connect wallet to blockchain: {e}")
+    		# NO FALLBACK - re-raise to fail fast
+    		raise RuntimeError(f"Wallet-blockchain connection failed: {e}")
+    		
+    
+    def _verify_wallet_blockchain_connection(self, wallet: RayonixWallet):
+    	"""Verify wallet is properly connected to blockchain"""
+    	try:
+    		# Check direct reference
+    		if not hasattr(wallet, 'rayonix_chain') or wallet.rayonix_chain is not self:
+    			raise RuntimeError("Direct blockchain reference not set")
+    		
+    		# Check balance calculator reference
+    		if (not hasattr(wallet, 'balance_calculator') or not wallet.balance_calculator or wallet.balance_calculator.rayonix_chain is not self):
+    			raise RuntimeError("Balance calculator blockchain reference not set")
+    		
+    		# Test blockchain functionality
+    		test_height = self.get_block_count()
+    		if test_height < 0:
+    			raise RuntimeError("Blockchain test failed - invalid block height")
+    		
+    		logger.debug("Wallet-blockchain connection verified successfully")
+    	
+    	except Exception as e:
+    		logger.error(f"Wallet-blockchain connection verification failed: {e}")
+    		raise
     	
     def _initialize_state_manager(self):
     	"""Initialize state manager with safe database wrapper"""
