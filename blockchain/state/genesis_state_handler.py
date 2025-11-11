@@ -47,8 +47,6 @@ class GenesisStateSnapshot:
     snapshot_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
 class GenesisIntegrityValidator:
-    """Comprehensive validator for genesis state integrity"""
-    
     def __init__(self, genesis_block):
         self.genesis_block = genesis_block
         self.validation_rules = self._initialize_validation_rules()
