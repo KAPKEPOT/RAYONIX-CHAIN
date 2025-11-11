@@ -815,14 +815,14 @@ class AdvancedDatabase:
             metadata_len = struct.unpack('!I', prepared_value[:4])[0]
             
             # Validate metadata length is reasonable	
-            max_reasonable_size = 10 * 1024 * 1024  # 10MB max for metadata
+            MAX_REASONABLE_METADATA_SIZE = 1 * 1024 * 1024  # 10MB max for metadata
             
             # Validate metadata length
-            if (metadata_len > len(prepared_value) - 4 or metadata_len > max_reasonable_metadata_size or metadata_len == 0):
+            if (metadata_len > len(prepared_value) - 4 or metadata_len > MAX_REASONABLE_METADATA_SIZE or metadata_len == 0):
             	raise DatabaseError(f"Corrupted metadata length: {metadata_len}")
             	
             metadata_bytes = prepared_value[4:4 + metadata_len]
-            value_bytes = prepared_value[4 + metadata_len:]
+            encrypted_compressed_data = prepared_value[4 + metadata_len:]
             
             # Unpack metadata
             try:
@@ -835,7 +835,14 @@ class AdvancedDatabase:
             for field in required_fields:
             	if field not in metadata:
             		raise DatabaseError(f"Missing required metadata field: {field}")
-            		
+            
+            # Verify checksum on the STORED data first
+            if not self._verify_checksum(encrypted_compressed_data, metadata.get('checksum')):
+            	raise IntegrityError("Checksum verification failed")
+            
+            # Now process the data
+            value_bytes = encrypted_compressed_data
+            	
             # Decrypt if enabled
             if metadata['encryption'] != 'NONE' and self.encryption:
             	try:
@@ -849,9 +856,6 @@ class AdvancedDatabase:
             		value_bytes = self.compression.decompress(value_bytes)
             	except CompressionError as e:
             		raise DatabaseError(f"Decompression failed: {e}")
-            # Verify checksum
-            if not self._verify_checksum(value_bytes, metadata.get('checksum')):
-            	raise IntegrityError("Checksum verification failed")
             	
             # Deserialize value
             try:
@@ -860,8 +864,9 @@ class AdvancedDatabase:
             	raise DatabaseError(f"Deserialization failed: {e}")
             return value, metadata
             
-        except struct.error as e:
-        	raise DatabaseError(f"Invalid data structure: {e}")
+        except Exception as e:
+        	logger.error(f"Value extraction failed: {e}")
+        	raise DatabaseError(f"Value extraction failed: {e}")
   
     def _calculate_index_updates(self, key: bytes, new_value: Any, 
                                old_value: Any, ttl: Optional[int]) -> Dict[str, Any]:
