@@ -878,6 +878,34 @@ class StateManager:
         except Exception as e:
         	logger.error(f"Error getting current height: {e}")
         	return 0
+        	
+    def get_block_by_height(self, height: int) -> Optional[Any]:
+    	"""Get block by height from database"""
+    	try:
+    		height_key = f"height_{height}".encode()
+    		block_hash_bytes = self.database.get(height_key)
+    		
+    		if not block_hash_bytes:
+    			return None
+    		
+    		block_hash = block_hash_bytes.decode() if isinstance(block_hash_bytes, bytes) else block_hash_bytes
+    		return self.get_block_by_hash(block_hash)
+    	
+    	except Exception as e:
+    		logger.error(f"Error getting block at height {height}: {e}")
+    		return None
+    
+    def get_block_by_hash(self, block_hash: str) -> Optional[Any]:
+    	"""Get block by hash from database"""
+    	try:
+    		block_data = self.database.get(block_hash.encode())
+    		if not block_data:
+    			return None
+    		return pickle.loads(block_data)
+    	
+    	except Exception as e:
+    		logger.error(f"Error getting block {block_hash}: {e}")
+    		return None
   
     def get_state_stats(self) -> Dict[str, Any]:
         """Get comprehensive statistics about the current state"""
