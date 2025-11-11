@@ -213,7 +213,7 @@ class CreateWalletCommand(BaseWalletCommand):
             return self._format_success_response(result)
             
         except Exception as e:
-            return self.handler._format_rpc_error(e)
+            return self._format_rpc_error(e)
     
     def _format_success_response(self, result: Dict[str, Any]) -> str:
         """Format successful wallet creation response"""
