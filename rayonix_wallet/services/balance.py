@@ -36,26 +36,52 @@ class BalanceCalculator:
         try:
         	# Check if we have blockchain connection
         	if not self.rayonix_chain:
-        		logger.warning("No blockchain connection available, using offline mode")
-        		return self._get_offline_balance()
+        		error_msg = "BLOCKCHAIN CONNECTION REQUIRED: No blockchain instance available"
+        		logger.error(error_msg)
+        		raise RuntimeError(error_msg)
+        	
+        	# Verify blockchain is functional
+        	if not self._verify_blockchain_operational():
+        		error_msg = "BLOCKCHAIN CONNECTION REQUIRED: Blockchain instance is not operational"
+        		logger.error(error_msg)
+        		raise RuntimeError(error_msg)
         	
         	# Proceed with normal balance calculation
-        	if not self._balance_lock:
-        		import threading
-        		self._balance_lock = threading.RLock()
-        	
         	with self._balance_lock:
         		if force_refresh or self._should_refresh_balance():
         			return self._calculate_comprehensive_balance()
+        		
         		else:
         			cached = self._get_cached_balance()
         			return cached if cached else self._calculate_comprehensive_balance()
-        			
+        
         except Exception as e:
         	logger.error(f"Balance calculation failed: {e}")
-        	# Fallback to offline mode
-        	return self._get_offline_balance()
-        	
+        	# NO FALLBACK - re-raise to fail fast
+        	raise RuntimeError(f"Balance calculation failed: {e}")
+    
+    def _verify_blockchain_operational(self) -> bool:
+    	"""Verify blockchain is operational"""
+    	try:
+    		if not self.rayonix_chain:
+    			return False
+    		
+    		# Test basic blockchain functionality
+    		current_height = self.rayonix_chain.get_block_count()
+    		if current_height < 0:
+    			return False
+    		
+    		# Test UTXO access
+    		if hasattr(self.rayonix_chain, 'utxo_set'):
+    			# Quick test - should not throw exception
+    			test_result = self.rayonix_chain.utxo_set is not None
+    			return test_result
+    		return True
+    	
+    	except Exception as e:
+    		logger.error(f"Blockchain operational check failed: {e}")
+    		return False
+    		
     def _get_offline_balance(self) -> WalletBalance:
         try:
             # Try to get the most recent cached balance first
