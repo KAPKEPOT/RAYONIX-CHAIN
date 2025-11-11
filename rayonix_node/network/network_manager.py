@@ -20,49 +20,27 @@ class NetworkManager:
     async def initialize_network(self) -> bool:
         """Initialize the P2P network"""
         try:
-            # Extract individual parameters instead of passing a dict
-            network_id = self.node.get_config_value('network.network_id', 1)
-            listen_port = self.node.get_config_value('network.listen_port', 52555)  # RAYONIX port
-            max_connections = self.node.get_config_value('network.max_connections', 50)
+            # Validate config_manager exists and has config
+            if not self.config_manager or not hasattr(self.config_manager, 'config'):
+            	logger.error("ConfigManager not properly initialized")
+            	return False
             
-            # Use different ports for different protocols to avoid conflicts
-            tcp_port = listen_port                    # 52555 - P2P TCP
-            websocket_port = listen_port + 1          # 52556 - WebSocket  
-            http_port = listen_port + 2               # 52557 - HTTP API
-            
-            # Create network config object if needed, but pass individual params to constructor
-            from network.config.node_config import NodeConfig
-            from network.config.network_types import NetworkType
-            
-            config = NodeConfig(
-                network_type=NetworkType.TESTNET,
-                listen_port=tcp_port,  # TCP uses main port
-                
-                websocket_port=websocket_port,  # WebSocket uses different port
-                http_port=http_port,  # HTTP uses different port
-                max_connections=max_connections,
-                listen_ip="0.0.0.0",
-                enable_encryption=True,
-                enable_compression=True
-            )
+            # Create network config with proper structure
             self.network = AdvancedP2PNetwork(
-                config_manager=self.config_manager,
-                network_id=network_id,
-                node_id=None
+                config_manager=self.config_manager
             )
             
             # Register message handlers
             self._register_message_handlers()
             
-            logger.info(f"P2P network initialized successfully - TCP:{tcp_port}, WS:{websocket_port}, HTTP:{http_port}")
+            logger.info(f"P2P network initialized successfully")
             return True
-            
         except Exception as e:
-            logger.error(f"Failed to initialize network: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-    
+        	logger.error(f"Failed to initialize network: {e}")
+        	import traceback
+        	traceback.print_exc()
+        	return False
+        	
     def _register_message_handlers(self):
         """Register message handlers for different message types"""
         if not self.network:
