@@ -61,8 +61,6 @@ console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 class AdvancedDatabase:
-    """Production-ready database layer with advanced features"""
-    
     def __init__(self, db_path: str, config: Optional[DatabaseConfig] = None):
         self.db_path = db_path
         self.config = config or DatabaseConfig()
