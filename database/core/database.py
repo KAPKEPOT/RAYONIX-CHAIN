@@ -327,6 +327,7 @@ class AdvancedDatabase:
                     if self.config.db_type == DatabaseType.PLYVEL:
                         self.db.put(key_bytes, prepared_value, sync=False)
                     else:
+                        # Memory database - store the prepared bytes
                         self.db[key_bytes] = prepared_value
                         
                 except Exception as e:
@@ -645,7 +646,10 @@ class AdvancedDatabase:
                     # For memory DB, execute operations sequentially
                     for op in operations:
                         if op.op_type == 'put':
-                            self.db[op.key] = op.value
+                            # Serialize and prepare value for memory storage
+                            serialized = self._serialize_value(op.value)
+                            prepared = self._prepare_value_for_storage(serialized, op.ttl)
+                            self.db[op.key] = prepared
                             self.integrity_manager.register_put_operation(op.key, op.value)
                         elif op.op_type == 'delete':
                             if op.key in self.db:
