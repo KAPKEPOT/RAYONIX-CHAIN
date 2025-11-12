@@ -12,14 +12,14 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 import os
 from merkle_system.merkle import MerkleTree, HashAlgorithm
-from config.merkle_config import MerkleDatabaseConfig
+from config.merkle_config import MerkleTreeConfig
 
 logger = logging.getLogger(__name__)
 
 class IntegrityManager:
     """Manages Merkle tree integrity for database operations"""
     
-    def __init__(self, db_path: str, config: MerkleDatabaseConfig):
+    def __init__(self, db_path: str, config: MerkleTreeConfig):
         self.config = config
         self.db_path = db_path
         self.merkle_tree: Optional[SparseMerkleTree] = None

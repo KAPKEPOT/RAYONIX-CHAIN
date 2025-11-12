@@ -58,7 +58,7 @@ from database.services.background_tasks import BackgroundTaskService
 from database.core.integrity_manager import IntegrityManager
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-from config.merkle_config import MerkleDatabaseConfig
+from config.merkle_config import MerkleTreeConfig
 
 # Configure logging
 console_handler = logging.StreamHandler()
@@ -91,7 +91,7 @@ class AdvancedDatabase:
         self.background_service = None
         
         # Initialize Merkle integrity protection
-        merkle_config = MerkleDatabaseConfig(
+        merkle_config = MerkleTreeConfig(
             enabled=getattr(self.config, 'merkle_integrity', True),
             merkle_tree_depth=getattr(self.config, 'merkle_tree_depth', 256),
             hash_algorithm=getattr(self.config, 'merkle_hash_algorithm', HashAlgorithm.SHA256),
@@ -971,10 +971,10 @@ def enhance_database_config():
     original_fields = DatabaseConfig.__dataclass_fields__.copy()
     
     # Add Merkle-specific fields
-    MerkleDatabaseConfig.__dataclass_fields__.update(original_fields)
+    MerkleTreeConfig.__dataclass_fields__.update(original_fields)
     
     # Create enhanced config class
-    class EnhancedDatabaseConfig(DatabaseConfig, MerkleDatabaseConfig):
+    class EnhancedDatabaseConfig(DatabaseConfig, MerkleTreeConfig):
         pass
     
     return EnhancedDatabaseConfig
