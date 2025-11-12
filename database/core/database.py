@@ -775,6 +775,15 @@ class AdvancedDatabase:
             return self.serializer.serialize(value)
         # Fallback to JSON
         return json.dumps(value, cls=AdvancedJSONEncoder).encode('utf-8')
+    def _calculate_checksum(self, data: bytes) -> bytes:
+        """Calculate checksum for data integrity"""
+        return crc32c.crc32c(data).to_bytes(4, 'big')
+    
+    def _verify_checksum(self, data: bytes, checksum: bytes) -> bool:
+        """Verify data checksum"""
+        if checksum is None:
+            return True
+        return self._calculate_checksum(data) == checksum
     
     def _deserialize_value(self, data: bytes) -> Any:
         """Deserialize value using configured serializer"""
