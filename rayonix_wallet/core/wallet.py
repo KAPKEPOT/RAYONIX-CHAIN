@@ -976,6 +976,25 @@ class ProductionRayonixWallet:
             'key_derivation_cache_size': len(self._key_derivation_cache),
             'validation_cache_size': len(self._address_validation_cache)
         }
+    def _count_used_addresses(self, addresses: Dict[str, Any]) -> int:
+    	try:
+    		count = 0
+    		for address_info in addresses.values():
+    			# Check if address is used based on various criteria
+    			if hasattr(address_info, 'tx_count') and address_info.tx_count > 0:
+    				count += 1
+    			elif hasattr(address_info, 'balance') and address_info.balance > 0:
+    				count += 1
+    			elif hasattr(address_info, 'received') and address_info.received > 0:
+    				count += 1
+    			elif hasattr(address_info, 'sent') and address_info.sent > 0:
+    				count += 1
+    			elif hasattr(address_info, 'is_used') and address_info.is_used:
+    				count += 1
+    		return count
+    	except Exception as e:
+    		logger.error(f"Error counting used addresses: {e}")
+    		return 0
     
     def get_wallet_info(self) -> Dict[str, Any]:
     	"""Get comprehensive wallet information for API responses"""
