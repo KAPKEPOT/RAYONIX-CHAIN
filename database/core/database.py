@@ -533,18 +533,19 @@ class AdvancedDatabase:
     
     # NEW INTEGRITY-RELATED METHODS
     
-    def verify_data_integrity(self, key: Union[str, bytes]) -> Tuple[bool, Optional[str]]:
+    def verify_data_integrity(self, key: Union[str, bytes], value: Any = None) -> Tuple[bool, Optional[str]]:
         """Verify integrity of a specific key-value pair"""
         key_bytes = self._ensure_bytes(key)
         
         try:
-            value = self.get(key_bytes, use_cache=False, verify_integrity=False)
+            if value is None:
+            	value = self.get(key_bytes, use_cache=False, verify_integrity=False)
             return self.integrity_manager.verify_data_integrity(key_bytes, value)
         except KeyNotFoundError:
-            return False, "Key not found"
+        	return False, "Key not found"
         except Exception as e:
-            return False, f"Verification error: {e}"
-    
+        	return False, f"Verification error: {e}"
+        	
     def get_integrity_root(self) -> Optional[str]:
         """Get current Merkle integrity root hash"""
         return self.integrity_manager.get_integrity_root()
