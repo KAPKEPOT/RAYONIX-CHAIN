@@ -12,7 +12,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 import os
 from merkle_system.merkle import MerkleTree, HashAlgorithm
-from config.merkle_config import MerkleDatabaseConfig
+#from config.merkle_config import MerkleDatabaseConfig
 
 logger = logging.getLogger(__name__)
 
