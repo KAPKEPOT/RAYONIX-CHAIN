@@ -34,6 +34,7 @@ from rayonix_wallet.interfaces.blockchain import BlockchainInterface
 from rayonix_wallet.utils.logging import logger
 from rayonix_wallet.core.config import WalletConfig
 from rayonix_wallet.utils.secure import SecureString
+from rayonix_wallet.recovery.recovery_manager import RecoveryManager
 
 class ProductionRayonixWallet:
     
@@ -78,26 +79,40 @@ class ProductionRayonixWallet:
         self._crypto_context = self._initialize_cryptographic_context()
         
         # Load wallet state with comprehensive validation
-        self._load_wallet_state_with_cryptographic_validation()
+        self.recovery_manager = RecoveryManager(self)
+        
+        try:
+        	# Try normal loading first
+        	self._load_wallet_state_with_cryptographic_validation()
+        except Exception as e:
+        	logger.error(f"Wallet initialization failed: {e}")
+        	
+        	# Automatic recovery without blockchain first
+        	recovery_result = self.recovery_manager.auto_recover()
+        	if recovery_result['success']:
+        		logger.info("Wallet recovered successfully via automatic recovery")
+        	else:
+        		logger.critical("Automatic recovery failed")
+        		# We'll still continue but wallet might need manual recovery
         
         logger.info(f"RAYONIX wallet initialized with ID: {self.wallet_id}")
     
     def _generate_cryptographic_wallet_id(self) -> str:
         """Generate cryptographically secure wallet ID with domain separation"""
         # Generate high-entropy random bytes
-        entropy = secrets.token_bytes(64)
+        mnemonic_bytes = mnemonic.encode('utf-8')
         
         # Use HKDF for cryptographic separation
         hkdf = HKDF(
             algorithm=hashes.SHA512(),
             length=32,
-            salt=secrets.token_bytes(32),
+            salt=b'rayonix-wallet-id-salt',
             #salt=secrets.token_bytes(32),
             info=b'rayonix-wallet-id-generation-v2',
             backend=self._crypto_backend
         )
         
-        wallet_id_bytes = hkdf.derive(entropy + struct.pack('>Q', int(time.time())))
+        wallet_id_bytes = hkdf.derive(mnemonic_bytes)
         return wallet_id_bytes.hex()
     
     def _initialize_cryptographic_context(self) -> bytes:
@@ -933,6 +948,11 @@ class ProductionRayonixWallet:
     	    error=error_message,
     	    error_type="balance_calculation_error"
     	)
+    
+    def connect_to_blockchain(self, rayonix_chain):
+    	"""Connect wallet to blockchain for advanced recovery"""
+    	self.rayonix_chain = rayonix_chain
+    	self.recovery_manager = RecoveryManager(self, rayonix_chain)
     
     def is_connected_to_blockchain(self) -> bool:
     	"""Check if wallet is properly connected to a blockchain"""
