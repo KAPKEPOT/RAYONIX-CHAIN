@@ -217,7 +217,11 @@ class IntegrityManager:
                 leaf_index = self.key_to_index[key]
                 leaf_data = self._calculate_leaf_data(key, value)
                 
-                proof = self.merkle_tree.get_proof(leaf_index, self.config.proof_format)
+                if hasattr(self.config, 'merkle_proof_format'):
+                	proof_format = getattr(ProofFormat, self.config.merkle_proof_format.upper())
+                else:
+                	proof_format = ProofFormat.BINARY
+                proof = self.merkle_tree.get_proof(leaf_index, proof_format)
                 return proof
                 
         except Exception as e:
