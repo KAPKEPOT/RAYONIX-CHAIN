@@ -154,13 +154,15 @@ class IntegrityManager:
                 if key in self.corrupted_keys:
                     self.corrupted_keys.remove(key)
                     self.recovery_attempts.pop(key, None)
-                
-                self.stats.record_operation('register_put', len(value), 0.0, True)
+                #Use _get_data_size instead of len()
+                data_size = self._get_data_size(value)
+                self.stats.record_operation('register_put', data_size, 0.0, True)
                 return True
                 
         except Exception as e:
+            data_size = self._get_data_size(value)
+            self.stats.record_operation('register_put', data_size, 0.0, False)
             logger.error(f"Failed to register put operation for key {key.hex()}: {e}")
-            self.stats.record_operation('register_put', len(value), 0.0, False)
             return False
     
     def verify_data_integrity(self, key: bytes, value: Any) -> Tuple[bool, Optional[str]]:
