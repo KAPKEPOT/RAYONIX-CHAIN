@@ -35,7 +35,7 @@ class IntegrityManager:
         self.corrupted_keys: Set[bytes] = set()
         self.recovery_attempts: Dict[bytes, int] = {}
         self._lock = threading.RLock()
-        self.stats = MerkleTreeStats()
+        #self.stats = MerkleTreeStats()
         
         self._initialize_merkle_tree()
     
