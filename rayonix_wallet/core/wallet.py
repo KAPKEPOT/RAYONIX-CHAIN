@@ -85,19 +85,19 @@ class ProductionRayonixWallet:
     def _generate_cryptographic_wallet_id(self) -> str:
         """Generate cryptographically secure wallet ID with domain separation"""
         # Generate high-entropy random bytes
-        mnemonic_bytes = mnemonic.encode('utf-8')
+        entropy = secrets.token_bytes(64)
         
         # Use HKDF for cryptographic separation
         hkdf = HKDF(
             algorithm=hashes.SHA512(),
             length=32,
-            salt=b'rayonix-wallet-id-salt',
+            salt=secrets.token_bytes(32),
             #salt=secrets.token_bytes(32),
             info=b'rayonix-wallet-id-generation-v2',
             backend=self._crypto_backend
         )
         
-        wallet_id_bytes = hkdf.derive(mnemonic_bytes)
+        wallet_id_bytes = hkdf.derive(entropy + struct.pack('>Q', int(time.time())))
         return wallet_id_bytes.hex()
     
     def _initialize_cryptographic_context(self) -> bytes:
