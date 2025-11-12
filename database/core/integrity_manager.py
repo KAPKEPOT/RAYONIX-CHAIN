@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.hmac import HMAC
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 import os
-from merkle_system.merkle import SparseMerkleTree, HashAlgorithm, MerkleTree, MerkleTreeStat
+from merkle_system.merkle import SparseMerkleTree, HashAlgorithm, MerkleTree, MerkleTreeStats
 from config.merkle_config import MerkleTreeConfig
 
 logger = logging.getLogger(__name__)
