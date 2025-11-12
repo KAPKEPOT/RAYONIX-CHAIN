@@ -80,19 +80,23 @@ class QueryBuilder:
     
     def _can_use_index(self, condition: QueryCondition) -> bool:
         """Check if condition can use an index"""
-        index_name = f"index_{condition.field}"
-        return index_name in self.db.indexes
+        for index_name, index in self.db.indexes.items():
+        	if hasattr(index, 'config') and hasattr(index.config, 'fields'):
+        		if condition.field in index.config.fields:
+        			return True
+        return False
     
     def _execute_index_query(self, condition: QueryCondition) -> List[Any]:
         """Execute query using index"""
-        index_name = f"index_{condition.field}"
-        index = self.db.indexes[index_name]
+        # Find the first index that covers this field
+        for index_name, index in self.db.indexes.items():
+        	if hasattr(index, 'config') and hasattr(index.config, 'fields'):
+        		if condition.field in index.config.fields:
+        			if condition.operator == QueryOperator.EQ:
+        				return index.query(condition.value, self.limit or 1000, self.offset or 0)
         
-        if condition.operator == QueryOperator.EQ:
-            return index.query(condition.value, self.limit or 1000, self.offset or 0)
-        
-        # Other operators would require range queries
-        return []
+        # Fall back to filter if no suitable index found
+        return self._execute_filter_query()
     
     def _execute_filter_query(self) -> List[Any]:
         """Execute query by filtering all documents"""
