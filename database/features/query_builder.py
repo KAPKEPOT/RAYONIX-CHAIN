@@ -1,3 +1,4 @@
+# database/features/query_builder.py
 from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -28,16 +29,14 @@ class QueryCondition:
     value: Any
 
 class QueryBuilder:
-    """Advanced query builder with support for complex queries"""
-    
     def __init__(self, db):
         self.db = db
         self.conditions: List[QueryCondition] = []
-        self.limit: Optional[int] = None
-        self.offset: Optional[int] = None
-        self.sort_field: Optional[str] = None
-        self.sort_reverse: bool = False
-        self.projection: Optional[List[str]] = None
+        self._limit: Optional[int] = None          # CHANGED: self.limit → self._limit
+        self._offset: Optional[int] = None         # CHANGED: self.offset → self._offset
+        self._sort_field: Optional[str] = None     # CHANGED: self.sort_field → self._sort_field
+        self._sort_reverse: bool = False           # CHANGED: self.sort_reverse → self._sort_reverse
+        self._projection: Optional[List[str]] = None  # CHANGED: self.projection → self._projection
     
     def where(self, field: str, operator: QueryOperator, value: Any) -> 'QueryBuilder':
         """Add a condition to the query"""
@@ -46,23 +45,23 @@ class QueryBuilder:
     
     def limit(self, limit: int) -> 'QueryBuilder':
         """Set result limit"""
-        self.limit = limit
+        self._limit = limit  # CHANGED: self.limit → self._limit
         return self
     
     def offset(self, offset: int) -> 'QueryBuilder':
         """Set result offset"""
-        self.offset = offset
+        self._offset = offset  # CHANGED: self.offset → self._offset
         return self
     
     def sort(self, field: str, reverse: bool = False) -> 'QueryBuilder':
         """Set sort field and direction"""
-        self.sort_field = field
-        self.sort_reverse = reverse
+        self._sort_field = field      # CHANGED: self.sort_field → self._sort_field
+        self._sort_reverse = reverse  # CHANGED: self.sort_reverse → self._sort_reverse
         return self
     
     def select(self, fields: List[str]) -> 'QueryBuilder':
         """Set projection fields"""
-        self.projection = fields
+        self._projection = fields  # CHANGED: self.projection → self._projection
         return self
     
     def execute(self) -> List[Any]:
@@ -81,19 +80,19 @@ class QueryBuilder:
     def _can_use_index(self, condition: QueryCondition) -> bool:
         """Check if condition can use an index"""
         for index_name, index in self.db.indexes.items():
-        	if hasattr(index, 'config') and hasattr(index.config, 'fields'):
-        		if condition.field in index.config.fields:
-        			return True
+            if hasattr(index, 'config') and hasattr(index.config, 'fields'):
+                if condition.field in index.config.fields:
+                    return True
         return False
     
     def _execute_index_query(self, condition: QueryCondition) -> List[Any]:
         """Execute query using index"""
         # Find the first index that covers this field
         for index_name, index in self.db.indexes.items():
-        	if hasattr(index, 'config') and hasattr(index.config, 'fields'):
-        		if condition.field in index.config.fields:
-        			if condition.operator == QueryOperator.EQ:
-        				return index.query(condition.value, self.limit or 1000, self.offset or 0)
+            if hasattr(index, 'config') and hasattr(index.config, 'fields'):
+                if condition.field in index.config.fields:
+                    if condition.operator == QueryOperator.EQ:
+                        return index.query(condition.value, self._limit or 1000, self._offset or 0)  # CHANGED: self.limit → self._limit, self.offset → self._offset
         
         # Fall back to filter if no suitable index found
         return self._execute_filter_query()
@@ -105,24 +104,24 @@ class QueryBuilder:
         skipped = 0
         
         for key, value in self.db.iterate():
-            if self.offset and skipped < self.offset:
+            if self._offset and skipped < self._offset:  # CHANGED: self.offset → self._offset
                 skipped += 1
                 continue
             
             if self._matches_all_conditions(value):
-                if self.projection:
+                if self._projection:  # CHANGED: self.projection → self._projection
                     results.append(self._apply_projection(value))
                 else:
                     results.append(value)
                 
                 count += 1
-                if self.limit and count >= self.limit:
+                if self._limit and count >= self._limit:  # CHANGED: self.limit → self._limit
                     break
         
-        if self.sort_field:
+        if self._sort_field:  # CHANGED: self.sort_field → self._sort_field
             results.sort(
-                key=lambda x: x.get(self.sort_field) if isinstance(x, dict) else getattr(x, self.sort_field, None),
-                reverse=self.sort_reverse
+                key=lambda x: x.get(self._sort_field) if isinstance(x, dict) else getattr(x, self._sort_field, None),  # CHANGED: self.sort_field → self._sort_field
+                reverse=self._sort_reverse  # CHANGED: self.sort_reverse → self._sort_reverse
             )
         
         return results
@@ -177,6 +176,6 @@ class QueryBuilder:
     def _apply_projection(self, value: Any) -> Any:
         """Apply field projection to result"""
         if isinstance(value, dict):
-            return {field: value.get(field) for field in self.projection}
+            return {field: value.get(field) for field in self._projection}  # CHANGED: self.projection → self._projection
         else:
-            return {field: getattr(value, field, None) for field in self.projection}
+            return {field: getattr(value, field, None) for field in self._projection}  #
