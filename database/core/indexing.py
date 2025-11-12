@@ -271,12 +271,22 @@ class FunctionalBTreeIndex:
     def _check_unique_violation(self, index_value: Any, exclude_key: bytes) -> bool:
         """Check if unique constraint would be violated"""
         query_key = self._create_index_key(index_value)
-        it = self.db.db.iterator(prefix=query_key)
         
-        for index_key, _ in it:
-            existing_key = self._extract_original_key(index_key)
-            if existing_key != exclude_key:
-                return True
+        # Handle both memory and disk databases
+        if hasattr(self.db.db, 'iterator'):
+        	# Disk database (plyvel)
+        	it = self.db.db.iterator(prefix=query_key)
+        	for index_key, _ in it:
+        		existing_key = self._extract_original_key(index_key)
+        		if existing_key != exclude_key:
+        			return True
+        else:
+        	# Memory database (dict)
+        	for key in self.db.db.keys():
+        		if key.startswith(query_key):
+        			existing_key = self._extract_original_key(key)
+        			if existing_key != exclude_key:
+        				return True
         return False
     
     def _extract_index_values(self, value: Any) -> List[Any]:
