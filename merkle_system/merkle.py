@@ -1063,7 +1063,7 @@ class SparseMerkleTree:
         if not (0 <= path_length <= 255):
         	raise ValueError(f"Path length {path_length} exceeds 255")
         
-        header = struct.pack('!BBBBI', version, algorithm_code, depth, path_length, leaf_index)
+        header = struct.pack('!BBHBI', version, algorithm_code, depth, path_length, leaf_index)
         
         # Leaf hash (32 bytes)
         leaf_hash = bytes.fromhex(proof['leaf_hash'])
