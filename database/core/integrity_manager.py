@@ -19,8 +19,6 @@ from config.merkle_config import MerkleTreeConfig
 logger = logging.getLogger(__name__)
 
 class IntegrityManager:
-    """Manages Merkle tree integrity for database operations"""
-    
     def __init__(self, db_path: str, config: MerkleTreeConfig):
         """Initialize Integrity Manager"""
         self.config = config
