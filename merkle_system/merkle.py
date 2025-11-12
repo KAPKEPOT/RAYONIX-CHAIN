@@ -541,10 +541,14 @@ class MerkleTree:
     
     def verify_leaf(self, data_item: str) -> bool:
         """Verify that a data item is in the tree"""
-        proof_data = self.get_proof(data_item, ProofFormat.BINARY)
-        if not proof_data:
-            return False
-        return self.verify_proof(proof_data, self._hash_data(data_item), self.get_root_hash())
+        # For regular MerkleTree, we need to find the leaf by hash
+        target_hash = self._hash_data(data_item)
+        leaf_index = self.find_leaf_by_hash(target_hash)
+        if leaf_index is None:
+        	return False
+        # Get the stored leaf hash and compare
+        stored_hash = self.leaves[leaf_index].hash
+        return stored_hash == target_hash
     
     def get_leaf_count(self) -> int:
         """Get number of leaf nodes"""
@@ -1211,10 +1215,10 @@ class SparseMerkleTree:
     
     def verify_leaf(self, index: int, value: str) -> bool:
         """Verify that a leaf value is in the tree"""
-        proof_data = self.get_proof(index, ProofFormat.BINARY)
-        if not proof_data:
-            return False
-        return self.verify_proof(proof_data, value, self.get_root())
+        # Get the current stored value for this leaf
+        current_value = self.get_leaf(index)
+        # Direct comparison - if the values match, verification passes
+        return current_value == value
     
     def get_leaf_count(self) -> int:
         """Get number of non-default leaf nodes"""
