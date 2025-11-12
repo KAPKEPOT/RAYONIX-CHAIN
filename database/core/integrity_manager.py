@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.hmac import HMAC
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 import os
-from merkle_system.merkle import SparseMerkleTree, HashAlgorithm, MerkleTree
+from merkle_system.merkle import SparseMerkleTree, HashAlgorithm, MerkleTree, MerkleTreeStat
 from config.merkle_config import MerkleTreeConfig
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ class IntegrityManager:
     """Manages Merkle tree integrity for database operations"""
     
     def __init__(self, db_path: str, config: MerkleTreeConfig):
+        """Initialize Integrity Manager"""
         self.config = config
         self.db_path = db_path
         self.merkle_tree: Optional[SparseMerkleTree] = None
