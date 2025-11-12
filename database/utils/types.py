@@ -63,7 +63,7 @@ class DatabaseConfig:
     merkle_verify_on_write: bool = True
     merkle_auto_recover: bool = True
     merkle_proof_format: str = 'binary'
-    integrity_check_interval: int = 3600'''
+    integrity_check_interval: int = 3600
 
 @dataclass
 class IndexConfig:
