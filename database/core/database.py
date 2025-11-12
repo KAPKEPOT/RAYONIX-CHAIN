@@ -99,8 +99,7 @@ class AdvancedDatabase:
             verify_on_write=getattr(self.config, 'merkle_verify_on_write', True),
             auto_recover=getattr(self.config, 'merkle_auto_recover', True)
         )
-        self.integrity_manager = 
-        IntegrityManager(db_path, merkle_config)
+        self.integrity_manager = IntegrityManager(db_path, merkle_config)
         
         self._initialize_database()
         self._initialize_encryption()
