@@ -67,15 +67,17 @@ class DatabaseConfig:
 
 @dataclass
 class IndexConfig:
-    index_type: IndexType = IndexType.BTREE
+    index_type: IndexType
+    fields: List[str] = field(default_factory=list)
     unique: bool = False
     sparse: bool = False
-    fields: Optional[List[str]] = None
-    hash_function: str = 'md5'  # 'md5' or 'sha256'
-    bloom_filter_size: int = 1000000
+    compound: bool = False  # Add this
+    memtable_size: Optional[int] = None  # For LSM indexes
+    max_sstables: Optional[int] = None
+    compaction_threshold: Optional[int] = None
+    hash_function: str = 'md5'  # For hash indexes
+    bloom_filter_size: int = 10000  # For bloom filters
     bloom_filter_error_rate: float = 0.01
-    memtable_size: int = 10000
-    max_sstables: int = 10
 
 @dataclass
 class BatchOperation:
