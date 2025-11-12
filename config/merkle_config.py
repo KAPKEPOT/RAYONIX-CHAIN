@@ -13,7 +13,7 @@ class ProofFormat(Enum):
     HEX = "hex"
     
 @dataclass
-class MerkleDatabaseConfig:
+class MerkleTreeConfig:
     """Configuration for Merkle tree integrity protection"""
     enabled: bool = True
     merkle_tree_depth: int = 256
