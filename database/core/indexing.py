@@ -48,9 +48,7 @@ class IndexEntry:
         self.timestamp = timestamp or time.time()
         self.version = 1
 
-class FunctionalBTreeIndex:
-    """Functional B-Tree secondary index with production features"""
-    
+class FunctionalBTreeIndex: 
     def __init__(self, name: str, config: IndexConfig, db):
         self.name = name
         self.config = config
@@ -60,32 +58,60 @@ class FunctionalBTreeIndex:
         self.sparse = config.sparse
         self.stats = IndexStats(name)
         self.lock = threading.RLock()
+        self.index_data = {}
         self._cache = OrderedDict()
         self._cache_size = 1000
         
+        self._build_from_existing_data()
+        
         # Initialize index if it doesn't exist
-        self._initialize_index()
-    
-    def _initialize_index(self):
-        """Initialize index metadata"""
+        #self._initialize_index()
+        
+        
+    def _build_from_existing_data(self):
+        """Build index from existing blockchain data"""
         try:
-            metadata_key = f"_index_meta_{self.name}".encode()
-            existing_meta = self.db.db.get(metadata_key)
-            if not existing_meta:
-                metadata = {
-                    'created_at': time.time(),
-                    'config': self.config.__dict__,
-                    'version': '1.0'
-                }
-                
-                if hasattr(self.db.db, 'put'):
-                	self.db.db.put(metadata_key, pickle.dumps(metadata))
-                else:
-                	# Memory database (dict)
-                	self.db.db[metadata_key] = pickle.dumps(metadata)
-                	
+            # Scan all data in the blockchain and index it
+            for key, value in self.db.iterate():
+                # Skip system keys and index metadata
+                if key.startswith(b'_index_') or key.startswith(b'_system_'):
+                    continue
+                    
+                # Extract index values and update index
+                index_values = self._extract_index_values(value)
+                for index_value in index_values:
+                    index_key = self._create_index_key(index_value)
+                    if index_key not in self.index_data:
+                        self.index_data[index_key] = []
+                    if key not in self.index_data[index_key]:
+                        self.index_data[index_key].append(key)
+                        
+            self.stats.entries_count = len(self.index_data)
+            logger.info(f"Index {self.name} built from {len(self.index_data)} entries")
+            
         except Exception as e:
-            logger.warning(f"Failed to initialize index metadata: {e}")
+            logger.warning(f"Failed to build index {self.name} from existing data: {e}")
+    
+    #def _initialize_index(self):
+        #"""Initialize index metadata"""
+        #try:
+           # metadata_key = f"_index_meta_{self.name}".encode()
+   #         existing_meta = self.db.db.get(metadata_key)
+           # if not existing_meta:
+              #  metadata = {
+                #    'created_at': time.time(),
+              #      'config': self.config.__dict__,
+                 #   'version': '1.0'
+              #  }
+                
+                #if hasattr(self.db.db, 'put'):
+                	#self.db.db.put(metadata_key, pickle.dumps(metadata))
+               # else:
+                	# Memory database (dict)
+                	#self.db.db[metadata_key] = pickle.dumps(metadata)
+                	
+     #   except Exception as e:
+     #       logger.warning(f"Failed to initialize index metadata: {e}")
     
     def calculate_update(self, key: bytes, new_value: Any, 
                         old_value: Any, ttl: Optional[int]) -> Optional[Any]:
@@ -120,26 +146,30 @@ class FunctionalBTreeIndex:
             raise IndexError(f"Index calculation failed: {e}")
     
     def update(self, key: bytes, value: Any, update_data: Any):
-        """Update index with new data"""
+        """Update in-memory index from blockchain data"""
         try:
             with self.lock:
                 new_values = update_data.get('new_values', [])
                 old_values = update_data.get('old_values', [])
                 
-                # Remove old index entries
+                # Remove old index entries from memory
                 for old_value in old_values:
-                    index_key = self._create_index_key(old_value, key)
-                    self.db.db.delete(index_key)
-                    self._cache_pop(index_key)
-                    self.stats.entries_count -= 1
+                    index_key = self._create_index_key(old_value)
+                    if index_key in self.index_data and key in self.index_data[index_key]:
+                        self.index_data[index_key].remove(key)
+                        # Clean up empty lists
+                        if not self.index_data[index_key]:
+                            del self.index_data[index_key]
+                        self.stats.entries_count -= 1
                 
-                # Add new index entries
+                # Add new index entries to memory
                 for new_value in new_values:
-                    index_key = self._create_index_key(new_value, key)
-                    entry_data = self._serialize_entry(value)
-                    self.db.db.put(index_key, entry_data)
-                    self._cache_put(index_key, entry_data)
-                    self.stats.entries_count += 1
+                    index_key = self._create_index_key(new_value)
+                    if index_key not in self.index_data:
+                        self.index_data[index_key] = []
+                    if key not in self.index_data[index_key]:
+                        self.index_data[index_key].append(key)
+                        self.stats.entries_count += 1
                 
                 self.stats.update_count += 1
                 
@@ -147,15 +177,18 @@ class FunctionalBTreeIndex:
             raise IndexError(f"Index update failed: {e}")
     
     def remove(self, key: bytes, removal_data: Any):
-        """Remove key from index"""
+        """Remove key from in-memory index """
         try:
             with self.lock:
                 old_values = removal_data.get('old_values', [])
                 for old_value in old_values:
-                    index_key = self._create_index_key(old_value, key)
-                    self.db.db.delete(index_key)
-                    self._cache_pop(index_key)
-                    self.stats.entries_count -= 1
+                    index_key = self._create_index_key(old_value)
+                    if index_key in self.index_data and key in self.index_data[index_key]:
+                        self.index_data[index_key].remove(key)
+                        # Clean up empty lists
+                        if not self.index_data[index_key]:
+                            del self.index_data[index_key]
+                        self.stats.entries_count -= 1
                 
                 self.stats.update_count += 1
                 
@@ -163,10 +196,9 @@ class FunctionalBTreeIndex:
             raise IndexError(f"Index removal failed: {e}")
     
     def query(self, query: Any, limit: int = 1000, offset: int = 0) -> List[Any]:
-        """Query index for values with range support"""
+        """Query using in-memory index, fetch from blockchain storage - BLOCKCHAIN FIX"""
         try:
             results = []
-            count = 0
             
             # Handle range queries
             if isinstance(query, dict) and 'range' in query:
@@ -175,24 +207,21 @@ class FunctionalBTreeIndex:
                 end = range_query.get('end')
                 results = self._range_query(start, end, limit, offset)
             else:
-                # Exact match query
+                # Exact match query using in-memory index
                 query_key = self._create_index_key(query)
-                it = self.db.db.iterator(prefix=query_key)
                 
-                for i, (index_key, value_data) in enumerate(it):
-                    if i < offset:
-                        continue
-                    if len(results) >= limit:
-                        break
+                if query_key in self.index_data:
+                    doc_keys = self.index_data[query_key][offset:offset + limit]
                     
-                    original_key = self._extract_original_key(index_key)
-                    try:
-                        value = self._deserialize_entry(value_data)
-                        results.append(value)
-                        count += 1
-                    except Exception as e:
-                        logger.warning(f"Failed to deserialize index entry: {e}")
-                        continue
+                    # Fetch actual documents from blockchain storage
+                    for doc_key in doc_keys:
+                        try:
+                            value = self.db.get(doc_key, use_cache=False)
+                            if value is not None:
+                                results.append(value)
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch indexed document {doc_key}: {e}")
+                            continue
             
             self.stats.query_count += 1
             return results
@@ -201,25 +230,41 @@ class FunctionalBTreeIndex:
             raise IndexError(f"Index query failed: {e}")
     
     def _range_query(self, start: Any, end: Any, limit: int, offset: int) -> List[Any]:
-        """Execute range query"""
+        """Execute range query using in-memory index"""
         results = []
-        start_key = self._create_index_key(start) if start is not None else self.prefix
-        end_key = self._create_index_key(end) + b'\xff' if end is not None else self.prefix + b'\xff'
+        count = 0
         
-        it = self.db.db.iterator(start=start_key, stop=end_key)
+        # Get all index keys in sorted order
+        sorted_keys = sorted(self.index_data.keys())
         
-        for i, (index_key, value_data) in enumerate(it):
-            if i < offset:
+        # Find start and end positions
+        start_key = self._create_index_key(start) if start is not None else None
+        end_key = self._create_index_key(end) if end is not None else None
+        
+        for index_key in sorted_keys:
+            # Check range bounds
+            if start_key and index_key < start_key:
                 continue
-            if len(results) >= limit:
+            if end_key and index_key > end_key:
                 break
-            
-            try:
-                value = self._deserialize_entry(value_data)
-                results.append(value)
-            except Exception as e:
-                logger.warning(f"Failed to deserialize range query entry: {e}")
-                continue
+                
+            # Process documents for this index key
+            doc_keys = self.index_data[index_key]
+            for doc_key in doc_keys:
+                if count < offset:
+                    count += 1
+                    continue
+                    
+                if len(results) >= limit:
+                    break
+                    
+                try:
+                    value = self.db.get(doc_key, use_cache=False)
+                    if value is not None:
+                        results.append(value)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch ranged document {doc_key}: {e}")
+                    continue
         
         return results
     
