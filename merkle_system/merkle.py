@@ -365,6 +365,14 @@ class MerkleTree:
         total_leaves = proof['total_leaves']
         path_length = len(proof['path_indices'])
         
+        # Validate ranges
+        if not (0 <= algorithm_code <= 255):
+        	algorithm_code = 0
+        if not (0 <= depth <= 255):
+        	depth = min(depth, 255)  # Cap at 255
+        if not (0 <= path_length <= 255):
+        	path_length = min(path_length, 255)  # Cap at 255
+        
         header = struct.pack('!BBBIB', version, algorithm_code, depth, total_leaves, path_length)
         
         # Leaf hash (32 bytes)
@@ -1046,6 +1054,14 @@ class SparseMerkleTree:
         depth = proof['tree_depth']
         path_length = len(proof['path'])
         leaf_index = proof['leaf_index']
+        
+        # Validate ranges for 'B' format (0-255)
+        if not (0 <= algorithm_code <= 255):
+        	algorithm_code = 0  # Default to SHA256
+        if not (0 <= depth <= 255):
+        	raise ValueError(f"Tree depth {depth} exceeds 255")
+        if not (0 <= path_length <= 255):
+        	raise ValueError(f"Path length {path_length} exceeds 255")
         
         header = struct.pack('!BBBBI', version, algorithm_code, depth, path_length, leaf_index)
         
