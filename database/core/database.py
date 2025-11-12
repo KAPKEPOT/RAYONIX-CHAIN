@@ -732,6 +732,9 @@ class AdvancedDatabase:
                 else:
                     it = self.db.iterator(prefix=prefix, reverse=reverse)
                     for key, prepared_value in it:
+                        # FILTER OUT SYSTEM/INTERNAL KEYS - FIX (for disk DB too)
+                        if key.startswith(b'_index_') or key.startswith(b'_system_'):
+                        	continue  # Skip internal system keys
                         value, metadata = self._extract_value_from_storage(prepared_value)
                         
                         # Verify integrity if requested
