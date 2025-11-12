@@ -989,27 +989,6 @@ class AdvancedDatabase:
                     except Exception as e:
                         logger.error(f"Index removal failed for {index_name}: {e}")
                         
-    @contextmanager
-    def transaction(self):
-        batch = self.db.write_batch()
-        temp_ops = []
-        try:
-            yield lambda op_type, key, value=None, ttl=None: temp_ops.append((op_type, key, value, ttl))
-            # commit phase
-            for op_type, key, value, ttl in temp_ops:
-                if op_type == 'put':
-                    serialized = self._serialize_value(value)
-                    prepared = self._prepare_value_for_storage(serialized, ttl)
-                    batch.put(key, prepared)
-                    self.integrity_manager.register_put_operation(key, value)
-                elif op_type == 'delete':
-                    batch.delete(key)
-                    self.integrity_manager.register_delete_operation(key)
-            batch.write()
-        except Exception as e:
-            batch.close()  # rollback by discard
-            raise DatabaseError(f"Transaction failed and rolled back: {e}")                        
-
 # Enhanced DatabaseConfig with Merkle options
 def enhance_database_config():
     """Add Merkle integrity options to DatabaseConfig"""
