@@ -894,8 +894,12 @@ class AdvancedDatabase:
             		raise DatabaseError(f"Missing required metadata field: {field}")
             
             # Verify checksum on the STORED data first
-            if not self._verify_checksum(encrypted_compressed_data, metadata.get('checksum')):
-            	raise IntegrityError("Checksum verification failed")
+            stored_checksum = metadata.get('checksum')
+            if stored_checksum is not None:
+            	if not self._verify_checksum(encrypted_compressed_data, stored_checksum):
+            		raise IntegrityError("Checksum verification failed")
+            else:
+            	logger.warning("No checksum found in metadata, skipping verification")
             
             # Now process the data
             value_bytes = encrypted_compressed_data
