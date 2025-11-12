@@ -4,6 +4,8 @@ import threading
 import logging
 import struct
 import asyncio
+import json
+from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Any
 from dataclasses import dataclass
 from cryptography.hazmat.primitives import hashes
