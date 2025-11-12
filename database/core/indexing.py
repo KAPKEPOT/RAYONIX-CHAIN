@@ -77,7 +77,13 @@ class FunctionalBTreeIndex:
                     'config': self.config.__dict__,
                     'version': '1.0'
                 }
-                self.db.db.put(metadata_key, pickle.dumps(metadata))
+                
+                if hasattr(self.db.db, 'put'):
+                	self.db.db.put(metadata_key, pickle.dumps(metadata))
+                else:
+                	# Memory database (dict)
+                	self.db.db[metadata_key] = pickle.dumps(metadata)
+                	
         except Exception as e:
             logger.warning(f"Failed to initialize index metadata: {e}")
     
