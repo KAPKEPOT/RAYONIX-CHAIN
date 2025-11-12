@@ -1,6 +1,17 @@
 from dataclasses import dataclass
 from typing import Dict, List, Any, Optional, Iterator, Tuple, Union, Set, Callable
+from enum import Enum
 
+class HashAlgorithm(Enum):
+    SHA256 = "sha256"
+    SHA512 = "sha512"
+    BLAKE2B = "blake2b"
+
+class ProofFormat(Enum):
+    BINARY = "binary"
+    JSON = "json"
+    HEX = "hex"
+    
 @dataclass
 class MerkleDatabaseConfig:
     """Configuration for Merkle tree integrity protection"""
