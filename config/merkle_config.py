@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from typing import Dict, List, Any, Optional, Iterator, Tuple, Union, Set, Callable
+
 @dataclass
 class MerkleDatabaseConfig:
     """Configuration for Merkle tree integrity protection"""
