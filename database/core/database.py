@@ -714,6 +714,10 @@ class AdvancedDatabase:
                 if self.config.db_type == DatabaseType.MEMORY:
                     keys = sorted(self.db.keys(), reverse=reverse)
                     for key in keys:
+                        # FILTER OUT SYSTEM/INTERNAL KEYS
+                        if key.startswith(b'_index_') or key.startswith(b'_system_'):
+                        	continue  # Skip internal system keys
+                        	
                         if prefix is None or key.startswith(prefix):
                             value, metadata = self._extract_value_from_storage(self.db[key])
                             
