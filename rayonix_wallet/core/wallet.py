@@ -85,18 +85,19 @@ class ProductionRayonixWallet:
     def _generate_cryptographic_wallet_id(self) -> str:
         """Generate cryptographically secure wallet ID with domain separation"""
         # Generate high-entropy random bytes
-        entropy = secrets.token_bytes(64)
+        mnemonic_bytes = mnemonic.encode('utf-8')
         
         # Use HKDF for cryptographic separation
         hkdf = HKDF(
             algorithm=hashes.SHA512(),
             length=32,
-            salt=secrets.token_bytes(32),
+            salt=b'rayonix-wallet-id-salt',
+            #salt=secrets.token_bytes(32),
             info=b'rayonix-wallet-id-generation-v2',
             backend=self._crypto_backend
         )
         
-        wallet_id_bytes = hkdf.derive(entropy + struct.pack('>Q', int(time.time())))
+        wallet_id_bytes = hkdf.derive(mnemonic_bytes)
         return wallet_id_bytes.hex()
     
     def _initialize_cryptographic_context(self) -> bytes:
@@ -126,12 +127,12 @@ class ProductionRayonixWallet:
                 
             except Exception as e:
                 logger.error(f"Wallet state loading failed: {e}")
-                # GRACEFUL DEGRADATION: Create fresh state but don't crash
-                logger.warning("Initiating graceful degradation - creating fresh wallet state")
-                self._create_fresh_wallet_state()
+                # CRITICAL: Only recreate STATE, not wallet
+                logger.warning("Recreating wallet STATE metadata (wallet keys are preserved)")
+                self._recreate_wallet_state_metadata()
                 
                 # Log but don't re-raise - allow system to continue
-                self._log_security_event("state_recovery", f"Recovered from: {str(e)}")
+                self._log_security_event("state_metadata_recovery", f"Recovered state from: {str(e)}")
                 
     def _attempt_database_repair(self):
     	"""Attempt to repair database corruption"""
@@ -144,29 +145,60 @@ class ProductionRayonixWallet:
     	except Exception as e:
     		logger.warning(f"Database repair attempt failed: {e}")
     
-    def _create_fresh_wallet_state(self):
-    	"""Create completely fresh wallet state"""
-    	self.state = WalletState(
-    	    sync_height=0,
-    	    last_updated=time.time(),
-    	    tx_count=0,
-    	    addresses_generated=0,
-    	    addresses_used=0,
-    	    total_received=0,
-    	    total_sent=0,
-    	    security_score=self._calculate_initial_security_score()
-    	)
-    	
-    	# Save the fresh state
+    def _recreate_wallet_state_metadata(self):
+    	"""Recreate wallet STATE metadata without affecting cryptographic material"""
     	try:
+    		# Get existing addresses to preserve them
+    		existing_addresses = self._get_existing_addresses_safely()
+    		
+    		# Create fresh STATE but preserve addresses
+    		self.state = WalletState(
+    		    sync_height=0,  # Will need to rescan
+    		    last_updated=time.time(),
+    		    tx_count=len(self.transactions) if hasattr(self, 'transactions') else 0,
+    		    addresses_generated=len(existing_addresses),
+    		    addresses_used=self._count_used_addresses(existing_addresses),
+    		    total_received=0,  # Will be recalculated
+    		    total_sent=0,      # Will be recalculated
+    		    security_score=self._calculate_current_security_score()
+    		)
+    		
+    		# Save the state metadata
     		self.db.save_wallet_state(self.state)
-    	except Exception as e:
-    		logger.error(f"Failed to save fresh wallet state: {e}")
+    		# Preserve existing addresses
+    		self.addresses = existing_addresses
+    		
+    		logger.info("Wallet STATE metadata recreated - cryptographic material preserved")
     	
-    	# Initialize empty collections
-    	self.addresses = {}
-    	self.transactions = {}
-    	logger.info("Fresh wallet state created successfully")
+    	except Exception as e:
+    		logger.error(f"Failed to recreate wallet state: {e}")
+    		# If this fails, we have bigger problems
+    		raise WalletError("Critical wallet state failure")
+    
+    def _get_existing_addresses_safely(self) -> Dict[str, AddressInfo]:
+    	"""Safely get existing addresses without relying on corrupted state"""
+    	addresses = {}
+    	
+    	try:
+    		# Try to load from database directly
+    		raw_addresses = self.db.get_all_addresses()
+    		for addr_data in raw_addresses:
+    			try:
+    				if isinstance(addr_data, dict):
+    					address_info = AddressInfo(**addr_data)
+    				else:
+    					address_info = addr_data
+    				
+    				# Basic validation that this is a real address
+    				if (hasattr(address_info, 'address') and hasattr(address_info, 'derivation_path')):
+    					addresses[address_info.address] = address_info
+    			
+    			except Exception as e:
+    				logger.warning(f"Skipping invalid address entry: {e}")
+    				continue
+    	except Exception as e:
+    		logger.error(f"Failed to load existing addresses: {e}")
+    	return addresses
     	
     def _load_validated_wallet_state(self) -> WalletState:
         """Load and cryptographically validate wallet state"""
