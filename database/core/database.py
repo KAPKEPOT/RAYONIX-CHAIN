@@ -289,8 +289,8 @@ class AdvancedDatabase:
         if not key_bytes:
             raise DatabaseError("Key cannot be empty")
             
-        if value is None:
-            raise DatabaseError("Value cannot be None")
+        #if value is None:
+           # raise DatabaseError("Value cannot be None")
         
         with self.locks['db']:
             try:
