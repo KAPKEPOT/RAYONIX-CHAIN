@@ -989,6 +989,28 @@ class AdvancedDatabase:
                     except Exception as e:
                         logger.error(f"Index removal failed for {index_name}: {e}")
                         
+    def get_stats(self) -> Dict[str, Any]:
+    	"""Get database statistics"""
+    	with self.locks['stats']:
+    		return {
+    		    'put_operations': self.stats.put_operations,
+    		    'get_operations': self.stats.get_operations,
+    		    'delete_operations': self.stats.delete_operations,
+    		    'cache_hits': self.stats.cache_hits,
+    		    'misses': self.stats.misses,
+    		    'bytes_written': self.stats.bytes_written,
+    		    'bytes_read': self.stats.bytes_read,
+    		    'index_count': len(self.indexes),
+    		    'cache_size': len(self.cache),
+    		    'put_errors': self.stats.put_errors,
+    		    'get_errors': self.stats.get_errors,
+    		    'delete_errors': self.stats.delete_errors,
+    		    'batch_operations': self.stats.batch_operations,
+    		    'batch_errors': self.stats.batch_errors,
+    		    'iterate_operations': self.stats.iterate_operations,
+    		    'iterate_errors': self.stats.iterate_errors
+    		}
+    	
 # Enhanced DatabaseConfig with Merkle options
 def enhance_database_config():
     """Add Merkle integrity options to DatabaseConfig"""
