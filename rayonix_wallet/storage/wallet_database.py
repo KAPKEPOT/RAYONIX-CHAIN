@@ -1,6 +1,6 @@
 # rayonix_wallet/storage/wallet_database.py
 import logging
-from typing import List, Optional, Iterator, Tuple, Any
+from typing import List, Optional, Iterator, Tuple, Any, Dict
 from database.core.database import AdvancedDatabase
 
 logger = logging.getLogger(__name__)
