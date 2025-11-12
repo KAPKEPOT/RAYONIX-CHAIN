@@ -121,7 +121,7 @@ class AdvancedDatabase:
                     write_buffer_size=self.config.write_buffer_size,
                     max_open_files=self.config.max_open_files,
                     block_size=self.config.block_size,
-                    cache_size=self.config.cache_size
+                    lru_cache_size=self.config.cache_size
                 )
                 logger.info(f"Plyvel database initialized at {self.db_path}")
             elif self.config.db_type == DatabaseType.MEMORY:
