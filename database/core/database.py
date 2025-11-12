@@ -58,6 +58,7 @@ from database.services.background_tasks import BackgroundTaskService
 from database.core.integrity_manager import IntegrityManager
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+from config.merkle_config import MerkleDatabaseConfig
 
 # Configure logging
 console_handler = logging.StreamHandler()
@@ -66,20 +67,6 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-
-@dataclass
-class MerkleDatabaseConfig:
-    """Configuration for Merkle tree integrity protection"""
-    enabled: bool = True
-    merkle_tree_depth: int = 256
-    hash_algorithm: HashAlgorithm = HashAlgorithm.SHA256
-    double_hash: bool = True
-    verify_on_read: bool = True
-    verify_on_write: bool = True
-    auto_recover: bool = True
-    store_proofs: bool = False
-    proof_format: ProofFormat = ProofFormat.BINARY
-    integrity_check_interval: int = 3600
 
 class AdvancedDatabase:
     def __init__(self, db_path: str, config: Optional[DatabaseConfig] = None):
