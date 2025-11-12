@@ -1009,7 +1009,7 @@ class SparseMerkleTree:
         
         proof = {
             'version': PROOF_VERSION,
-            'algorithm': self.config.hash_algorithm.value,
+            'algorithm': self.config.hash_algorithm,
             'leaf_hash': leaf_hash,
             'leaf_index': index,
             'sibling_hashes': [],
