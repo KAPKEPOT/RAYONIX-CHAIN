@@ -39,6 +39,7 @@ class DatabaseConfig:
     create_if_missing: bool = True
     error_if_exists: bool = False
     paranoid_checks: bool = False
+    merkle_integrity=True,
     write_buffer_size: int = 4 * 1024 * 1024  # 4MB
     max_open_files: int = 1000
     block_size: int = 4096
