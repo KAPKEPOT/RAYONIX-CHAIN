@@ -350,3 +350,18 @@ class IntegrityManager:
         
         results['duration'] = time.time() - start_time
         return results
+
+    def _get_data_size(self, value: Any) -> int:
+        """Calculate approximate data size for statistics"""
+        try:
+            if value is None:
+                return 0
+            elif isinstance(value, (str, bytes, bytearray)):
+                return len(value)
+            elif isinstance(value, (int, float, bool)):
+                return 8  # Approximate size for primitive types
+            else:
+                # For complex objects, use string representation length
+                return len(str(value))
+        except:
+            return 0  # Fallback              
