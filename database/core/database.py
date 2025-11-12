@@ -305,6 +305,8 @@ class AdvancedDatabase:
                     
                 # Prepare value for storage
                 prepared_value = self._prepare_value_for_storage(serialized_value, ttl)
+                # Register with Merkle integrity manager FIRST
+                self.integrity_manager.register_put_operation(key_bytes, value)
                 
                 # Verify integrity before write if enabled
                 if verify_integrity and self.integrity_manager.config.verify_on_write:
@@ -332,9 +334,6 @@ class AdvancedDatabase:
                         
                 except Exception as e:
                     raise DatabaseError(f"Database storage failed: {e}")
-                
-                # Register with Merkle integrity manager
-                self.integrity_manager.register_put_operation(key_bytes, value)
                 
                 # Update cache
                 if use_cache:
