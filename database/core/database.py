@@ -55,7 +55,7 @@ from database.core.serialization import JSONSerializer, MsgPackSerializer, Proto
 from database.core.compression import ZlibCompression, LZ4Compression, SnappyCompression, ZstdCompression
 from database.core.encryption import AES256Encryption, ChaCha20Encryption
 from database.services.background_tasks import BackgroundTaskService
-from database.core.intergrity_manager import IntegrityManager
+from database.core.integrity_manager import IntegrityManager
 from config.merkle_config import MerkleDatabaseConfig
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
