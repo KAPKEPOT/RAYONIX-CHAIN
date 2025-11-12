@@ -1,4 +1,5 @@
 # merkle.py
+#merkle_system/merkle.py
 import hashlib
 import json
 import msgpack
@@ -46,7 +47,6 @@ class MerkleTreeConfig:
     cache_max_size: int = 10000
 
 class MerkleNode:
-    """Represents a node in the Merkle tree with optimized memory usage"""
     __slots__ = ['hash', 'left', 'right', 'is_leaf', 'depth', 'index', 'size']
     
     def __init__(self, hash_value: str, left: Optional['MerkleNode'] = None, 
@@ -76,8 +76,7 @@ class MerkleNode:
         }
 
 class MerkleTree:
-    """Complete Merkle tree implementation with production-ready optimizations"""
-    
+  
     def __init__(self, data_items: List[str], config: Optional[MerkleTreeConfig] = None):
         """
         Initialize Merkle tree with data items
@@ -1236,6 +1235,49 @@ class SparseMerkleTree:
         """
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self.batch_update, updates)
+        
+class MerkleTreeStats:
+    """Collect and report statistics about Merkle tree operations"""
+    
+    def __init__(self):
+        self.operations: List[Dict] = []
+        self.lock = threading.RLock()
+    
+    def record_operation(self, operation_type: str, size: int, duration: float, 
+                       success: bool = True, metadata: Optional[Dict] = None):
+        """Record an operation with timing and metadata"""
+        with self.lock:
+            self.operations.append({
+                'type': operation_type,
+                'size': size,
+                'duration': duration,
+                'timestamp': time.time(),
+                'success': success,
+                'metadata': metadata or {}
+            })
+    
+    def get_stats(self, window_seconds: int = 3600) -> Dict:
+        """Get statistics for the specified time window"""
+        with self.lock:
+            now = time.time()
+            recent_ops = [op for op in self.operations 
+                         if op['timestamp'] > now - window_seconds]
+            
+            if not recent_ops:
+                return {}
+            
+            build_ops = [op for op in recent_ops if op['type'] == 'build']
+            verify_ops = [op for op in recent_ops if op['type'] == 'verify']
+            
+            return {
+                'total_operations': len(recent_ops),
+                'build_operations': len(build_ops),
+                'verify_operations': len(verify_ops),
+                'avg_build_time': sum(op['duration'] for op in build_ops) / len(build_ops) if build_ops else 0,
+                'avg_verify_time': sum(op['duration'] for op in verify_ops) / len(verify_ops) if verify_ops else 0,
+                'success_rate': sum(1 for op in recent_ops if op['success']) / len(recent_ops),
+                'throughput': len(recent_ops) / window_seconds
+            }       
 
 # Add these utility functions at the end of the file
 
