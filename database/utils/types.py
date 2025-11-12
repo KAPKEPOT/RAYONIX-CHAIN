@@ -39,7 +39,6 @@ class DatabaseConfig:
     create_if_missing: bool = True
     error_if_exists: bool = False
     paranoid_checks: bool = False
-    merkle_integrity=True,
     write_buffer_size: int = 4 * 1024 * 1024  # 4MB
     max_open_files: int = 1000
     block_size: int = 4096
@@ -55,6 +54,16 @@ class DatabaseConfig:
     bloom_filter_error_rate: float = 0.01
     memtable_size: int = 10000
     max_sstables: int = 10
+    
+    # Merkle Integrity Settings
+    merkle_integrity: bool = True
+    merkle_tree_depth: int = 256
+    merkle_hash_algorithm: str = 'sha256'
+    merkle_verify_on_read: bool = True
+    merkle_verify_on_write: bool = True
+    merkle_auto_recover: bool = True
+    merkle_proof_format: str = 'binary'
+    integrity_check_interval: int = 3600'''
 
 @dataclass
 class IndexConfig:
