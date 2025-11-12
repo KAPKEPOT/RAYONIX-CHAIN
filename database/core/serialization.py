@@ -13,7 +13,6 @@ import struct
 from io import BytesIO
 from dataclasses import asdict
 
-
 # Avro imports
 try:
     import avro.schema
