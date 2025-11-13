@@ -25,7 +25,7 @@ class WalletScreen(Screen):
         grid-size: 2 2;
         grid-gutter: 1 2;
         padding: 1 2;
-        height: 100%;
+        
     }
     
     .wallet-section {
