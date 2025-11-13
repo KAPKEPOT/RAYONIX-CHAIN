@@ -1,35 +1,10 @@
 import time
 import asyncio
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
-from enum import Enum
 import logging
 
 logger = logging.getLogger("RateLimiter")
-
-class RateLimitType(Enum):
-    """Types of rate limits"""
-    INCOMING_MESSAGES = "incoming_messages"
-    OUTGOING_MESSAGES = "outgoing_messages"
-    INCOMING_BANDWIDTH = "incoming_bandwidth"
-    OUTGOING_BANDWIDTH = "outgoing_bandwidth"
-    CONNECTION_RATE = "connection_rate"
-
-@dataclass
-class RateLimitConfig:
-    """Configuration for rate limiting"""
-    messages_per_minute: int = 1000
-    bandwidth_per_minute: int = 1024 * 1024  # 1MB per minute
-    connection_attempts_per_minute: int = 10
-    burst_capacity: int = 100  # Allow bursts up to this many messages
-    enabled: bool = True
-
-@dataclass
-class RateLimitStats:
-    """Statistics for rate limiting"""
-    total_limited: int = 0
-    total_checked: int = 0
-    current_active_limits: int = 0
 
 @dataclass
 class RateLimitData:
@@ -44,20 +19,57 @@ class RateLimitData:
     limited_until: Optional[float] = None
 
 class RateLimiter:
-    def __init__(self, config: RateLimitConfig = None):
-        if config is None:
-        	raise ValueError("RateLimitConfig is required")
-        self.config = config
+    def __init__(self, config_manager):
+        """
+        Initialize with ConfigManager instance
+        All configuration comes from config_manager, no hardcoded defaults
+        """
+        if not config_manager or not hasattr(config_manager, 'config'):
+            raise ValueError("ConfigManager is required for RateLimiter")
+        
+        self.config_manager = config_manager
         self.rate_limits: Dict[str, RateLimitData] = {}
-        self.global_stats = RateLimitStats()
         self._cleanup_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
+        
+        # Initialize stats
+        self.total_checked = 0
+        self.total_limited = 0
+    
+    def _get_config_value(self, key: str, default: Any = None) -> Any:
+        """Get configuration value from ConfigManager"""
+        return self.config_manager.get(key, default)
+    
+    @property
+    def enabled(self) -> bool:
+        """Check if rate limiting is enabled"""
+        return self._get_config_value('network.rate_limiting', True)
+    
+    @property
+    def messages_per_minute(self) -> int:
+        """Get messages per minute limit"""
+        return self._get_config_value('network.rate_limit_per_peer', 1000)
+    
+    @property
+    def bandwidth_per_minute(self) -> int:
+        """Get bandwidth per minute limit"""
+        return self._get_config_value('network.bandwidth_limit_per_peer', 1024 * 1024)  # 1MB
+    
+    @property
+    def connection_attempts_per_minute(self) -> int:
+        """Get connection attempts per minute limit"""
+        return self._get_config_value('peer_discovery.connection_attempts_per_minute', 10)
+    
+    @property
+    def burst_capacity(self) -> int:
+        """Get burst capacity"""
+        return self._get_config_value('message_handler.burst_capacity', 100)
     
     async def start(self):
         """Start the rate limiter background tasks"""
-        if self.config.enabled:
+        if self.enabled:
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-            logger.info("Rate limiter started")
+            logger.info("Rate limiter started with config from ConfigManager")
     
     async def stop(self):
         """Stop the rate limiter"""
@@ -75,41 +87,31 @@ class RateLimiter:
         Check incoming rate limit for a connection
         Returns True if allowed, False if rate limited
         """
-        return await self._check_limit(
-            connection_id, 
-            message_size, 
-            RateLimitType.INCOMING_MESSAGES,
-            RateLimitType.INCOMING_BANDWIDTH
-        )
+        return await self._check_limit(connection_id, message_size, 'incoming')
     
     async def check_outgoing_rate_limit(self, connection_id: str, message_size: int = 0) -> bool:
         """
         Check outgoing rate limit for a connection
         Returns True if allowed, False if rate limited
         """
-        return await self._check_limit(
-            connection_id,
-            message_size,
-            RateLimitType.OUTGOING_MESSAGES,
-            RateLimitType.OUTGOING_BANDWIDTH
-        )
+        return await self._check_limit(connection_id, message_size, 'outgoing')
     
     async def check_connection_rate_limit(self, address: str) -> bool:
         """
         Check connection attempt rate limit for an IP address
         Returns True if allowed, False if rate limited
         """
-        if not self.config.enabled:
+        if not self.enabled:
             return True
         
         async with self._lock:
-            self.global_stats.total_checked += 1
+            self.total_checked += 1
             
             # Check if currently limited
             if address in self.rate_limits:
                 limit_data = self.rate_limits[address]
                 if limit_data.limited_until and time.time() < limit_data.limited_until:
-                    self.global_stats.total_limited += 1
+                    self.total_limited += 1
                     return False
             
             # Reset counters if needed
@@ -117,10 +119,10 @@ class RateLimiter:
             self._reset_if_needed(limit_data)
             
             # Check connection attempt limit
-            if limit_data.connection_attempts >= self.config.connection_attempts_per_minute:
+            if limit_data.connection_attempts >= self.connection_attempts_per_minute:
                 # Apply temporary limit
                 limit_data.limited_until = time.time() + 60  # 1 minute limit
-                self.global_stats.total_limited += 1
+                self.total_limited += 1
                 logger.warning(f"Connection rate limit exceeded for {address}")
                 return False
             
@@ -130,21 +132,19 @@ class RateLimiter:
             
             return True
     
-    async def _check_limit(self, connection_id: str, message_size: int, 
-                          message_limit_type: RateLimitType, 
-                          bandwidth_limit_type: RateLimitType) -> bool:
+    async def _check_limit(self, connection_id: str, message_size: int, direction: str) -> bool:
         """Internal method to check rate limits"""
-        if not self.config.enabled:
+        if not self.enabled:
             return True
         
         async with self._lock:
-            self.global_stats.total_checked += 1
+            self.total_checked += 1
             
             # Check if currently limited
             if connection_id in self.rate_limits:
                 limit_data = self.rate_limits[connection_id]
                 if limit_data.limited_until and time.time() < limit_data.limited_until:
-                    self.global_stats.total_limited += 1
+                    self.total_limited += 1
                     return False
             
             # Reset counters if needed
@@ -152,31 +152,31 @@ class RateLimiter:
             self._reset_if_needed(limit_data)
             
             # Check message count limit with burst capacity
-            max_messages = self.config.messages_per_minute + self.config.burst_capacity
+            max_messages = self.messages_per_minute + self.burst_capacity
             
-            if message_limit_type == RateLimitType.INCOMING_MESSAGES:
+            if direction == 'incoming':
                 current_count = limit_data.incoming_message_count
                 if current_count >= max_messages:
-                    return self._apply_limit(connection_id, limit_data, "message count")
+                    return self._apply_limit(connection_id, limit_data, "incoming message count")
                 limit_data.incoming_message_count += 1
-            else:  # OUTGOING_MESSAGES
+            else:  # outgoing
                 current_count = limit_data.outgoing_message_count
                 if current_count >= max_messages:
-                    return self._apply_limit(connection_id, limit_data, "message count")
+                    return self._apply_limit(connection_id, limit_data, "outgoing message count")
                 limit_data.outgoing_message_count += 1
             
             # Check bandwidth limit
-            max_bandwidth = self.config.bandwidth_per_minute
+            max_bandwidth = self.bandwidth_per_minute
             
-            if bandwidth_limit_type == RateLimitType.INCOMING_BANDWIDTH:
+            if direction == 'incoming':
                 current_bandwidth = limit_data.incoming_bytes
                 if current_bandwidth + message_size > max_bandwidth:
-                    return self._apply_limit(connection_id, limit_data, "bandwidth")
+                    return self._apply_limit(connection_id, limit_data, "incoming bandwidth")
                 limit_data.incoming_bytes += message_size
-            else:  # OUTGOING_BANDWIDTH
+            else:  # outgoing
                 current_bandwidth = limit_data.outgoing_bytes
                 if current_bandwidth + message_size > max_bandwidth:
-                    return self._apply_limit(connection_id, limit_data, "bandwidth")
+                    return self._apply_limit(connection_id, limit_data, "outgoing bandwidth")
                 limit_data.outgoing_bytes += message_size
             
             limit_data.last_activity = time.time()
@@ -204,7 +204,7 @@ class RateLimiter:
         """Apply rate limit and return False"""
         # Set limited until time (30 seconds penalty)
         limit_data.limited_until = time.time() + 30
-        self.global_stats.total_limited += 1
+        self.total_limited += 1
         
         logger.warning(
             f"Rate limit exceeded for {connection_id}: {limit_type} limit. "
@@ -240,14 +240,18 @@ class RateLimiter:
     def get_global_stats(self) -> Dict[str, Any]:
         """Get global rate limiting statistics"""
         return {
-            'total_checked': self.global_stats.total_checked,
-            'total_limited': self.global_stats.total_limited,
+            'total_checked': self.total_checked,
+            'total_limited': self.total_limited,
             'current_active_limits': len(self.rate_limits),
             'limit_percentage': (
-                (self.global_stats.total_limited / self.global_stats.total_checked * 100) 
-                if self.global_stats.total_checked > 0 else 0
+                (self.total_limited / self.total_checked * 100) 
+                if self.total_checked > 0 else 0
             ),
-            'enabled': self.config.enabled
+            'enabled': self.enabled,
+            'messages_per_minute': self.messages_per_minute,
+            'bandwidth_per_minute': self.bandwidth_per_minute,
+            'connection_attempts_per_minute': self.connection_attempts_per_minute,
+            'burst_capacity': self.burst_capacity
         }
     
     async def reset_connection_limits(self, connection_id: str):
@@ -256,14 +260,6 @@ class RateLimiter:
             if connection_id in self.rate_limits:
                 self.rate_limits[connection_id] = RateLimitData()
                 logger.info(f"Reset rate limits for {connection_id}")
-    
-    async def set_custom_limits(self, connection_id: str, 
-                              messages_per_minute: Optional[int] = None,
-                              bandwidth_per_minute: Optional[int] = None):
-        """Set custom rate limits for a specific connection"""
-        # This can be extended to support per-connection custom limits
-        logger.debug(f"Custom limits requested for {connection_id}")
-        # Implementation would store custom limits in a separate dictionary
     
     async def _cleanup_loop(self):
         """Background task to cleanup old rate limit entries"""
@@ -281,7 +277,7 @@ class RateLimiter:
         """Clean up rate limit entries for inactive connections"""
         async with self._lock:
             current_time = time.time()
-            inactive_threshold = 3600  # 1 hour
+            inactive_threshold = self._get_config_value('connection_manager.cleanup_interval', 3600)  # 1 hour default
             
             to_remove = []
             for connection_id, limit_data in self.rate_limits.items():
