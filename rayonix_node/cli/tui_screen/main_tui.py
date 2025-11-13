@@ -9,12 +9,12 @@ from textual.widgets import Header, Footer
 
 # Import all screens
 from rayonix_node.cli.tui_screen.dashboard import DashboardScreen
-from rayonix_node.cli.tui_screenwallet_screen import WalletScreen
-from rayonix_node.cli.tui_screenstaking_screen import StakingScreen
-from rayonix_node.cli.tui_screenapi_screen import ApiScreen
-from rayonix_node.cli.tui_screencontracts_screen import ContractsScreen
-from rayonix_node.cli.tui_screennetwork_screen import NetworkScreen
-from rayonix_node.cli.tui_screenvalidators_screen import ValidatorsScreen
+from rayonix_node.cli.tui_screen.wallet_screen import WalletScreen
+from rayonix_node.cli.tui_screen.staking_screen import StakingScreen
+from rayonix_node.cli.tui_screen.api_screen import ApiScreen
+from rayonix_node.cli.tui_screen.contracts_screen import ContractsScreen
+from rayonix_node.cli.tui_screen.network_screen import NetworkScreen
+from rayonix_node.cli.tui_screen.validators_screen import ValidatorsScreen
 
 class RayonixTUI(App):
     """Complete Rayonix TUI Application"""
