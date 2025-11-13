@@ -93,26 +93,36 @@ class LoadWalletCommand(BaseWalletCommand):
     def _prompt_wallet_password(self) -> Optional[str]:
         """Prompt for wallet password (optional)"""
         print("\n🔑 WALLET PASSWORD (OPTIONAL):")
-        print("• Enter password if your wallet is encrypted")
-        print("• Press Enter to skip if no password")
+        print("• Password is required for wallet security")
+        print("• Minimum 8 characters recommended")
         print("• Type 'cancel' to quit\n")
         
         try:
-            password = getpass.getpass("Wallet password (optional): ")
-            if password.strip().lower() == 'cancel':
-                return None
-            
-            if password.strip():  # If password provided
-                confirm = getpass.getpass("Confirm password: ")
-                if password != confirm:
-                    print("❌ Passwords do not match. Please try again.")
-                    return self._prompt_wallet_password()  # Retry
-            
-            return password.strip() or None
-            
+            while True:
+            	password = getpass.getpass("Wallet password (required): ")
+            	
+            	if password.strip().lower() == 'cancel':
+            		return None
+            	
+            	if not password.strip():
+            		print("❌ Password cannot be empty. Please enter a password.")
+            		continue
+            	
+            	if len(password.strip()) < 4:
+            		print("❌ Password too short. Minimum 4 characters required.")
+            		continue
+            	
+            	confirm = getpass.getpass("Confirm password: ")
+            	
+            	if password != confirm:
+            		print("❌ Passwords do not match. Please try again.")
+            		continue
+            	
+            	return password.strip()
+            	
         except KeyboardInterrupt:
-            return None
-    
+        	return None
+        	
     def _validate_mnemonic_format(self, mnemonic: str) -> bool:
         """Basic mnemonic format validation"""
         words = mnemonic.strip().split()
