@@ -44,7 +44,7 @@ class WalletScreen(Screen):
     .balance-amount {
         color: #9ece6a;
         text-style: bold;
-        font-size: 24;
+        
     }
     
     .address-item {
