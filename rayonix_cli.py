@@ -23,6 +23,7 @@ from rayonix_node.cli.command_handler import CommandHandler
 from rayonix_node.cli.interactive import run_interactive_mode
 from rayonix_node.utils.helpers import configure_logging
 from rayonix_node.utils.api_key_manager import APIKeyManager, validate_api_key
+from rayonix_node.cli.modern_tui import run_modern_tui
 
 logger = logging.getLogger("rayonix_cli")
 
@@ -397,6 +398,7 @@ def main():
     
     # Interactive mode
     subparsers.add_parser('interactive', help='Start interactive mode')
+    modern_parser = subparsers.add_parser('modern', help='Start modern TUI interface')
     
     args = parser.parse_args()
     
@@ -487,6 +489,9 @@ def main():
         if args.command == 'interactive' or not args.command:
             # Interactive mode
             run_interactive_mode(client, data_dir)
+        elif args.command == 'modern':
+        	run_modern_tui(client, data_dir)
+        	
         else:
             # Single command handler
             handler = CommandHandler(client)
