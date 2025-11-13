@@ -490,11 +490,14 @@ def main():
             # Interactive mode
             run_interactive_mode(client, data_dir)
         elif args.command == 'modern':
-        	run_modern_tui(client, data_dir)
+        	if not MODERN_TUI_AVAILABLE:
+        		print("❌ Modern TUI not available. Install with: pip install textual rich")
+        		print("🔄 Falling back to interactive mode...")
+        	run_interactive_mode(client, data_dir)
         	
         else:
-            # Single command handler
-            handler = CommandHandler(client)
+            tui = ModernTUI(client, data_dir)
+            tui.run()
             
             command_args = []
             if args.command == 'balance' and hasattr(args, 'address') and args.address:
