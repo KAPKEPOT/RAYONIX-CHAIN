@@ -683,22 +683,42 @@ class ProductionRayonixWallet:
         """Cryptographic mnemonic storage with encryption"""
         try:
             # Encrypt mnemonic using AES-GCM
+            if not passphrase:
+            	raise CryptoError("Passphrase required for wallet encryption")
+            
+            salt = secrets.token_bytes(32)
+            encryption_key = self._derive_encryption_key(passphrase, salt)
+            
             aesgcm = AESGCM(self._aes_gcm_key)
             nonce = secrets.token_bytes(12)  # 96-bit nonce for AES-GCM
             
             # Additional authenticated data for integrity
-            aad = self.wallet_id.encode() + struct.pack('>Q', int(time.time()))
+            #aad = self.wallet_id.encode() + struct.pack('>Q', int(time.time()))
             
             # Encrypt mnemonic
-            mnemonic_encrypted = aesgcm.encrypt(nonce, mnemonic.encode(), aad)
+            mnemonic_encrypted = aesgcm.encrypt(nonce, mnemonic.encode(), self.wallet_id.encode())
+            
+            # Store encrypted data
+            storage_data = {
+                'encrypted_mnemonic': base64.b64encode(nonce + mnemonic_encrypted).decode(),
+                'salt': base64.b64encode(salt).decode(),
+                'version': '2.0'
+            }
+            
             
             # Store encrypted mnemonic in secure string
-            storage_data = nonce + aad + mnemonic_encrypted
-            self._creation_mnemonic = SecureString(storage_data)
+            #storage_data = nonce + aad + mnemonic_encrypted
+            #self._creation_mnemonic = SecureString(storage_data)
+            self.db.save_encrypted_mnemonic(storage_data)
+            
+            # 🔴 CRITICAL: WIPE PLAINTEXT FROM MEMORY
+            mnemonic_bytes = mnemonic.encode()
+            for i in range(len(mnemonic_bytes)):
+            	mnemonic_bytes = b'\x00' * len(mnemonic_bytes)
             
             # Clear original from memory
             del mnemonic
-            del passphrase
+            del mnemonic_bytes
             
         except Exception as e:
             raise CryptoError(f"Cryptographic mnemonic storage failed: {e}")
