@@ -460,11 +460,48 @@ class KeyManager:
     def _generate_cryptographic_salt(self) -> bytes:
         """Generate cryptographically secure salt"""
         return secrets.token_bytes(32)
+    
+    def validate_derivation_path(self, path: str) -> bool:
+        """Validate BIP32 derivation path - FIXED"""
+        if not isinstance(path, str) or not path.startswith('m/'):
+            return False
+        
+        parts = path.split('/')[1:]
+        for part in parts:
+            # Handle both ' and h for hardened notation
+            is_hardened = part.endswith("'") or part.endswith("h")
+            if is_hardened:
+                part = part[:-1]
+            
+            # Must be numeric
+            if not part.isdigit():
+                return False
+            
+            # Check BIP32 ranges
+            try:
+                index = int(part)
+                if is_hardened:
+                    if not (0 <= index <= 0x7FFFFFFF):
+                        return False
+                else:
+                    if not (0 <= index <= 0xFFFFFFFF):
+                        return False
+            except (ValueError, OverflowError):
+                return False
+        
+        return True
 
     def get_derivation_path(self, index: int, is_change: bool = False) -> str:
         """Get BIP44 derivation path"""
-        change_index = 1 if is_change else 0
-        return f"m/44'/{self.config.coin_type}'/{self.config.account_index}'/{change_index}/{index}"
+        coin_type = getattr(self.config, 'coin_type', 1)  # Default to testnet
+        
+        # BIP44 standard: m/purpose'/coin_type'/account'/change/address_index
+        change = 1 if is_change else 0
+        path = f"m/44'/{coin_type}'/0'/{change}/{index}"
+        
+        if not self.validate_derivation_path(path):
+        	raise CryptoError(f"Invalid derivation path generated: {path}")
+        return path
 
     def derive_public_key(self, derivation_path: str) -> bytes:
         """Derive public key from derivation path with caching"""
