@@ -6,7 +6,7 @@ import struct
 import asyncio
 import json
 from pathlib import Path
-from typing import Optional, Tuple, Dict, List, Any
+from typing import Optional, Tuple, Dict, List, Any, Set
 from dataclasses import dataclass
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.hmac import HMAC
@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 import os
 from merkle_system.merkle import SparseMerkleTree, HashAlgorithm, MerkleTree, MerkleTreeStats, ProofFormat
 from config.merkle_config import MerkleTreeConfig
+from database.utils.exceptions import DatabaseError, KeyNotFoundError  # ADD THIS IMPORT
 
 logger = logging.getLogger(__name__)
 
@@ -252,8 +253,8 @@ class IntegrityManager:
         except Exception as e:
             logger.error(f"Failed to register delete operation for key {key.hex()}: {e}")
     
-    def attempt_recovery(self, key: bytes, original_value: Any = None) -> bool:
-        """Attempt to recover a corrupted key"""
+    def attempt_recovery(self, key: bytes, original_value: Any = None, database=None) -> bool:
+        """Attempt to recover a corrupted key - FIXED VERSION"""
         if not self.config.auto_recover:
             return False
             
@@ -269,34 +270,32 @@ class IntegrityManager:
                 
             self.recovery_attempts[key] = attempts + 1
             
-            # If we have the original value, re-register it
+            # 🚨 CRITICAL FIX: Actually restore original data to storage
             if original_value is not None and database is not None:
                 try:
-                	# Write the original value back to database storage
-                	database.put(key, original_value, verify_integrity=False, update_indexes=False)
-                	logger.info(f"Successfully recovered key by restoring data: {key.hex()}")
-                	# Also update the Merkle tree to match the restored data
-                	success = self.register_put_operation(key, original_value)
-                	
-                	if success:  
-                		# Remove from corrupted keys only if both operations succeed
-                		self.corrupted_keys.remove(key)
-                		logger.info(f"Successfully recovered key by restoring data: {key.hex()}")
-                		return True
-                	else:
-                		logger.error(f"Failed to update Merkle tree during recovery: {key.hex()}")
-                		return False
-                		
+                    # Write the original value back to database storage
+                    database.put(key, original_value, verify_integrity=False, update_indexes=False)
+                    
+                    # Also update the Merkle tree to match the restored data
+                    success = self.register_put_operation(key, original_value)
+                    if success:
+                        # Remove from corrupted keys only if both operations succeed
+                        self.corrupted_keys.remove(key)
+                        logger.info(f"Successfully recovered key by restoring data: {key.hex()}")
+                        return True
+                    else:
+                        logger.error(f"Failed to update Merkle tree during recovery: {key.hex()}")
+                        return False
+                        
                 except Exception as e:
-                	logger.error(f"Failed to restore data for key {key.hex()}: {e}")
-                	return False
-                	
+                    logger.error(f"Failed to restore data for key {key.hex()}: {e}")
+                    return False
             elif original_value is not None:
-                # Fallback: at least update Merkle tree
+                # Fallback: at least update Merkle tree (old behavior)
                 success = self.register_put_operation(key, original_value)
                 if success:
                     self.corrupted_keys.remove(key)
-                    logger.info(f"Successfully recovered key: {key.hex()}")
+                    logger.info(f"Recovered key in Merkle tree only: {key.hex()}")
                     return True
             
             logger.warning(f"Recovery attempt {attempts + 1} failed for key: {key.hex()}")
@@ -321,7 +320,6 @@ class IntegrityManager:
                 'enabled': self.config.enabled,
                 'total_keys': len(self.key_to_index),
                 'corrupted_keys': list(self.corrupted_keys),
-                #'corrupted_keys': len(self.corrupted_keys),
                 'integrity_root': self.get_integrity_root(),
                 'recovery_attempts': dict(self.recovery_attempts),
                 'merkle_stats': merkle_stats
@@ -358,7 +356,7 @@ class IntegrityManager:
                             logger.warning(f"Integrity check failed for key: {key_bytes.hex()}")
                             
                             # Attempt recovery
-                            if self.attempt_recovery(key_bytes, value):
+                            if self.attempt_recovery(key_bytes, value, database):
                                 results['recovered_keys'] += 1
                         
                     except (KeyNotFoundError, DatabaseError):
@@ -394,4 +392,4 @@ class IntegrityManager:
                 # For complex objects, use string representation length
                 return len(str(value))
         except:
-            return 0  # Fallback              
+            return 0  # Fallback
