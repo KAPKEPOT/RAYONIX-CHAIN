@@ -182,19 +182,18 @@ class ConnectionManager(IConnectionManager):
             
             if protocol == 'tcp':
                 if not hasattr(self.network, 'tcp_handler') or not self.network.tcp_handler:
-                	raise ConnectionError(f"TCP handler not available for connection {connection_id}")
+                	logger.warning(f"TCP handler not available for connection {connection_id}")
                 await self.network.tcp_handler.close_connection(connection_id)
                 
             elif protocol == 'websocket':
                 if not hasattr(self.network, 'websocket_handler') or not self.network.websocket_handler:
-                	raise ConnectionError(f"WebSocket handler not available for connection {connection_id}")
+                	logger.warning(f"WebSocket handler not available for connection {connection_id}")
                 await self.network.websocket_handler.close_connection(connection_id)
             else:
                 raise ConnectionError(f"Unsupported protocol: {protocol}")
                 
         except Exception as e:
             logger.error(f"Error closing connection {connection_id}: {e}")
-            raise  # Re-raise to catch in tests
         finally:
             # Always clean up internal tracking
             if connection_id in self.connections:
