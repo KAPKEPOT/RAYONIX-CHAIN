@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Main TUI Application - Complete with all screens
+Main TUI Application - Fixed version
 """
 
 import asyncio
@@ -17,7 +17,7 @@ from rayonix_node.cli.tui_screen.network_screen import NetworkScreen
 from rayonix_node.cli.tui_screen.validators_screen import ValidatorsScreen
 
 class RayonixTUI(App):
-    """Complete Rayonix TUI Application"""
+    """Complete Rayonix TUI Application - FIXED"""
     
     CSS = """
     App {
@@ -35,13 +35,6 @@ class RayonixTUI(App):
         background: #1a1b26;
         color: #565f89;
         border-top: solid #2a2b3c;
-    }
-    
-    .screen-title {
-        color: #7aa2f7;
-        text-style: bold;
-        text-align: center;
-        margin: 1 0;
     }
     """
     
@@ -63,28 +56,20 @@ class RayonixTUI(App):
         self.data_dir = data_dir
         
     def on_mount(self) -> None:
-        """Initialize the application with all screens"""
-        # Register all screens
-        self.install_screen(DashboardScreen(self.client, self), name="dashboard")
-        self.install_screen(WalletScreen(self.client, self), name="wallet")
-        self.install_screen(StakingScreen(self.client, self), name="staking")
-        self.install_screen(ApiScreen(self.client, self), name="api")
-        self.install_screen(ContractsScreen(self.client, self), name="contracts")
-        self.install_screen(NetworkScreen(self.client, self), name="network")
-        self.install_screen(ValidatorsScreen(self.client, self), name="validators")
+        """Initialize the application with all screens - FIXED"""
+        # Register all screens WITHOUT passing 'self' as app parameter
+        self.install_screen(DashboardScreen(self.client), name="dashboard")
+        self.install_screen(WalletScreen(self.client), name="wallet")
+        self.install_screen(StakingScreen(self.client), name="staking")
+        self.install_screen(ApiScreen(self.client), name="api")
+        self.install_screen(ContractsScreen(self.client), name="contracts")
+        self.install_screen(NetworkScreen(self.client), name="network")
+        self.install_screen(ValidatorsScreen(self.client), name="validators")
         
         # Start with dashboard
         self.push_screen("dashboard")
     
-    def create_header(self) -> Header:
-        """Create application header"""
-        return Header()
-    
-    def create_footer(self) -> Footer:
-        """Create application footer"""
-        return Footer()
-    
-    # Navigation actions
+    # Navigation actions remain the same
     def action_show_dashboard(self) -> None:
         self.push_screen("dashboard")
     
@@ -118,7 +103,6 @@ NAVIGATION:
 
 QUICK ACTIONS (Dashboard):
   1 - Send Funds     2 - Receive      3 - Stake
-  4 - Deploy Contract5 - Create API Key
 
 GLOBAL:
   ESC/B - Back to previous screen
@@ -132,5 +116,7 @@ def run_modern_tui(rpc_client, data_dir: str):
         app.run()
     except Exception as e:
         print(f"❌ Modern TUI failed: {e}")
+        import traceback
+        traceback.print_exc()
         print("🔄 Falling back to classic interface...")
         # Fallback implementation would go here

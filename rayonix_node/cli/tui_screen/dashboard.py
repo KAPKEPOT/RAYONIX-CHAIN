@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
 """
-RAYONIX Modern Dashboard - Main Screen
+RAYONIX Modern Dashboard - Main Screen (FIXED)
 """
 
 import time
 from typing import Dict, Any, List
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, Grid
-from textual.widgets import (
-    Static, Button, DataTable, ProgressBar, 
-    Sparkline, Label, Markdown
-)
+from textual.widgets import Static, Button, DataTable, ProgressBar
 from textual.reactive import reactive
 from textual.screen import Screen
 from textual import events
 
 class DashboardScreen(Screen):
-    """Main Dashboard with comprehensive overview"""
+    """Main Dashboard with comprehensive overview - FIXED VERSION"""
     
     CSS = """
     DashboardScreen {
@@ -42,51 +39,6 @@ class DashboardScreen(Screen):
         text-style: bold;
         margin-bottom: 1;
     }
-    
-    .status-online {
-        color: #9ece6a;
-    }
-    
-    .status-offline {
-        color: #f7768e;
-    }
-    
-    .status-syncing {
-        color: #e0af68;
-    }
-    
-    .balance-large {
-        color: #9ece6a;
-        text-style: bold;
-        content-align: center middle;
-        text-align: center;
-        margin: 1 0;
-    }
-    
-    .metric-value {
-        color: #c0caf5;
-        text-style: bold;
-    }
-    
-    .metric-label {
-        color: #565f89;
-    }
-    
-    .quick-action {
-        margin: 1 0;
-        width: 100%;
-    }
-    
-    #network-sparkline {
-        height: 3;
-        color: #7aa2f7;
-    }
-    
-    #sync-progress {
-        width: 100%;
-        height: 1;
-        margin: 1 0;
-    }
     """
     
     # Reactive state
@@ -97,10 +49,9 @@ class DashboardScreen(Screen):
     sync_progress = reactive(0)
     network_activity = reactive([0] * 20)
     
-    def __init__(self, rpc_client, app):
+    def __init__(self, rpc_client):
         super().__init__()
         self.client = rpc_client
-        self.app = app
         self.last_update = 0
     
     def compose(self) -> ComposeResult:
@@ -343,7 +294,7 @@ class DashboardScreen(Screen):
 │                                       │
 └───────────────────────────────────────┘"""
         
-        status_card = self.query_one(".dashboard-card", Static)  # First card
+        status_card = self.query_one(".dashboard-card")  # First card
         status_card.update(status_content)
     
     async def update_wallet_card(self):
@@ -477,13 +428,32 @@ class DashboardScreen(Screen):
         elif key == "v":
             self.app.push_screen("validators")
         elif key == "h":
-            self.app.push_screen("help")
+            self.show_help()
         elif key == "1":
-            # Quick action: Send
             self.app.push_screen("send")
         elif key == "2":
-            # Quick action: Receive
             self.app.push_screen("receive")
         elif key == "3":
-            # Quick action: Stake
             self.app.push_screen("stake")
+    
+    def show_help(self):
+        """Show help information"""
+        help_text = """
+🌐 RAYONIX DASHBOARD - KEYBOARD SHORTCUTS
+
+NAVIGATION:
+  W - Wallet        S - Staking      A - API
+  C - Contracts     N - Network      V - Validators
+  Q - Quit          H - Help
+
+QUICK ACTIONS:
+  1 - Send Funds    2 - Receive     3 - Stake Funds
+
+DASHBOARD FEATURES:
+  • Real-time node status
+  • Live wallet balance
+  • Staking overview
+  • Network metrics
+  • Recent activity
+        """
+        self.app.notify(help_text, title="Dashboard Help", severity="information")

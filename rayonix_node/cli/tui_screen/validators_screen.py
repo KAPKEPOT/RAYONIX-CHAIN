@@ -65,7 +65,7 @@ class ValidatorsScreen(Screen):
     def __init__(self, rpc_client, app):
         super().__init__()
         self.client = rpc_client
-        self.app = app
+        #self.app = app
     
     def compose(self) -> ComposeResult:
         yield Container(
