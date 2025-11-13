@@ -338,7 +338,7 @@ class ProductionRayonixWallet:
             return False
     
     def _validate_derivation_path_cryptographic(self, path: str) -> bool:
-        """Cryptographic derivation path validation"""
+        """Cryptographic derivation path validation - FIXED VERSION"""
         if not path.startswith('m/'):
             return False
         
@@ -350,9 +350,9 @@ class ProductionRayonixWallet:
         return True
     
     def _validate_path_component_cryptographic(self, component: str) -> bool:
-        """Validate derivation path component cryptographically"""
-        # Handle hardened notation
-        is_hardened = component.endswith("'")
+        """Validate derivation path component cryptographically - FIXED"""
+        # Handle hardened notation (both ' and h are valid)
+        is_hardened = component.endswith("'") or component.endswith("h")
         if is_hardened:
             component = component[:-1]
         
@@ -361,11 +361,14 @@ class ProductionRayonixWallet:
             return False
         
         # Check BIP32 range
-        index = int(component)
-        if is_hardened:
-            return 0 <= index <= 0x7FFFFFFF  # Hardened key range
-        else:
-            return 0 <= index <= 0xFFFFFFFF  # Normal key range
+        try:
+            index = int(component)
+            if is_hardened:
+                return 0 <= index <= 0x7FFFFFFF  # Hardened key range
+            else:
+                return 0 <= index <= 0xFFFFFFFF  # Normal key range
+        except (ValueError, OverflowError):
+            return False
     
     def _load_validated_transactions(self) -> Dict[str, Transaction]:
         """Load and cryptographically validate transactions"""
