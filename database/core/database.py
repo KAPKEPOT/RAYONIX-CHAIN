@@ -370,12 +370,21 @@ class AdvancedDatabase:
         """
         key_bytes = self._ensure_bytes(key)
         
+        
+        
         # CRITICAL FIX: Invalidate cache if force_refresh is True
-        if force_refresh and use_cache:
+        #if force_refresh and use_cache:
+        	#with self.locks['cache']:
+        	#	self.cache.pop(key_bytes, None)
+        
+        # 🚨 CRITICAL FIX: Invalidate cache if integrity verification is requested
+        # This ensures we read from actual storage, not cached values
+        if verify_integrity and use_cache:
         	with self.locks['cache']:
+        		# Remove from cache to force storage read
         		self.cache.pop(key_bytes, None)
         
-        # Check cache first
+        # Check cache first (if still enabled after potential invalidation)
         if use_cache:
             with self.locks['cache']:
                 if key_bytes in self.cache:
@@ -891,7 +900,8 @@ class AdvancedDatabase:
     		return self.integrity_manager.verify_data_integrity(key, value)[0]
     	
     	except Exception:
-    		return False        	
+    		return False
+    		        	
     
     def _extract_value_from_storage(self, prepared_value: bytes) -> Tuple[Any, Dict]:
         """Extract value and metadata from stored data"""
