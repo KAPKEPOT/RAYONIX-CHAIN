@@ -8,6 +8,9 @@ from pathlib import Path
 from enum import Enum
 from rayonix_wallet.core.wallet_types import WalletType, KeyDerivation, AddressType
 
+import logging
+logger = logging.getLogger("ConfigManager")
+
 class NetworkType(Enum):
     MAINNET = "mainnet"
     TESTNET = "testnet" 
@@ -149,10 +152,20 @@ class DatabaseConfig:
     backup_retention: int = 7
     enable_state_pruning: bool = True
     checkpoint_interval: int = 1000
+    enabled: bool = True
+    merkle_tree_depth: int = 256
+    hash_algorithm: HashAlgorithm = HashAlgorithm.SHA256
+    double_hash: bool = True
+    verify_on_read: bool = True
+    verify_on_write: bool = True
+    auto_recover: bool = True
+    store_proofs: bool = False
+    proof_format: ProofFormat = ProofFormat.BINARY
+    integrity_check_interval: int = 3600
 
 @dataclass
 class APIConfig:
-    """API configuration - NO HARDCODED VALUES"""
+    """API configuration """
     enabled: bool = True
     host: str = "127.0.0.1"
     port: int = field(init=False)
@@ -272,7 +285,7 @@ class MessageHandlerConfig:
 
 @dataclass
 class ConnectionManagerConfig:
-    """Connection manager configuration - NO HARDCODED VALUES"""
+    """Connection manager configuration"""
     health_check_interval: int = 30
     connection_timeout: int = 30
     max_connection_age: int = 3600
