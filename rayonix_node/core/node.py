@@ -181,7 +181,8 @@ class RayonixNode:
     		
     		self.wallet = wallet
     		await self._initialize_wallet_with_blockchain()
-    		self.wallet.creation_mnemonic = mnemonic
+    		
+    		wallet.creation_timestamp = time.time()
     		current_network = self.config_manager.config.network.network_type
     		print(f"DEBUG: Wallet assigned to node.wallet: {self.wallet is not None}")
     		
