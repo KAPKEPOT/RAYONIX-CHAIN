@@ -124,6 +124,8 @@ class PeerDiscovery(IPeerDiscovery):
         discovered = []
         
         try:
+            resolver = await self._get_dns_resolver()
+            
             # Try A records (IPv4 addresses)
             try:
                 a_records = await self.dns_resolver.query(dns_seed, 'A')
@@ -413,8 +415,16 @@ class PeerDiscovery(IPeerDiscovery):
                     logger.debug(f"Filtering out reserved/loopback peer: {address}")
                     return False
                     
+                # FIX: Allow loopback only in development
+                if ip.is_loopback:
+                	allow_loopback = self.config_manager.get('network.allow_loopback', False)
+                	if not allow_loopback:
+                		logger.debug(f"Filtering out loopback peer: {address}")
+                		return False
+                
             except ValueError:
                 # Not a valid IP address
+                logger.debug(f"Invalid IP address: {address}")
                 return False
             
             # Check port range
@@ -424,10 +434,12 @@ class PeerDiscovery(IPeerDiscovery):
             # Check if we're already connected to this peer
             peer_id = f"{address}_{port}"
             if peer_id in self.connected_peers:
+                logger.debug(f"Already connected to peer: {peer_id}")
                 return False
             
-            # Optional: Quick connectivity check
-            if self.config_manager.get('peer_discovery.validate_connectivity', True):
+            #Make connectivity check optional and configurable
+            validate_connectivity = self.config_manager.get('peer_discovery.validate_connectivity', False)
+            if validate_connectivity:
                 try:
                     reader, writer = await asyncio.wait_for(
                         asyncio.open_connection(address, port),
@@ -436,7 +448,7 @@ class PeerDiscovery(IPeerDiscovery):
                     writer.close()
                     await writer.wait_closed()
                 except (asyncio.TimeoutError, ConnectionError, OSError):
-                    logger.debug(f"Peer validation failed for {address}:{port}")
+                    logger.debug(f"Peer validation failed for {address}:{port}: {e}")
                     return False
             
             return True
