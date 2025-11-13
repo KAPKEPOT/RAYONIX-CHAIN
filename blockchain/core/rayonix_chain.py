@@ -248,7 +248,8 @@ class RayonixBlockchain:
             	raise RuntimeError("Contract manager initialization failed - cannot proceed without contract manager")
             	
             # Initialize wallet	
-            self.wallet = self._initialize_wallet()
+            #self.wallet = self._initialize_wallet()
+            self.wallet = None
             
             # Initialize core managers with dependency injection
             self.state_manager = StateManager(
@@ -492,37 +493,6 @@ class RayonixBlockchain:
         	logger.error(f"Contract manager initialization failed: {e}")
         	raise RuntimeError(f"Contract manager initialization failed: {e}")
   
-    def _initialize_wallet(self) -> RayonixWallet:
-        """Initialize wallet with comprehensive key management"""
-        try:
-            from rayonix_wallet.core.config import WalletConfig
-            from rayonix_wallet.core.wallet_types import WalletType, AddressType
-            # Create wallet data directory
-            wallet_dir = self.data_dir / "wallet"
-            wallet_dir.mkdir(parents=True, exist_ok=True)
-            
-            wallet_config = WalletConfig(
-                network=self.network_type,
-                wallet_type=WalletType.HD,         
-                #network=self.network,
-                address_type=AddressType.RAYONIX,
-                db_path=str(wallet_dir / "wallet.db") 
-            )    
-            wallet = RayonixWallet(config=wallet_config)
-            
-            # Create new wallet - network comes from config
-            mnemonic = wallet.initialize_new_wallet()
-            
-            # CRITICAL: Connect wallet components to blockchain
-            self._connect_wallet_to_blockchain(wallet)
-            
-            logger.info(f"Wallet initialized for network: {wallet_config.network}")
-            return wallet
-        except Exception as e:
-        	logger.error(f"Wallet initialization failed: {e}")
-        	raise
-        	
-    
     def _connect_wallet_to_blockchain(self, wallet: RayonixWallet):
     	"""Connect wallet components to blockchain instance"""
     	try:
