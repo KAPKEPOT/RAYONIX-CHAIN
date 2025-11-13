@@ -8,16 +8,13 @@ logger = logging.getLogger("BanManager")
 
 @dataclass
 class BanRecord:
-    """Enhanced ban record for blockchain nodes"""
     address: str
     banned_until: float
     reason: str
     severity: int  # 1=low, 2=medium, 3=high
     created_at: float
 
-class EnhancedBanManager:
-    """Enhanced ban management for blockchain network"""
-    
+class BanManager:  
     def __init__(self, ban_threshold: int = -100, ban_duration: int = 3600):
         self.ban_threshold = ban_threshold
         self.ban_duration = ban_duration
