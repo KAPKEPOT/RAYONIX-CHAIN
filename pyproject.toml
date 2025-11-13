@@ -92,6 +92,7 @@ dependencies = [
     "six",
     "sniffio",
     "sortedcontainers",
+    "textual rich",
     "toml",
     "typing_extensions",
     "uritemplate",
