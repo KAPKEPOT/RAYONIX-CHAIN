@@ -25,7 +25,7 @@ from rayonix_node.utils.helpers import configure_logging
 from rayonix_node.utils.api_key_manager import APIKeyManager, validate_api_key
 
 try:
-    from rayonix_node.cli.modern_tui import ModernTUI
+    from rayonix_node.cli.modern_tui import RayonixTUI
     MODERN_TUI_AVAILABLE = True
 except ImportError:
     MODERN_TUI_AVAILABLE = False
