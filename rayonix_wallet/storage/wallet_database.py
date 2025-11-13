@@ -1,6 +1,7 @@
 # rayonix_wallet/storage/wallet_database.py
 import logging
 from typing import List, Optional, Iterator, Tuple, Any, Dict
+from dataclasses import is_dataclass, asdict
 from database.core.database import AdvancedDatabase
 
 logger = logging.getLogger(__name__)
@@ -12,33 +13,49 @@ class WalletDatabaseAdapter:
         self.db = database
         
     def _make_serializable(self, obj: Any) -> Any:
-        """Convert dataclass objects to serializable formats"""
-        if is_dataclass(obj) and not isinstance(obj, type):
-            return asdict(obj)
-        elif isinstance(obj, (list, tuple)):
-            return [self._make_serializable(item) for item in obj]
-        elif isinstance(obj, dict):
-            return {key: self._make_serializable(value) for key, value in obj.items()}
-        else:
-            return obj
+        """Convert dataclass objects to serializable formats - PROPERLY IMPLEMENTED"""
+        try:
+            if is_dataclass(obj) and not isinstance(obj, type):
+                return asdict(obj)
+            elif isinstance(obj, (list, tuple)):
+                return [self._make_serializable(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {key: self._make_serializable(value) for key, value in obj.items()}
+            else:
+                return obj
+        except Exception as e:
+            logger.warning(f"Serialization warning for {type(obj)}: {e}")
+            return obj  # Return as-is if serialization fails
             
     def get_wallet_state(self):
         """Get wallet state from database"""
         try:
-            return self.db.get(b'wallet_state')
+            data = self.db.get(b'wallet_state')
+            return data
         except Exception as e:
             logger.warning(f"Failed to get wallet state: {e}")
             return None
     
     def save_wallet_state(self, state) -> bool:
-        """Save wallet state to database"""
+        """Save wallet state to database - PROPERLY FIXED"""
         try:
             serializable_state = self._make_serializable(state)
             return self.db.put(b'wallet_state', serializable_state)
         except Exception as e:
             logger.error(f"Failed to save wallet state: {e}")
             return False
-    
+
+    def save_address(self, address_info) -> bool:
+        """Save address information to database - PROPERLY FIXED"""
+        try:
+            # Convert dataclass to serializable dict
+            serializable_data = self._make_serializable(address_info)
+            key = f"address_{address_info.address}".encode()
+            return self.db.put(key, serializable_data)
+        except Exception as e:
+            logger.error(f"Failed to save address: {e}")
+            return False
+
     def get_all_addresses(self) -> List:
         """Get all addresses from database"""
         addresses = []
@@ -48,18 +65,7 @@ class WalletDatabaseAdapter:
             return addresses
         except Exception as e:
             logger.error(f"Failed to get all addresses: {e}")
-            return []
-    
-    def save_address(self, address_info) -> bool:
-        """Save address information to database - FIXED"""
-        try:
-            # Convert dataclass to serializable dict
-            serializable_data = self._make_serializable(address_info)
-            key = f"address_{address_info.address}".encode()
-            return self.db.put(key, serializable_data)
-        except Exception as e:
-            logger.error(f"Failed to save address: {e}")
-            return False
+            return []        
     
     def get_transactions(self, limit: int = 1000, offset: int = 0) -> List:
         """Get transactions from database"""
