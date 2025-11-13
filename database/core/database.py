@@ -445,6 +445,12 @@ class AdvancedDatabase:
                         if self.integrity_manager.config.auto_recover:
                             if self.integrity_manager.attempt_recovery(key_bytes, value, self):
                                 logger.info(f"Successfully recovered corrupted key: {key_bytes}")
+                                if self.config.db_type == DatabaseType.PLYVEL:
+                                	prepared_value = self.db.get(key_bytes)
+                                else:
+                                	prepared_value = self.db.get(key_bytes)
+                                if prepared_value is not None:
+                                	value, metadata = self._extract_value_from_storage(prepared_value)
                             else:
                                 raise IntegrityError(f"Data corrupted and recovery failed: {reason}")
                         else:

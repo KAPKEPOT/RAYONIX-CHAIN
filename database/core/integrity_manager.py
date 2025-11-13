@@ -275,8 +275,18 @@ class IntegrityManager:
                 	# Write the original value back to database storage
                 	database.put(key, original_value, verify_integrity=False, update_indexes=False)
                 	logger.info(f"Successfully recovered key by restoring data: {key.hex()}")
-                	return True
+                	# Also update the Merkle tree to match the restored data
+                	success = self.register_put_operation(key, original_value)
                 	
+                	if success:  
+                		# Remove from corrupted keys only if both operations succeed
+                		self.corrupted_keys.remove(key)
+                		logger.info(f"Successfully recovered key by restoring data: {key.hex()}")
+                		return True
+                	else:
+                		logger.error(f"Failed to update Merkle tree during recovery: {key.hex()}")
+                		return False
+                		
                 except Exception as e:
                 	logger.error(f"Failed to restore data for key {key.hex()}: {e}")
                 	return False
@@ -285,6 +295,7 @@ class IntegrityManager:
                 # Fallback: at least update Merkle tree
                 success = self.register_put_operation(key, original_value)
                 if success:
+                    self.corrupted_keys.remove(key)
                     logger.info(f"Successfully recovered key: {key.hex()}")
                     return True
             
