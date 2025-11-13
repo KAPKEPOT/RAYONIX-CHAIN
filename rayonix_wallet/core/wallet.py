@@ -501,6 +501,13 @@ class ProductionRayonixWallet:
     
     def create_from_mnemonic(self, mnemonic_phrase: str, passphrase: str = "") -> bool:
         """Create wallet from BIP39 mnemonic with complete cryptographic implementation"""
+        
+        if not passphrase:
+        	raise WalletError("Passphrase is required for wallet security")
+        
+        if not self._validate_passphrase_strength(passphrase):
+        	raise WalletError("Weak passphrase - minimum 4 characters required")
+        	
         if self.is_initialized():
             raise WalletError("Wallet is already initialized")
         
