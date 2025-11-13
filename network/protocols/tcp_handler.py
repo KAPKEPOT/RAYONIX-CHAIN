@@ -235,6 +235,12 @@ class TCPHandler(IProtocolHandler):
     
     def create_message_header(self, payload: bytes) -> bytes:
         """Create message header with magic, command, length, and checksum"""
+        # Validate payload size before creating header
+        if len(payload) > self.config.max_message_size:
+        	raise ValueError(
+        	    f"Payload too large: {len(payload)} > {self.config.max_message_size}"
+        	)
+        	
         # Calculate checksum (first 4 bytes of double SHA256)
         checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
         
