@@ -27,7 +27,6 @@ class ConnectionManager(IConnectionManager):
     
     async def connect_to_peer(self, address: str, port: int, protocol: str) -> Optional[str]:
         """Connect to a peer with resource limits"""
-        # Enforce connection limits
         current_connections = len(self.connections)
         if current_connections >= self.network.config.max_connections:
         	logger.warning(f"Connection limit reached ({current_connections})")
@@ -107,6 +106,7 @@ class ConnectionManager(IConnectionManager):
         	logger.error(f"Failed to connect to {address}:{port}: {e}")
         	await self._cleanup_connection(connection_id)
         	return None
+        	
     async def _cleanup_connection(self, connection_id: str):
     	"""Safely cleanup connection resources"""
     	if connection_id in self.connections:
@@ -181,22 +181,30 @@ class ConnectionManager(IConnectionManager):
             protocol = connection.get('protocol')
             
             if protocol == 'tcp':
+                if not hasattr(self.network, 'tcp_handler') or not self.network.tcp_handler:
+                	raise ConnectionError(f"TCP handler not available for connection {connection_id}")
                 await self.network.tcp_handler.close_connection(connection_id)
+                
             elif protocol == 'websocket':
+                if not hasattr(self.network, 'websocket_handler') or not self.network.websocket_handler:
+                	raise ConnectionError(f"WebSocket handler not available for connection {connection_id}")
                 await self.network.websocket_handler.close_connection(connection_id)
             else:
-                # For UDP and HTTP, just remove from connections
-                if connection_id in self.connections:
-                    del self.connections[connection_id]
-                self.network.metrics_collector.remove_connection_metrics(connection_id)
-                self.network.rate_limiter.remove_connection(connection_id)
+                raise ConnectionError(f"Unsupported protocol: {protocol}")
                 
         except Exception as e:
             logger.error(f"Error closing connection {connection_id}: {e}")
+            raise  # Re-raise to catch in tests
         finally:
+            # Always clean up internal tracking
             if connection_id in self.connections:
                 del self.connections[connection_id]
-    
+                
+            # REQUIRE metrics collector
+            self.network.metrics_collector.remove_connection_metrics(connection_id)
+            # REQUIRE rate limiter  
+            await self.network.rate_limiter.remove_connection(connection_id)
+            
     async def close_all_connections(self):
         """Close all connections"""
         for connection_id in list(self.connections.keys()):
@@ -215,9 +223,15 @@ class ConnectionManager(IConnectionManager):
         current_time = time.time()
         dead_connections = []
         
+        # PROPER FIX: Require config, no fallbacks
+        if not hasattr(self.network, 'config'):
+        	raise ConnectionError("Network configuration not available")
+        
+        connection_timeout = self.network.config.connection_timeout
+        
         for connection_id, connection in self.connections.items():
             # Check for stale connections
-            if current_time - connection['last_activity'] > self.network.config.connection_timeout:
+            if current_time - connection['last_activity'] > connection_timeout:
                 logger.warning(f"Connection {connection_id} is stale, closing")
                 dead_connections.append(connection_id)
                 continue
@@ -261,6 +275,10 @@ class ConnectionManager(IConnectionManager):
         if not peer_info:
             return None
         
+        # Require PeerInfo objects
+        if not hasattr(peer_info, 'address'):
+        	raise ValueError(f"Invalid peer_info type for {connection_id}: expected PeerInfo object, got {type(peer_info)}")
+        	       
         return {
             'connection_id': connection_id,
             'address': peer_info.address,
