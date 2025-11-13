@@ -13,7 +13,7 @@ class WalletDatabaseAdapter:
         self.db = database
         
     def _make_serializable(self, obj: Any) -> Any:
-        """Convert dataclass objects to serializable formats - PROPERLY IMPLEMENTED"""
+        """Convert dataclass objects to serializable formats - FIXED"""
         try:
             if is_dataclass(obj) and not isinstance(obj, type):
                 return asdict(obj)
@@ -25,7 +25,7 @@ class WalletDatabaseAdapter:
                 return obj
         except Exception as e:
             logger.warning(f"Serialization warning for {type(obj)}: {e}")
-            return obj  # Return as-is if serialization fails
+            return obj
             
     def get_wallet_state(self):
         """Get wallet state from database"""
@@ -46,9 +46,8 @@ class WalletDatabaseAdapter:
             return False
 
     def save_address(self, address_info) -> bool:
-        """Save address information to database - PROPERLY FIXED"""
+        """Save address information to database - FIXED"""
         try:
-            # Convert dataclass to serializable dict
             serializable_data = self._make_serializable(address_info)
             key = f"address_{address_info.address}".encode()
             return self.db.put(key, serializable_data)
