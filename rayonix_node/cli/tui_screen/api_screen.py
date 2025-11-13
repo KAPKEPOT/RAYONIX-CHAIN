@@ -71,10 +71,10 @@ class ApiScreen(Screen):
     }
     """
     
-    def __init__(self, rpc_client, app):
+    def __init__(self, rpc_client):
         super().__init__()
         self.client = rpc_client
-        self.app = app
+       # self.app = app
     
     def compose(self) -> ComposeResult:
         yield Container(

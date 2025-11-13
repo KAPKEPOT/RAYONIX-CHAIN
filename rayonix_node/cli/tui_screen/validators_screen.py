@@ -62,7 +62,7 @@ class ValidatorsScreen(Screen):
     }
     """
     
-    def __init__(self, rpc_client, app):
+    def __init__(self, rpc_client):
         super().__init__()
         self.client = rpc_client
         #self.app = app
