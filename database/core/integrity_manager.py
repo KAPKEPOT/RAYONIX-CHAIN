@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.hmac import HMAC
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 import os
-from merkle_system.merkle import SparseMerkleTree, HashAlgorithm, MerkleTree, MerkleTreeStats
+from merkle_system.merkle import SparseMerkleTree, HashAlgorithm, MerkleTree, MerkleTreeStats, ProofFormat
 from config.merkle_config import MerkleTreeConfig
 
 logger = logging.getLogger(__name__)
@@ -297,7 +297,8 @@ class IntegrityManager:
             return {
                 'enabled': self.config.enabled,
                 'total_keys': len(self.key_to_index),
-                'corrupted_keys': len(self.corrupted_keys),
+                'corrupted_keys': list(self.corrupted_keys),
+                #'corrupted_keys': len(self.corrupted_keys),
                 'integrity_root': self.get_integrity_root(),
                 'recovery_attempts': dict(self.recovery_attempts),
                 'merkle_stats': merkle_stats

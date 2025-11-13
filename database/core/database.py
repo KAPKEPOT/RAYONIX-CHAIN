@@ -364,11 +364,16 @@ class AdvancedDatabase:
                 raise DatabaseError(f"Put operation failed: {e}")
     
     def get(self, key: Union[str, bytes], use_cache: bool = True, 
-            check_ttl: bool = True, verify_integrity: bool = True) -> Any:
+            check_ttl: bool = True, verify_integrity: bool = True, force_refresh: bool = False) -> Any:
         """
         Retrieve value by key with Merkle integrity verification
         """
         key_bytes = self._ensure_bytes(key)
+        
+        # CRITICAL FIX: Invalidate cache if force_refresh is True
+        if force_refresh and use_cache:
+        	with self.locks['cache']:
+        		self.cache.pop(key_bytes, None)
         
         # Check cache first
         if use_cache:
@@ -868,6 +873,25 @@ class AdvancedDatabase:
         except Exception as e:
         	logger.error(f"Value preparation failed: {e}")
         	raise DatabaseError(f"Value preparation failed: {e}")
+        	
+    def _verify_storage_integrity(self, key: bytes) -> bool:
+    	"""Verify integrity at the storage level, bypassing cache"""
+    	try:
+    		# Read directly from storage
+    		if self.config.db_type == DatabaseType.MEMORY:
+    			prepared_value = self.db.get(key)
+    		else:
+    			prepared_value = self.db.get(key)
+    		if prepared_value is None:
+    			return False
+    			
+    		# Extract value without caching
+    		value, metadata = self._extract_value_from_storage(prepared_value)
+    		# Verify against Merkle tree
+    		return self.integrity_manager.verify_data_integrity(key, value)[0]
+    	
+    	except Exception:
+    		return False        	
     
     def _extract_value_from_storage(self, prepared_value: bytes) -> Tuple[Any, Dict]:
         """Extract value and metadata from stored data"""
@@ -939,6 +963,7 @@ class AdvancedDatabase:
         except Exception as e:
         	logger.error(f"Value extraction failed: {e}")
         	raise DatabaseError(f"Value extraction failed: {e}")
+        	
     
     def _is_expired(self, metadata: Dict) -> bool:
         """Check if value is expired based on metadata"""
@@ -989,6 +1014,7 @@ class AdvancedDatabase:
                     except Exception as e:
                         logger.error(f"Index removal failed for {index_name}: {e}")
                         
+    
     def get_stats(self) -> Dict[str, Any]:
     	"""Get database statistics"""
     	with self.locks['stats']:
