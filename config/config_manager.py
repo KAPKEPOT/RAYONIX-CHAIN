@@ -28,6 +28,16 @@ class ConnectionState(Enum):
     CONNECTING = "connecting"
     CONNECTED = "connected"
     READY = "ready"
+    
+class HashAlgorithm(Enum):
+    SHA256 = "sha256"
+    SHA512 = "sha512"
+    BLAKE2B = "blake2b"
+
+class ProofFormat(Enum):
+    BINARY = "binary"
+    JSON = "json"
+    HEX = "hex"    
 
 @dataclass
 class NetworkPreset:
