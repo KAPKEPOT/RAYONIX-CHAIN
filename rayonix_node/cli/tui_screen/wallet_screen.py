@@ -188,6 +188,8 @@ class WalletScreen(Screen):
         
         if key == "escape" or key == "b":
             self.app.pop_screen()
+        elif key == "w":
+        	self.app.push_screen("wallet")
         elif key == "s":
             self.app.push_screen("send")
         elif key == "r":
