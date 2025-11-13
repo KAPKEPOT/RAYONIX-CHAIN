@@ -50,3 +50,4 @@ class MessageType(Enum):
     CMPCT_BLOCK = auto()
     GET_BLOCK_TXN = auto()
     BLOCK_TXN = auto()
+    GET_PEERS = auto()
