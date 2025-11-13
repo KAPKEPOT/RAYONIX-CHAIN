@@ -6,6 +6,7 @@ import time
 from typing import Optional
 from datetime import datetime
 from rayonix_node.cli.history_manager import HistoryManager
+from rayonix_node.cli.modern_tui import run_modern_tui
 
 class RayonixInteractiveCLI(cmd.Cmd):
     """Interactive CLI """
@@ -65,26 +66,23 @@ class RayonixInteractiveCLI(cmd.Cmd):
     
     # Wallet Management Commands
     def do_create_wallet(self, arg):
-        """Create a new wallet with advanced options
-        Usage: create-wallet [type] [password]
+        """Create new wallet with interactive wizard
+        Usage: create-wallet
         Examples:
           create-wallet
-          create-wallet hd
-          create-wallet hd mypassword123
         """
-        args = arg.split() if arg else []
-        result = self.command_handler.execute_command('create-wallet', args)
+        # Delegate to command handler which uses the module
+        result = self.command_handler.execute_command('create-wallet', [])
         print(result)
     
     def do_load_wallet(self, arg):
-        """Load wallet from mnemonic phrase
-        Usage: load-wallet <mnemonic_phrase> [password]
+        """Load existing wallet with interactive wizard
+        Usage: load-wallet
         Examples:
-          load-wallet "word1 word2 ... word12"
-          load-wallet "word1 word2 ... word12" mypassword
+          load-wallet
         """
-        args = arg.split() if arg else []
-        result = self.command_handler.execute_command('load-wallet', args)
+        # Delegate to command handler which uses the module
+        result = self.command_handler.execute_command('load-wallet', [])
         print(result)
     
     def do_import_wallet(self, arg):
@@ -424,39 +422,44 @@ class RayonixInteractiveCLI(cmd.Cmd):
 
 def run_interactive_mode(rpc_client, data_dir: str):
     """Run  interactive CLI mode"""
+    print("\n" + "="*70)
+    print("🌐 RAYONIX BLOCKCHAIN CLI")
+    print("="*70)
+    
+    # Check if terminal supports modern TUI
+    try:
+    	import textual
+    	modern_supported = True
+    except ImportError:
+    	modern_supported = False
+    
+    if modern_supported:
+    	print("\nChoose Interface:")
+    	print("1. 🚀 Modern TUI (Recommended) - Rich graphical interface")
+    	print("2. 💻 Classic CLI - Traditional command-line interface")
+    	print("3. ℹ️  Help")
+    	
+    	choice = input("\nChoose [1-3] (default: 1): ").strip()
+    	
+    	if choice == "1" or choice == "":
+    		run_modern_tui(rpc_client, data_dir)
+    		return
+    	
+    	elif choice == "3":
+    		print("\nModern TUI Features:")
+    		print("• Real-time dashboards")
+    		print("• Interactive forms") 
+    		print("• Live data updates")
+    		print("• Rich visualizations")
+    		print("• Keyboard navigation")
+    		print("\nInstall with: pip install textual rich")
+    
+    # Fallback to classic CLI
     history_file = os.path.join(data_dir, '.rayonix_history')
     history_manager = HistoryManager(history_file)
     history_manager.load_history()
     
-    # Create and run CLI
     cli = RayonixInteractiveCLI(rpc_client, history_manager)
     
-    try:
-        print("\n" + "="*70)
-        print("RAYONIX BLOCKCHAIN CLI")     
-        print("Connected to daemon via RPC")
-        print("="*70)
-        
-        # Show quick status on startup
-        try:
-            status = rpc_client.get_node_status()
-            print(f"Node Status: {status.get('status', 'Unknown')}")
-            print(f"Block Height: {status.get('block_height', 0)}")
-            print(f"Connected Peers: {status.get('peers_connected', 0)}")
-        except Exception as e:
-            print(f"Status check: {e}")
-        
-        print("\nType 'help' for available commands")
-        print("Type 'exit' or 'quit' to exit")
-        print("="*70)
-        
-        cli.cmdloop()
-        
-    except KeyboardInterrupt:
-        print("\n\nInterrupted by user")
-    except Exception as e:
-        print(f"\n CLI error: {e}")
-    finally:
-        # Save history
-        history_manager.save_history()
-        print("Command history saved")
+    cli.cmdloop()
+     
