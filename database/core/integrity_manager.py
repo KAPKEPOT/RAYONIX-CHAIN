@@ -260,36 +260,46 @@ class IntegrityManager:
             
         with self._lock:
             attempts = self.recovery_attempts.get(key, 0)
+            if key not in self.corrupted_keys:
+                return True
+                
+            # Limit recovery attempts
+            attempts = self.recovery_attempts.get(key, 0)
             if attempts >= 3:
-            	logger.error(f"Max recovery attempts exceeded for key: {key.hex()}")
-            	return False
+                logger.error(f"Max recovery attempts exceeded for key: {key.hex()}")
+                return False
+                
             self.recovery_attempts[key] = attempts + 1
             
-            # ONLY use direct storage access - NO database.put() calls
+            # 🚨 CRITICAL FIX: Actually restore original data to storage
             if original_value is not None and database is not None:
-            	try:
-            		# 1. Use direct storage access only
-            		if hasattr(database, 'db') and hasattr(database.db, '__setitem__'):
-            			# Serialize and prepare the original value
-            			serialized = database._serialize_value(original_value)
-            			prepared = database._prepare_value_for_storage(serialized, None)
-            			# Write directly to storage
-            			database.db[key] = prepared
-            			
-            			# 2. Update Merkle tree
-            			merkle_success = self.register_put_operation(key, original_value)
-            			
-            			# 3. Clean up corrupted_keys
-            			if key in self.corrupted_keys:
-            				self.corrupted_keys.remove(key)
-            			logger.info(f"✅ RECOVERY SUCCESS for {key.hex()}")
-            			return True
-            		else:
-            			logger.error(f"Cannot access storage directly for {key.hex()}")
-            			return False
-            	except Exception as e:
-            		logger.error(f"Recovery failed for {key.hex()}: {e}")
-            		return False
+                try:
+                    # Write the original value back to database storage
+                    database.put(key, original_value, verify_integrity=False, update_indexes=False)
+                    
+                    # Also update the Merkle tree to match the restored data
+                    success = self.register_put_operation(key, original_value)
+                    if success:
+                        # Remove from corrupted keys only if both operations succeed
+                        self.corrupted_keys.remove(key)
+                        logger.info(f"Successfully recovered key by restoring data: {key.hex()}")
+                        return True
+                    else:
+                        logger.error(f"Failed to update Merkle tree during recovery: {key.hex()}")
+                        return False
+                        
+                except Exception as e:
+                    logger.error(f"Failed to restore data for key {key.hex()}: {e}")
+                    return False
+            elif original_value is not None:
+                # Fallback: at least update Merkle tree (old behavior)
+                success = self.register_put_operation(key, original_value)
+                if success:
+                    self.corrupted_keys.remove(key)
+                    logger.info(f"Recovered key in Merkle tree only: {key.hex()}")
+                    return True
+            
+            logger.warning(f"Recovery attempt {attempts + 1} failed for key: {key.hex()}")
             return False
     
     def get_integrity_root(self) -> Optional[str]:
