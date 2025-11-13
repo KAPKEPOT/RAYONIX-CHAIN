@@ -26,8 +26,14 @@ class PeerDiscovery(IPeerDiscovery):
         self.discovered_peers: Dict[str, PeerInfo] = {}
         self.connected_peers: Set[str] = set()
         self.last_discovery_time = 0
-        self.dns_resolver = aiodns.DNSResolver()
+        self.dns_resolver = None  # Initialize lazily
         self.active_discoveries = set()
+        
+    async def _get_dns_resolver(self):
+        """Lazy initialization of DNS resolver"""
+        if self.dns_resolver is None:
+        	self.dns_resolver = aiodns.DNSResolver()
+        return self.dns_resolver
         
     async def discover_peers(self) -> List[Dict]:
         """Discover new peers using all available methods"""
@@ -396,10 +402,13 @@ class PeerDiscovery(IPeerDiscovery):
                 ip = ipaddress.ip_address(address)
                 
                 # Filter out private and reserved addresses unless allowed
-                if ip.is_private and not self.config_manager.get('network.allow_private_peers', False):
-                    logger.debug(f"Filtering out private peer: {address}")
-                    return False
+                if ip.is_private:
+                    allow_private = self.config_manager.get('network.allow_private_peers', True)
                     
+                    if not allow_private:
+                    	logger.debug(f"Filtering out private peer: {address}")
+                    	return False
+                    	
                 if ip.is_reserved or ip.is_loopback:
                     logger.debug(f"Filtering out reserved/loopback peer: {address}")
                     return False
