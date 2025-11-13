@@ -44,13 +44,10 @@ class RateLimitData:
     limited_until: Optional[float] = None
 
 class RateLimiter:
-    """
-    Production-ready rate limiter with multiple limit types, burst handling, 
-    and comprehensive monitoring.
-    """
-    
     def __init__(self, config: RateLimitConfig = None):
-        self.config = config or RateLimitConfig()
+        if config is None:
+        	raise ValueError("RateLimitConfig is required")
+        self.config = config
         self.rate_limits: Dict[str, RateLimitData] = {}
         self.global_stats = RateLimitStats()
         self._cleanup_task: Optional[asyncio.Task] = None
