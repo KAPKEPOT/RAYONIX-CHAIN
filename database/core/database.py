@@ -553,6 +553,12 @@ class AdvancedDatabase:
         try:
             if value is None:
             	value = self.get(key_bytes, use_cache=False, verify_integrity=False)
+            	
+            	# Also verify storage-level integrity as a double-check
+            storage_valid = self._verify_storage_integrity(key_bytes)
+            if not storage_valid:
+            	return False, "Storage-level integrity check failed"
+            	
             return self.integrity_manager.verify_data_integrity(key_bytes, value)
         except KeyNotFoundError:
         	return False, "Key not found"
