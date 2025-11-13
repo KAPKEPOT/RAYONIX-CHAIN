@@ -18,8 +18,6 @@ from config.config_manager import ConfigManager
 logger = logging.getLogger("PeerDiscovery")
 
 class PeerDiscovery(IPeerDiscovery):
-    """Production-ready peer discovery implementation"""
-    
     def __init__(self, network):
         self.network = network
         self.config_manager = network.config_manager
@@ -417,7 +415,8 @@ class PeerDiscovery(IPeerDiscovery):
                     
                 # FIX: Allow loopback only in development
                 if ip.is_loopback:
-                	allow_loopback = self.config_manager.get('network.allow_loopback', False)
+                	allow_loopback = self.config_manager.get('network.allow_loopback', True)
+                	
                 	if not allow_loopback:
                 		logger.debug(f"Filtering out loopback peer: {address}")
                 		return False
