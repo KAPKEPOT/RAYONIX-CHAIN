@@ -23,8 +23,12 @@ from rayonix_node.cli.command_handler import CommandHandler
 from rayonix_node.cli.interactive import run_interactive_mode
 from rayonix_node.utils.helpers import configure_logging
 from rayonix_node.utils.api_key_manager import APIKeyManager, validate_api_key
-from rayonix_node.cli.modern_tui import run_modern_tui
 
+try:
+    from rayonix_node.cli.modern_tui import ModernTUI
+    MODERN_TUI_AVAILABLE = True
+except ImportError:
+    MODERN_TUI_AVAILABLE = False
 logger = logging.getLogger("rayonix_cli")
 
 class RayonixRPCClient:
