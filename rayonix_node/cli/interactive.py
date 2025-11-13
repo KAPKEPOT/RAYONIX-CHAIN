@@ -5,8 +5,8 @@ import os
 import time
 from typing import Optional
 from datetime import datetime
-from rayonix_node.cli.history_manager import HistoryManager
-from rayonix_node.cli.modern_tui import run_modern_tui
+#from rayonix_node.cli.history_manager import HistoryManager
+#from rayonix_node.cli.modern_tui import run_modern_tui
 
 class RayonixInteractiveCLI(cmd.Cmd):
     """Interactive CLI """
@@ -442,6 +442,7 @@ def run_interactive_mode(rpc_client, data_dir: str):
     	choice = input("\nChoose [1-3] (default: 1): ").strip()
     	
     	if choice == "1" or choice == "":
+    		from rayonix_node.cli.modern_tui import ModernTUI
     		run_modern_tui(rpc_client, data_dir)
     		return
     	
@@ -453,6 +454,8 @@ def run_interactive_mode(rpc_client, data_dir: str):
     		print("• Rich visualizations")
     		print("• Keyboard navigation")
     		print("\nInstall with: pip install textual rich")
+    
+    from rayonix_node.cli.history_manager import HistoryManager
     
     # Fallback to classic CLI
     history_file = os.path.join(data_dir, '.rayonix_history')
