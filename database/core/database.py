@@ -443,7 +443,7 @@ class AdvancedDatabase:
                         
                         # Attempt automatic recovery
                         if self.integrity_manager.config.auto_recover:
-                            if self.integrity_manager.attempt_recovery(key_bytes, value):
+                            if self.integrity_manager.attempt_recovery(key_bytes, value, self):
                                 logger.info(f"Successfully recovered corrupted key: {key_bytes}")
                             else:
                                 raise IntegrityError(f"Data corrupted and recovery failed: {reason}")

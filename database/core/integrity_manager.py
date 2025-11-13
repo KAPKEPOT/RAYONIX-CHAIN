@@ -270,7 +270,19 @@ class IntegrityManager:
             self.recovery_attempts[key] = attempts + 1
             
             # If we have the original value, re-register it
-            if original_value is not None:
+            if original_value is not None and database is not None:
+                try:
+                	# Write the original value back to database storage
+                	database.put(key, original_value, verify_integrity=False, update_indexes=False)
+                	logger.info(f"Successfully recovered key by restoring data: {key.hex()}")
+                	return True
+                	
+                except Exception as e:
+                	logger.error(f"Failed to restore data for key {key.hex()}: {e}")
+                	return False
+                	
+            elif original_value is not None:
+                # Fallback: at least update Merkle tree
                 success = self.register_put_operation(key, original_value)
                 if success:
                     logger.info(f"Successfully recovered key: {key.hex()}")
