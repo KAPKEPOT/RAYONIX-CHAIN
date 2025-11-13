@@ -10,7 +10,18 @@ class WalletDatabaseAdapter:
     
     def __init__(self, database: AdvancedDatabase):
         self.db = database
-    
+        
+    def _make_serializable(self, obj: Any) -> Any:
+        """Convert dataclass objects to serializable formats"""
+        if is_dataclass(obj) and not isinstance(obj, type):
+            return asdict(obj)
+        elif isinstance(obj, (list, tuple)):
+            return [self._make_serializable(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {key: self._make_serializable(value) for key, value in obj.items()}
+        else:
+            return obj
+            
     def get_wallet_state(self):
         """Get wallet state from database"""
         try:
@@ -22,7 +33,8 @@ class WalletDatabaseAdapter:
     def save_wallet_state(self, state) -> bool:
         """Save wallet state to database"""
         try:
-            return self.db.put(b'wallet_state', state)
+            serializable_state = self._make_serializable(state)
+            return self.db.put(b'wallet_state', serializable_state)
         except Exception as e:
             logger.error(f"Failed to save wallet state: {e}")
             return False
@@ -39,10 +51,12 @@ class WalletDatabaseAdapter:
             return []
     
     def save_address(self, address_info) -> bool:
-        """Save address information to database"""
+        """Save address information to database - FIXED"""
         try:
+            # Convert dataclass to serializable dict
+            serializable_data = self._make_serializable(address_info)
             key = f"address_{address_info.address}".encode()
-            return self.db.put(key, address_info)
+            return self.db.put(key, serializable_data)
         except Exception as e:
             logger.error(f"Failed to save address: {e}")
             return False
@@ -64,10 +78,11 @@ class WalletDatabaseAdapter:
             return []
     
     def save_transaction(self, transaction) -> bool:
-        """Save transaction to database"""
+        """Save transaction to database - FIXED"""
         try:
+            serializable_data = self._make_serializable(transaction)
             key = f"tx_{transaction.txid}".encode()
-            return self.db.put(key, transaction)
+            return self.db.put(key, serializable_data)
         except Exception as e:
             logger.error(f"Failed to save transaction: {e}")
             return False
