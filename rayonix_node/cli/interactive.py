@@ -442,7 +442,7 @@ def run_interactive_mode(rpc_client, data_dir: str):
     	choice = input("\nChoose [1-3] (default: 1): ").strip()
     	
     	if choice == "1" or choice == "":
-    		from rayonix_node.cli.modern_tui import run_modern_tui
+    		from rayonix_node.cli.tui_screen.main_tui import run_modern_tui
     		run_modern_tui(rpc_client, data_dir)
     		return
     	
