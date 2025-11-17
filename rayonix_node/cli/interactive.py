@@ -426,6 +426,10 @@ def run_interactive_mode(rpc_client, data_dir: str):
     print("🌐 RAYONIX BLOCKCHAIN CLI")
     print("="*70)
     
+    # Initialize history manager
+    history_file = os.path.join(data_dir, ".rayonix_history")
+    history_manager = HistoryManager(history_file)
+    
     try:
         status = rpc_client.get_node_status()
         print(f"Node Status: {status.get('status', 'Unknown')}")
