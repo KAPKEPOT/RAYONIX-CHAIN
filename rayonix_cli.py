@@ -29,7 +29,7 @@ from rayonix_node.utils.api_key_manager import APIKeyManager, validate_api_key
     #MODERN_TUI_AVAILABLE = True
 #except ImportError:
     #MODERN_TUI_AVAILABLE = False
-#logger = logging.getLogger("rayonix_cli")
+logger = logging.getLogger("rayonix_cli")
 
 class RayonixRPCClient:
     def __init__(self, api_url: str = "http://127.0.0.1:52557", timeout: int = 30, api_key: str = None):
