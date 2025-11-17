@@ -24,12 +24,12 @@ from rayonix_node.cli.interactive import run_interactive_mode
 from rayonix_node.utils.helpers import configure_logging
 from rayonix_node.utils.api_key_manager import APIKeyManager, validate_api_key
 
-try:
-    from rayonix_node.cli.modern_tui import run_modern_tui
-    MODERN_TUI_AVAILABLE = True
-except ImportError:
-    MODERN_TUI_AVAILABLE = False
-logger = logging.getLogger("rayonix_cli")
+#try:
+    #from rayonix_node.cli.modern_tui import run_modern_tui
+    #MODERN_TUI_AVAILABLE = True
+#except ImportError:
+    #MODERN_TUI_AVAILABLE = False
+#logger = logging.getLogger("rayonix_cli")
 
 class RayonixRPCClient:
     def __init__(self, api_url: str = "http://127.0.0.1:52557", timeout: int = 30, api_key: str = None):
@@ -402,7 +402,7 @@ def main():
     
     # Interactive mode
     subparsers.add_parser('interactive', help='Start interactive mode')
-    modern_parser = subparsers.add_parser('modern', help='Start modern TUI interface')
+    #modern_parser = subparsers.add_parser('modern', help='Start modern TUI interface')
     
     args = parser.parse_args()
     
@@ -493,8 +493,8 @@ def main():
         if args.command == 'interactive' or not args.command:
             # Interactive mode
             run_interactive_mode(client, data_dir)
-        elif args.command == 'modern':
-        	run_modern_tui(client, data_dir)
+        #elif args.command == 'modern':
+        	#run_modern_tui(client, data_dir)
         else:
             # Single command handler
             handler = CommandHandler(client)
