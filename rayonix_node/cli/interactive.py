@@ -5,7 +5,7 @@ import os
 import time
 from typing import Optional
 from datetime import datetime
-#from rayonix_node.cli.history_manager import HistoryManager
+from rayonix_node.cli.history_manager import HistoryManager
 #from rayonix_node.cli.modern_tui import run_modern_tui
 
 class RayonixInteractiveCLI(cmd.Cmd):
@@ -426,43 +426,28 @@ def run_interactive_mode(rpc_client, data_dir: str):
     print("🌐 RAYONIX BLOCKCHAIN CLI")
     print("="*70)
     
-    # Check if terminal supports modern TUI
     try:
-    	import textual
-    	modern_supported = True
-    except ImportError:
-    	modern_supported = False
-    
-    if modern_supported:
-    	print("\nChoose Interface:")
-    	print("1. 🚀 Modern TUI (Recommended) - Rich graphical interface")
-    	print("2. 💻 Classic CLI - Traditional command-line interface")
-    	print("3. ℹ️  Help")
-    	
-    	choice = input("\nChoose [1-3] (default: 1): ").strip()
-    	
-    	if choice == "1" or choice == "":
-    		from rayonix_node.cli.tui_screen.main_tui import run_modern_tui
-    		run_modern_tui(rpc_client, data_dir)
-    		return
-    	
-    	elif choice == "3":
-    		print("\nModern TUI Features:")
-    		print("• Real-time dashboards")
-    		print("• Interactive forms") 
-    		print("• Live data updates")
-    		print("• Rich visualizations")
-    		print("• Keyboard navigation")
-    		print("\nInstall with: pip install textual rich")
-    
-    from rayonix_node.cli.history_manager import HistoryManager
-    
-    # Fallback to classic CLI
-    history_file = os.path.join(data_dir, '.rayonix_history')
-    history_manager = HistoryManager(history_file)
-    history_manager.load_history()
-    
-    cli = RayonixInteractiveCLI(rpc_client, history_manager)
+        status = rpc_client.get_node_status()
+        print(f"Node Status: {status.get('status', 'Unknown')}")
+        print(f"Block Height: {status.get('block_height', 0)}")
+        print(f"Connected Peers: {status.get('peers_connected', 0)}")
+    except Exception as e:
+        print(f"Status check: {e}")
+        print("\nType 'help' for available commands")
+        print("Type 'exit' or 'quit' to exit")
+        
+        print("="*70)
+        
+        cli.cmdloop()
+  
+    except KeyboardInterrupt:
+        print("\n\nInterrupted by user")
+    except Exception as e:
+        print(f"\n CLI error: {e}")
+    finally:
+        # Save history
+        history_manager.save_history()
+        print("Command history saved")
     
     cli.cmdloop()
      
