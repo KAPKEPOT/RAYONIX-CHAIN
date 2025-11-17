@@ -430,6 +430,9 @@ def run_interactive_mode(rpc_client, data_dir: str):
     history_file = os.path.join(data_dir, ".rayonix_history")
     history_manager = HistoryManager(history_file)
     
+    # Create and run CLI
+    cli = RayonixInteractiveCLI(rpc_client, history_manager)
+    
     try:
         status = rpc_client.get_node_status()
         print(f"Node Status: {status.get('status', 'Unknown')}")
