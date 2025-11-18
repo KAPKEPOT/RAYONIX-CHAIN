@@ -505,8 +505,8 @@ class ProductionRayonixWallet:
         if not passphrase:
         	raise WalletError("Passphrase is required for wallet security")
         
-        if not self._validate_passphrase_strength(passphrase):
-        	raise WalletError("Weak passphrase - minimum 4 characters required")
+        #if not self._validate_passphrase_strength(passphrase):
+        	#raise WalletError("Weak passphrase - minimum 4 characters required")
         	
         if self.is_initialized():
             raise WalletError("Wallet is already initialized")
