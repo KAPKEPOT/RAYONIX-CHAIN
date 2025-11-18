@@ -687,14 +687,11 @@ class ProductionRayonixWallet:
             	raise CryptoError("Passphrase required for wallet encryption")
             
             salt = secrets.token_bytes(32)
-            encryption_key = self._derive_encryption_key(passphrase, salt)
+            encryption_key = self.key_manager.derive_encryption_key(passphrase, salt)
             
-            aesgcm = AESGCM(self._aes_gcm_key)
+            aesgcm = AESGCM(encryption_key)
             nonce = secrets.token_bytes(12)  # 96-bit nonce for AES-GCM
-            
-            # Additional authenticated data for integrity
-            #aad = self.wallet_id.encode() + struct.pack('>Q', int(time.time()))
-            
+
             # Encrypt mnemonic
             mnemonic_encrypted = aesgcm.encrypt(nonce, mnemonic.encode(), self.wallet_id.encode())
             
