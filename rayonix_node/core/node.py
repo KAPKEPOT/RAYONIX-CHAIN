@@ -153,7 +153,7 @@ class RayonixNode:
     		# Create new wallet on demand
     		return await self._create_wallet_on_demand()
     		
-    async def _create_wallet_on_demand(self) -> bool:
+    async def _create_wallet_on_demand(self, password: str = None) -> bool:
     	"""Create wallet when explicitly requested by user"""
     	print("=== DEBUG: _create_wallet_on_demand STARTED ===")
     	try:
@@ -174,7 +174,8 @@ class RayonixNode:
     		wallet, mnemonic = WalletFactory.create_new_wallet(
     		    wallet_type=WalletType.HD,
     		    address_type=AddressType.RAYONIX,
-    		    config_manager=self.config_manager
+    		    config_manager=self.config_manager,
+    		    passphrase=password or ""
     		)
     		
     		print("DEBUG: ✅ Wallet created successfully")
