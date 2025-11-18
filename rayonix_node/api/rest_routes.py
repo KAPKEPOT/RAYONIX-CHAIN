@@ -416,7 +416,7 @@ async def create_wallet(
     
     try:
         print("DEBUG: Calling node._create_wallet_on_demand()...")
-        success = await node._create_wallet_on_demand()
+        success = await node._create_wallet_on_demand(wallet_data.password)
         print(f"DEBUG: _create_wallet_on_demand result: {success}")
         print(f"DEBUG: Node wallet after creation: {node.wallet is not None}")
         
