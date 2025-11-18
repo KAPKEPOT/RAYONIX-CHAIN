@@ -16,7 +16,8 @@ class WalletFactory:
     def create_new_wallet(
         wallet_type: WalletType = WalletType.HD,
         address_type: AddressType = AddressType.RAYONIX,
-        config_manager: Optional[ConfigManager] = None
+        config_manager: Optional[ConfigManager] = None,
+        passphrase: str = ""
     ) -> Tuple[RayonixWallet, str]:
         """
         Create a new wallet and return both wallet instance and mnemonic
@@ -48,7 +49,7 @@ class WalletFactory:
             wallet = RayonixWallet(config)
             
             # Generate and initialize with new mnemonic
-            mnemonic = wallet.initialize_new_wallet()
+            mnemonic = wallet.initialize_new_wallet(passphrase)
             
             logger.info(f"Created new {wallet_type.name} wallet for {config.network} network")
             return wallet, mnemonic

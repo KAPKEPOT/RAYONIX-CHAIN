@@ -1078,7 +1078,7 @@ class RayonixWallet(ProductionRayonixWallet):
     def __init__(self, config: Optional[WalletConfig] = None, wallet_id: Optional[str] = None):
         super().__init__(config, wallet_id)
     
-    def initialize_new_wallet(self) -> str:
+    def initialize_new_wallet(self, passphrase: str = "") -> str:
         """Backward compatibility method"""
         if self.is_initialized():
             raise WalletError("Wallet is already initialized")
@@ -1089,7 +1089,7 @@ class RayonixWallet(ProductionRayonixWallet):
         temp_mnemonic = mnemonic  # Keep reference
         
         # Create wallet from mnemonic
-        if not self.create_from_mnemonic(mnemonic, ""):
+        if not self.create_from_mnemonic(mnemonic, passphrase):
             raise WalletError("Failed to initialize new wallet")
         
         # Return the mnemonic BEFORE it gets wiped
