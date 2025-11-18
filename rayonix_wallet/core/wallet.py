@@ -6,6 +6,7 @@ import json
 import struct
 import hashlib
 import secrets
+import base64
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import asdict
 from datetime import datetime
