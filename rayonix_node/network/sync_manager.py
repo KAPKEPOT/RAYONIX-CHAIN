@@ -2,10 +2,26 @@
 import asyncio
 import time
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Any
 from enum import Enum
-
+from dataclasses import dataclass
 logger = logging.getLogger("rayonix_node.sync")
+
+class SyncMode(Enum):
+    FULL = "full"           # Download & validate all blocks from genesis
+    FAST = "fast"           # Trust recent checkpoints, validate from there
+    LIGHT = "light"         # Download headers only, request data on demand
+    SNAPSHOT = "snapshot"   # Download recent state snapshot
+
+@dataclass
+class SyncConfig:
+    mode: SyncMode = SyncMode.FULL
+    batch_size: int = 100
+    max_parallel_downloads: int = 5
+    verify_blocks: bool = True
+    preserve_bandwidth: bool = False
+    target_peer_count: int = 8
+    timeout_per_block: int = 30
 
 class SyncManager:
     
@@ -31,7 +47,63 @@ class SyncManager:
         self.peer_reliability: Dict[str, float] = {}
         
         logger.info("SyncManager initialized")
-
+        
+        self.sync_config = SyncConfig()
+        self.user_paused = False
+        self.user_cancelled = False
+        self.download_stats = {
+            'blocks_downloaded': 0,
+            'bytes_downloaded': 0,
+            'download_speed': 0,
+            'estimated_time_remaining': 0
+        }
+    
+    async def start_sync_with_options(self, sync_mode: SyncMode = None,config_options: Dict = None) -> bool:
+    	"""Start synchronization with user-selected options"""
+    	if sync_mode:
+    		self.sync_config.mode = sync_mode
+    	
+    	if config_options:
+    		for key, value in config_options.items():
+    			if hasattr(self.sync_config, key):
+    				setattr(self.sync_config, key, value)
+    	
+    	logger.info(f"Starting sync in {self.sync_config.mode.value} mode")
+    	return await self.sync_blocks()
+    
+    async def pause_sync(self):
+    	"""Pause synchronization"""
+    	self.user_paused = True
+    	logger.info("Sync paused by user")
+    
+    async def resume_sync(self):
+    	"""Resume synchronization"""
+    	self.user_paused = False
+    	logger.info("Sync resumed by user")
+    
+    async def cancel_sync(self):
+    	"""Cancel synchronization"""
+    	self.user_cancelled = True
+    	self.user_paused = False
+    	logger.info("Sync cancelled by user")
+    
+    def get_sync_progress_detailed(self) -> Dict[str, Any]:
+    	"""Get detailed progress information for UI"""
+    	progress = self.get_sync_progress()
+    	
+    	return {
+    	    'mode': self.sync_config.mode.value,
+    	    'progress_percentage': progress,
+    	    'current_height': self.current_sync_height,
+    	    'target_height': self.target_sync_height,
+    	    'blocks_remaining': self.target_sync_height - self.current_sync_height,
+    	    'paused': self.user_paused,
+    	    'cancelled': self.user_cancelled,
+    	    'download_stats': self.download_stats.copy(),
+    	    'peer_count': len(self.peer_reliability),
+    	    'reliable_peers': len([p for p in self.peer_reliability.values() if p > 0.7])
+    	}
+    	
     async def sync_blocks(self):
         """Complete sync loop implementation"""
         while self.node.running:
