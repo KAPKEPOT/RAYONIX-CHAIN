@@ -23,6 +23,7 @@ from rayonix_node.cli.command_handler import CommandHandler
 from rayonix_node.cli.interactive import run_interactive_mode
 from rayonix_node.utils.helpers import configure_logging
 from rayonix_node.utils.api_key_manager import APIKeyManager, validate_api_key
+from config.sync_config import SyncConfig
 
 #try:
     #from rayonix_node.cli.modern_tui import run_modern_tui
