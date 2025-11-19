@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Set, Any
 from enum import Enum
 from dataclasses import dataclass
 logger = logging.getLogger("rayonix_node.sync")
-from config.sync_config import SyncConfig
+from config.sync_config import SyncConfig, SyncMode
 
 class SyncManager:
     
