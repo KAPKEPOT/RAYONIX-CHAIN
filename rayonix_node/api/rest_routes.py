@@ -1513,3 +1513,44 @@ async def health_check(request: Request):
             "error": str(e),
             "timestamp": int(datetime.now().timestamp())
         }
+        
+@router.post("/sync/start")
+async def start_sync(sync_request: Dict[str, Any], request: Request):
+    """Start synchronization with specified mode"""
+    node = request.app.state.node
+    try:
+        mode = SyncMode(sync_request.get('mode', 'full'))
+        options = sync_request.get('options', {})
+        
+        success = await node.sync_manager.start_sync_with_options(mode, options)
+        return {"success": success, "mode": mode.value}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/sync/pause")
+async def pause_sync(request: Request):
+    """Pause synchronization"""
+    node = request.app.state.node
+    await node.sync_manager.pause_sync()
+    return {"success": True}
+
+@router.post("/sync/resume")
+async def resume_sync(request: Request):
+    """Resume synchronization"""
+    node = request.app.state.node
+    await node.sync_manager.resume_sync()
+    return {"success": True}
+
+@router.post("/sync/cancel")
+async def cancel_sync(request: Request):
+    """Cancel synchronization"""
+    node = request.app.state.node
+    await node.sync_manager.cancel_sync()
+    return {"success": True}
+
+@router.get("/sync/status/detailed")
+async def get_sync_status_detailed(request: Request):
+    """Get detailed synchronization status"""
+    node = request.app.state.node
+    status = node.sync_manager.get_sync_progress_detailed()
+    return status        
