@@ -737,3 +737,160 @@ API Enabled:    {info.get('api_enabled', False)}"""
             return "❌ Cannot connect to node. Ensure rayonixd is running."
         else:
             return f"❌ Error: {error_msg}"                    
+    def cmd_sync_start(self, args: List[str]) -> str:
+    	"""Start synchronization with options"""
+    	if not args:
+    		return self._show_sync_mode_help()
+    	
+    	mode = args[0].lower()
+    	sync_modes = {
+    	    'full': SyncMode.FULL,
+    	    'fast': SyncMode.FAST,
+    	    'light': SyncMode.LIGHT,
+    	    'snapshot': SyncMode.SNAPSHOT
+    	}
+    	
+    	if mode not in sync_modes:
+    		return f"❌ Invalid sync mode: {mode}. Available: {', '.join(sync_modes.keys())}"
+    	
+    	# Parse additional options
+    	options = {}
+    	for arg in args[1:]:
+    		if '=' in arg:
+    			key, value = arg.split('=', 1)
+    			options[key] = self._parse_sync_option(key, value)
+    	
+    	try:
+    		# Start sync with selected mode and options
+    		success = self.client.start_sync(sync_modes[mode], options)
+    		if success:
+    			return f"✅ Started {mode} synchronization\n" \
+                   f"Use 'sync-status' to monitor progress, 'sync-pause' to pause"
+    		
+    		else:
+    			return "❌ Failed to start synchronization"
+    	except Exception as e:
+    		return f"❌ Error starting sync: {e}"
+    
+    def cmd_sync_status(self, args: List[str]) -> str:
+    	"""Show detailed synchronization status with progress visualization"""
+    	try:
+    		status = self.client.get_sync_status_detailed()
+    		
+    		if not status.get('syncing', False):
+    			return "📊 No active synchronization"
+    		
+    		# Create progress bar
+    		progress = status['progress_percentage']
+    		bars = int(progress / 5)  # 20 bars for 100%
+    		progress_bar = "[" + "=" * bars + " " * (20 - bars) + "]"
+    		response = f"🔄 SYNCHRONIZATION STATUS - {status['mode'].upper()} MODE\n"
+    		response += "═══════════════════════════════════════════════════\n"
+    		response += f"Progress:    {progress_bar} {progress:.1f}%\n"
+    		response += f"Blocks:      {status['current_height']:,} / {status['target_height']:,}\n"
+    		response += f"Remaining:   {status['blocks_remaining']:,} blocks\n"
+    		
+    		# Download stats
+    		if status['download_stats']:
+    			stats = status['download_stats']
+    			response += f"Downloaded:  {stats['blocks_downloaded']:,} blocks\n"
+    			response += f"Speed:       {self._format_speed(stats['download_speed'])}\n"
+    			if stats['estimated_time_remaining'] > 0:
+    				eta = self._format_duration(stats['estimated_time_remaining'])
+    				response += f"ETA:         {eta}\n"
+    		
+    		response += f"Peers:       {status['reliable_peers']} reliable\n"
+    		response += f"Status:      {'⏸️ PAUSED' if status['paused'] else '🔄 SYNCING'}\n"
+    		
+    		# Controls hint
+    		response += "\n💡 Controls: sync-pause, sync-resume, sync-cancel"
+    		
+    		return response
+    	
+    	except Exception as e:
+    		return f"❌ Error getting sync status: {e}"
+    
+    def cmd_sync_pause(self, args: List[str]) -> str:
+    	"""Pause synchronization"""
+    	try:
+    		success = self.client.pause_sync()
+    		if success:
+    			return "⏸️ Synchronization paused"
+    		else:
+    			return "❌ No active synchronization to pause"
+    	
+    	except Exception as e:
+    		return f"❌ Error pausing sync: {e}"
+    
+    def cmd_sync_resume(self, args: List[str]) -> str:
+    	"""Resume synchronization"""
+    	try:
+    		success = self.client.resume_sync()
+    		if success:
+    			return "▶️ Synchronization resumed"
+    		else:
+    			return "❌ No paused synchronization to resume"
+    	
+    	except Exception as e:
+    		return f"❌ Error resuming sync: {e}"
+    
+    def cmd_sync_cancel(self, args: List[str]) -> str:
+    	"""Cancel synchronization"""
+    	try:
+    		success = self.client.cancel_sync()
+    		if success:
+    			return "⏹️ Synchronization cancelled"
+    		else:
+    			return "❌ No active synchronization to cancel"
+    	
+    	except Exception as e:
+    		return f"❌ Error cancelling sync: {e}"
+    	
+    def cmd_sync_modes(self, args: List[str]) -> str:
+    	"""Show available synchronization modes"""
+    	modes_info = {
+    	    'full': {
+    	        'description': 'Download and validate all blocks from genesis',
+    	        'speed': 'Slowest',
+    	        'security': 'Highest',
+    	        'bandwidth': 'Highest',
+    	        'use_case': 'New nodes, validators'
+    	    },
+    	    'fast': {
+    	        'description': 'Trust recent checkpoints, validate from checkpoint',
+    	        'speed': 'Fast',
+    	        'security': 'High',
+    	        'bandwidth': 'Medium',
+    	        'use_case': 'Most users'
+    	    },
+    	    'light': {
+    	        'description': 'Download headers only, request data on demand',
+    	        'speed': 'Fastest',
+    	        'security': 'Medium',
+    	        'bandwidth': 'Lowest',
+    	        'use_case': 'Mobile devices, quick verification'
+    	    },
+    	    'snapshot': {
+    	        'description': 'Download recent state snapshot',
+    	        'speed': 'Instant',
+    	        'security': 'Trusted',
+    	        'bandwidth': 'Medium (one-time)',
+    	        'use_case': 'Quick node deployment'
+    	    }
+    	}
+    	
+    	response = "🔄 SYNCHRONIZATION MODES\n"
+    	response += "═══════════════════════════════════════════════════\n"
+    	for mode, info in modes_info.items():
+    		response += f"\n📦 {mode.upper()} MODE:\n"
+    		response += f"   Description: {info['description']}\n"
+    		response += f"   Speed:       {info['speed']}\n"
+    		response += f"   Security:    {info['security']}\n"
+    		response += f"   Bandwidth:   {info['bandwidth']}\n"
+    		response += f"   Use Case:    {info['use_case']}\n"
+    	
+    	response += "\n💡 Usage: sync-start <mode> [options]\n"
+    	response += "   Example: sync-start fast batch_size=200\n"
+    	
+    	return response
+    	
