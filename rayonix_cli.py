@@ -288,10 +288,36 @@ class RayonixRPCClient:
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get CLI performance metrics"""
         return self.performance_metrics
-        
+    
+    def start_sync(self, sync_mode: SyncMode, options: Dict = None) -> bool:
+        """Start synchronization with specified mode and options"""
+        data = {
+            'mode': sync_mode.value,
+            'options': options or {}
+        }        
+        result = self.call_rest_api("sync/start", "POST", data)
+        return result.get('success', False)
+    
+    def pause_sync(self) -> bool:
+    	"""Pause synchronization"""
+    	result = self.call_rest_api("sync/pause", "POST", {})
+    	return result.get('success', False)
+    	
+    def resume_sync(self) -> bool:
+    	"""Resume synchronization"""
+    	result = self.call_rest_api("sync/resume", "POST", {})
+    	return result.get('success', False)
+    
+    def cancel_sync(self) -> bool:
+    	"""Cancel synchronization"""
+    	result = self.call_rest_api("sync/cancel", "POST", {})
+    	return result.get('success', False)
+    
+    def get_sync_status_detailed(self) -> Dict[str, Any]:
+    	"""Get detailed synchronization status"""
+    	return self.call_rest_api("sync/status/detailed")
+    	
 #def parse_arguments():
-	
-
 def main():
     """CLI entry point"""
     parser = argparse.ArgumentParser(description='RAYONIX CLI Client')
@@ -404,6 +430,39 @@ def main():
     subparsers.add_parser('interactive', help='Start interactive mode')
     #modern_parser = subparsers.add_parser('modern', help='Start modern TUI interface')
     
+    # Sync commands
+    sync_parser = subparsers.add_parser('sync-start', help='Start synchronization with options')
+    sync_parser.add_argument(
+        'mode',
+        choices=['full', 'fast', 'light', 'snapshot'],
+        help='Sync mode'
+    )
+    sync_parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=100,
+        help='Blocks per batch (default: 100)'
+    )
+    
+    sync_parser.add_argument(
+        '--max-peers',
+        type=int,
+        default=8,
+        help='Maximum peers to use (default: 8)'
+    )
+    
+    sync_parser.add_argument(
+        '--no-verify',
+        action='store_true',
+        help='Skip block verification (faster but less secure)'
+    )
+    
+    subparsers.add_parser('sync-pause', help='Pause synchronization')
+    subparsers.add_parser('sync-resume', help='Resume synchronization')
+    subparsers.add_parser('sync-cancel', help='Cancel synchronization')
+    subparsers.add_parser('sync-status', help='Show detailed sync status')
+    subparsers.add_parser('sync-modes', help='Show available sync modes')
+
     args = parser.parse_args()
     
     # Configure logging
