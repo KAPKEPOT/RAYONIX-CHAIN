@@ -461,7 +461,7 @@ def main():
     subparsers.add_parser('sync-pause', help='Pause synchronization')
     subparsers.add_parser('sync-resume', help='Resume synchronization')
     subparsers.add_parser('sync-cancel', help='Cancel synchronization')
-    subparsers.add_parser('sync-status', help='Show detailed sync status')
+    subparsers.add_parser('sync-status-detailed', help='Show detailed sync status')
     subparsers.add_parser('sync-modes', help='Show available sync modes')
 
     args = parser.parse_args()
