@@ -823,15 +823,16 @@ class AdvancedDatabase:
         	
         	# Compress if enabled and data is compressible
         	if self.compression and len(original_value) > 100:
-                try:
-                    serialized_value = self.compression.compress(original_value)
-                    compression_used = 'ZSTD'
-                except Exception as e:
-                    logger.warning(f"Zstandard compression failed: {e}")
-                    serialized_value = original_value
-                    compression_used = 'NONE'
-            else:
-                compression_used = 'NONE'
+        		try:
+        			serialized_value = self.compression.compress(original_value)
+        			compression_used = 'ZSTD'
+        		except Exception as e:
+        			logger.warning(f"Zstandard compression failed, storing uncompressed: {e}")
+        			serialized_value = original_value
+        			compression_used = 'NONE'
+        	
+        	else:
+        		compression_used = 'NONE'
         	
         	# Encrypt if enabled
         	if self.encryption:
