@@ -40,9 +40,12 @@ from merkle_system.merkle import (
     ProofFormat, MerkleTreeStats, global_stats
 )
 
+from database.core.serialization import MsgPackSerializer, serialize, deserialize
+from database.core.compression import ZstdCompression, compress, decompress
+
 from database.utils.types import (
-    DatabaseType, CompressionType, EncryptionType, 
-    IndexType, SerializationType, DatabaseConfig, IndexConfig, BatchOperation
+    DatabaseType, EncryptionType, 
+    IndexType, DatabaseConfig, IndexConfig, BatchOperation
 )
 from database.utils.exceptions import (
     DatabaseError, KeyNotFoundError, SerializationError, IndexError,
@@ -171,69 +174,37 @@ class AdvancedDatabase:
     def _initialize_compression(self):
         """Initialize compression system"""
         try:
-            if self.config.compression == CompressionType.ZLIB:
-                try:
-                    from database.core.compression import ZlibCompression
-                    self.compression = ZlibCompression(self.config.compression_level)
-                    logger.info("Zlib compression initialized successfully")
-                except CompressionError as e:
-                    logger.warning(f"Zlib compression initialization failed, using no compression: {e}")
-                    self.compression = None
-                    self.config.compression = CompressionType.NONE
-                    
-            elif self.config.compression == CompressionType.LZ4:
-                try:
-                    import lz4.frame
-                    from database.core.compression import LZ4Compression
-                    self.compression = LZ4Compression()
-                    logger.info("LZ4 compression initialized successfully")
-                except (CompressionError, ImportError) as e:
-                    logger.warning(f"LZ4 compression initialization failed, using no compression: {e}")
-                    self.compression = None
-                    self.config.compression = CompressionType.NONE
-                    
-            elif self.config.compression == CompressionType.SNAPPY:
-                try:
-                    from database.core.compression import SnappyCompression
-                    self.compression = SnappyCompression()
-                    logger.info("Snappy compression initialized successfully")
-                except (CompressionError, ImportError) as e:
-                    logger.warning(f"Snappy compression initialization failed, using no compression: {e}")
-                    self.compression = None
-                    self.config.compression = CompressionType.NONE
-                    
-            elif self.config.compression == CompressionType.ZSTD:
-                try:
-                    from database.core.compression import ZstdCompression
-                    self.compression = ZstdCompression(self.config.compression_level)
-                    logger.info("Zstd compression initialized successfully")
-                except (CompressionError, ImportError) as e:
-                    logger.warning(f"Zstd compression initialization failed, using no compression: {e}")
-                    self.compression = None
-                    self.config.compression = CompressionType.NONE
-                    
-            elif self.config.compression == CompressionType.NONE:
-                self.compression = None
-                logger.info("Compression disabled")
-                
+            # Always use Zstandard compression with configured level
+            from database.core.compression import CompressionLevel
+            
+            # Map compression level to Zstandard's levels (1-22)
+            level_value = max(1, min(22, self.config.compression_level or 3))
+            level = CompressionLevel(level_value)
+            
+            self.compression = ZstdCompression(
+                level=level,
+                threads=0,  # Auto-detect CPU cores
+                enable_checksum=True,
+                enable_content_size=True
+            )
+            
+            logger.info(f"Zstandard compression initialized with level {level_value}")
+            
         except Exception as e:
-            logger.error(f"Compression initialization failed: {e}")
+            logger.warning(f"Zstandard compression initialization failed, using no compression: {e}")
             self.compression = None
-            self.config.compression = CompressionType.NONE
 
     def _initialize_serializer(self):
         """Initialize serialization system"""
         try:
-            if self.config.serialization == SerializationType.JSON:
-                self.serializer = JSONSerializer()
-            elif self.config.serialization == SerializationType.MSGPACK:
-                self.serializer = MsgPackSerializer()
-            elif self.config.serialization == SerializationType.PROTOBUF:
-                self.serializer = ProtobufSerializer()
-            elif self.config.serialization == SerializationType.AVRO:
-                self.serializer = AvroSerializer()
+            self.serializer = MsgPackSerializer(
+                use_bin_type=True,
+                strict_types=False,
+                datetime_support=True
+            )
+            logger.info("MessagePack serialization initialized successfully")
         except Exception as e:
-            raise SerializationError(f"Serializer initialization failed: {e}")
+            raise SerializationError(f"MessagePack serializer initialization failed: {e}")
     
     def _create_default_indexes(self):
         """Create default indexes"""
@@ -808,10 +779,15 @@ class AdvancedDatabase:
     
     def _serialize_value(self, value: Any) -> bytes:
         """Serialize value using configured serializer"""
-        if self.serializer:
-            return self.serializer.serialize(value)
-        # Fallback to JSON
-        return json.dumps(value, cls=AdvancedJSONEncoder).encode('utf-8')
+        try:
+            if self.serializer:
+                return self.serializer.serialize(value)
+            # Fallback to direct MessagePack
+            return serialize(value)
+        except Exception as e:
+            logger.error(f"MessagePack serialization failed: {e}")
+            raise SerializationError(f"MessagePack serialization failed: {e}")
+            
     def _calculate_checksum(self, data: bytes) -> bytes:
         """Calculate checksum for data integrity"""
         return crc32c.crc32c(data).to_bytes(4, 'big')
@@ -824,10 +800,14 @@ class AdvancedDatabase:
     
     def _deserialize_value(self, data: bytes) -> Any:
         """Deserialize value using configured serializer"""
-        if self.serializer:
-            return self.serializer.deserialize(data)
-        # Fallback to JSON
-        return json.loads(data.decode('utf-8'))
+        try:
+            if self.serializer:
+                return self.serializer.deserialize(data)
+            # Fallback to direct MessagePack
+            return deserialize(data)
+        except Exception as e:
+            logger.error(f"MessagePack deserialization failed: {e}")
+            raise SerializationError(f"MessagePack deserialization failed: {e}")
     
     def _prepare_value_for_storage(self, serialized_value: bytes, ttl: Optional[int] = None) -> bytes:
         """Prepare value for storage with metadata"""
@@ -843,16 +823,15 @@ class AdvancedDatabase:
         	
         	# Compress if enabled and data is compressible
         	if self.compression and len(original_value) > 100:
-        		try:
-        			serialized_value = self.compression.compress(original_value)
-        			compression_used = self.config.compression.name
-        		
-        		except CompressionError as e:
-        			logger.warning(f"Compression failed, storing uncompressed: {e}")
-        			serialized_value = original_value
-        			compression_used = 'NONE'
-        	else:
-        		compression_used = 'NONE'
+                try:
+                    serialized_value = self.compression.compress(original_value)
+                    compression_used = 'ZSTD'
+                except Exception as e:
+                    logger.warning(f"Zstandard compression failed: {e}")
+                    serialized_value = original_value
+                    compression_used = 'NONE'
+            else:
+                compression_used = 'NONE'
         	
         	# Encrypt if enabled
         	if self.encryption:
@@ -969,11 +948,11 @@ class AdvancedDatabase:
             		raise DatabaseError(f"Decryption failed: {e}")
             	
             # Decompress if enabled
-            if metadata['compression'] != 'NONE' and self.compression:
+            if metadata['compression'] == 'ZSTD' and self.compression:
             	try:
             		value_bytes = self.compression.decompress(value_bytes)
-            	except CompressionError as e:
-            		raise DatabaseError(f"Decompression failed: {e}")
+            	except Exception as e:
+            		raise DatabaseError(f"Zstandard decompression failed: {e}")
             	
             # Deserialize value
             try:
