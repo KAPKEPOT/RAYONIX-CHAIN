@@ -1,5 +1,4 @@
 # database/core/compression.py
-
 import zstandard as zstd
 import threading
 import time
@@ -135,17 +134,17 @@ class ZstdCompression:
     def _get_strategy_constant(self, strategy: str) -> int:
         """Get Zstandard strategy constant from string"""
         strategies = {
-            "default": zstd.ZSTD_strategy.ZSTD_STRATEGY_FAST,
-            "fast": zstd.ZSTD_strategy.ZSTD_STRATEGY_FAST,
-            "dfast": zstd.ZSTD_strategy.ZSTD_STRATEGY_DFAST,
-            "greedy": zstd.ZSTD_strategy.ZSTD_STRATEGY_GREEDY,
-            "lazy": zstd.ZSTD_strategy.ZSTD_STRATEGY_LAZY,
-            "lazy2": zstd.ZSTD_strategy.ZSTD_STRATEGY_LAZY2,
-            "btlazy2": zstd.ZSTD_strategy.ZSTD_STRATEGY_BTLAZY2,
-            "btopt": zstd.ZSTD_strategy.ZSTD_STRATEGY_BTOPT,
-            "btultra": zstd.ZSTD_strategy.ZSTD_STRATEGY_BTULTRA,
+            "default": zstd.ZSTD_strategy_fast,
+            "fast": zstd.ZSTD_strategy_fast,
+            "dfast": zstd.ZSTD_strategy_dfast,
+            "greedy": zstd.ZSTD_strategy_greedy,
+            "lazy": zstd.ZSTD_strategy_lazy,
+            "lazy2": zstd.ZSTD_strategy_lazy2,
+            "btlazy2": zstd.ZSTD_strategy_btlazy2,
+            "btopt": zstd.ZSTD_strategy_btopt,
+            "btultra": zstd.ZSTD_strategy_btultra,
         }
-        return strategies.get(strategy, zstd.ZSTD_strategy.ZSTD_STRATEGY_FAST)
+        return strategies.get(strategy, zstd.ZSTD_strategy_fast)
     
     def compress(self, data: bytes, level: Optional[CompressionLevel] = None) -> bytes:
         """
