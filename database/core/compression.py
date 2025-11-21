@@ -300,7 +300,7 @@ class ZstdCompression:
         except zstd.ZstdError as e:
             raise CompressionError(f"Failed to create compression context: {e}")
     
-    def create_decompression_context(self) -> zstd.ZstdDecompressionContext:
+    def create_decompression_context(self):
         """Create a decompression context for advanced usage"""
         try:
             return zstd.ZstdDecompressor(max_window_size=self.max_window_size)
