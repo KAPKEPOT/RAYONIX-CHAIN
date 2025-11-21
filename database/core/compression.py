@@ -293,17 +293,17 @@ class ZstdCompression:
         except zstd.ZstdError as e:
             raise CompressionError(f"Zstandard stream decompression failed: {e}")
     
-    def create_compression_context(self) -> zstd.ZstdCompressionContext:
+    def create_compression_context(self):
         """Create a compression context for advanced usage"""
         try:
-            return zstd.ZstdCompressionContext(**self.compression_params)
+            return zstd.ZstdCompressor(**self.compression_params)
         except zstd.ZstdError as e:
             raise CompressionError(f"Failed to create compression context: {e}")
     
     def create_decompression_context(self) -> zstd.ZstdDecompressionContext:
         """Create a decompression context for advanced usage"""
         try:
-            return zstd.ZstdDecompressionContext(max_window_size=self.max_window_size)
+            return zstd.ZstdDecompressor(max_window_size=self.max_window_size)
         except zstd.ZstdError as e:
             raise CompressionError(f"Failed to create decompression context: {e}")
     
@@ -374,22 +374,12 @@ class ZstdCompression:
     @contextmanager
     def compression_context(self):
         """Context manager for compression operations"""
-        context = self.create_compression_context()
-        try:
-            yield context
-        finally:
-            # Zstandard contexts don't need explicit cleanup in Python
-            pass
+        yield self.compressor
     
     @contextmanager
     def decompression_context(self):
         """Context manager for decompression operations"""
-        context = self.create_decompression_context()
-        try:
-            yield context
-        finally:
-            # Zstandard contexts don't need explicit cleanup in Python
-            pass
+        yield self.decompressor
 
 # Global Zstandard compression instance with blockchain-optimized settings
 COMPRESSOR = ZstdCompression(
