@@ -15,7 +15,7 @@ from consensusengine.staking.slashing import SlashingManager
 from network.core.p2p_network import AdvancedP2PNetwork
 from consensusengine.crypto.signing import CryptoManager
 #from database.core.database import AdvancedDatabase
-from consensusengine.utils.database import DatabaseManager
+from consensusengine.utils.database import ConsensusDatabase
 from consensusengine.utils.timing import TimeoutManager
 from config.config_manager import ConfigManager
 
