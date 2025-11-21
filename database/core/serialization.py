@@ -1,405 +1,178 @@
-import decimal
-import json
+# database/core/serialization.py
+
 import msgpack
-import pickle
-import decimal
-from typing import Any, Dict, Optional
-from enum import Enum, auto
 import logging
-from datetime import datetime, date
+from typing import Any
 from decimal import Decimal
+from datetime import datetime, date
 import uuid
-import struct
-from io import BytesIO
-from dataclasses import asdict
-
-# Avro imports
-try:
-    import avro.schema
-    from avro.io import DatumWriter, DatumReader, BinaryEncoder, BinaryDecoder
-    AVRO_AVAILABLE = True
-except ImportError:
-    AVRO_AVAILABLE = False
-
-# Protobuf imports
-try:
-    from google.protobuf.message import Message as ProtobufMessage
-    from google.protobuf.json_format import MessageToDict, ParseDict
-    PROTOBUF_AVAILABLE = True
-except ImportError:
-    PROTOBUF_AVAILABLE = False
+from dataclasses import is_dataclass, asdict
 
 from database.utils.exceptions import SerializationError
 
 logger = logging.getLogger(__name__)
 
-class SerializationFormat(Enum):
-    """Supported serialization formats"""
-    JSON = auto()
-    MSGPACK = auto()
-    PROTOBUF = auto()
-    AVRO = auto()
-    PICKLE = auto()
+class MsgPackSerializer:
+    """Pure MessagePack serialization - ONE consistent format"""
     
-class JSONSerializer:
-    """JSON serialization with extended data type support"""
-    
-    def __init__(self, encoding='utf-8', ensure_ascii=False, indent=None):
-        self.encoding = encoding
-        self.ensure_ascii = ensure_ascii
-        self.indent = indent
+    def __init__(self, use_bin_type=True, strict_types=False, datetime_support=True):
+        self.use_bin_type = use_bin_type
+        self.strict_types = strict_types
+        self.datetime_support = datetime_support
     
     def serialize(self, value: Any) -> bytes:
-        """Serialize value to JSON bytes"""
+        """Serialize value to MessagePack using ONE consistent format"""
         try:
-            return json.dumps(
-                value, 
-                ensure_ascii=self.ensure_ascii, 
-                indent=self.indent,
-                default=self._default_encoder,
-                separators=(',', ':') if not self.indent else None
-            ).encode(self.encoding)
-        except (TypeError, ValueError, OverflowError) as e:
-            logger.error(f"JSON serialization error for value: {type(value)}")
-            raise SerializationError(f"JSON serialization failed: {e}")
+            # Convert to serializable format first
+            serializable_value = self._convert_to_serializable(value)
+            
+            return msgpack.packb(
+                serializable_value, 
+                use_bin_type=self.use_bin_type,
+                strict_types=self.strict_types
+            )
+        except (msgpack.PackException, TypeError, ValueError) as e:
+            logger.error(f"MessagePack serialization error for type {type(value)}: {e}")
+            raise SerializationError(f"MessagePack serialization failed: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected MessagePack serialization error: {e}")
+            raise SerializationError(f"MessagePack serialization failed: {e}")
     
     def deserialize(self, data: bytes) -> Any:
-        """Deserialize JSON bytes to value"""
-        try:
-            return json.loads(data.decode(self.encoding), parse_float=Decimal)
-        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
-            logger.error(f"JSON deserialization error for data: {data[:100]}")
-            raise SerializationError(f"JSON deserialization failed: {e}")
-    
-    def _default_encoder(self, obj):
-        """Handle non-serializable objects"""
-        if isinstance(obj, (datetime, date)):
-            return obj.isoformat()
-        elif isinstance(obj, Decimal):
-            return str(obj)
-        elif isinstance(obj, uuid.UUID):
-            return str(obj)
-        elif isinstance(obj, bytes):
-            return obj.hex()
-        elif isinstance(obj, set):
-            return list(obj)
-        elif hasattr(obj, '__dict__'):
-            return {k: v for k, v in obj.__dict__.items() if not k.startswith('_')}
-        else:
-            return str(obj)    
-
-class JSONSerializer(JSONSerializer):
-    """Enhanced JSON serializer with better error handling and type support"""
-    
-    def serialize(self, value: Any) -> bytes:
-        """Serialize value to JSON bytes with comprehensive error handling"""
-        try:
-            # Handle None values
-            if value is None:
-                return b'null'
-            
-            # Convert dataclasses and objects to dict first
-            if hasattr(value, '__dict__') and not isinstance(value, dict):
-                value = self._convert_object_to_dict(value)
-            
-            return json.dumps(
-                value, 
-                ensure_ascii=self.ensure_ascii, 
-                indent=self.indent,
-                default=self._default_encoder,
-                separators=(',', ':') if not self.indent else None,
-                skipkeys=False,  # Don't skip invalid keys, raise error instead
-                check_circular=True  # Check for circular references
-            ).encode(self.encoding)
-        except (TypeError, ValueError, OverflowError) as e:
-            logger.error(f"JSON serialization error for type {type(value)}: {e}")
-            raise SerializationError(f"JSON serialization failed: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected JSON serialization error: {e}")
-            raise SerializationError(f"JSON serialization failed: {e}")
-    
-    def _convert_object_to_dict(self, obj: Any) -> Dict:
-        """Convert objects to serializable dictionaries"""
-        try:
-            # Handle dataclasses
-            if hasattr(obj, '__dataclass_fields__'):
-                return asdict(obj)
-            
-            # Handle objects with to_dict method
-            if hasattr(obj, 'to_dict') and callable(obj.to_dict):
-                return obj.to_dict()
-            
-            # Handle objects with __dict__
-            if hasattr(obj, '__dict__'):
-                return {k: v for k, v in obj.__dict__.items() 
-                       if not k.startswith('_') or k in getattr(obj, '_serializable_attributes_', [])}
-            
-            # Fallback to string representation
-            return str(obj)
-            
-        except Exception as e:
-            logger.warning(f"Object to dict conversion failed: {e}")
-            return {"__error__": f"Serialization failed: {str(e)}"}
-    
-    def deserialize(self, data: bytes) -> Any:
-        """Deserialize JSON bytes to value with comprehensive error handling"""
+        """Deserialize MessagePack to value using ONE consistent format"""
         if not data:
             return None
             
         try:
-            decoded_data = data.decode(self.encoding)
-            
-            # Handle empty or null data
-            if not decoded_data.strip() or decoded_data.strip() == 'null':
-                return None
-                
-            return json.loads(decoded_data, parse_float=decimal.Decimal)
-            
-        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
-            logger.error(f"JSON deserialization error: {e}")
-            # Try to provide more context in the error
-            data_preview = data[:100] if len(data) > 100 else data
-            raise SerializationError(f"JSON deserialization failed for data: {data_preview} - {e}")
-        except Exception as e:
-            logger.error(f"Unexpected JSON deserialization error: {e}")
-            raise SerializationError(f"JSON deserialization failed: {e}")
-
-class MsgPackSerializer:
-    """MessagePack serialization for efficient binary format"""
-    
-    def __init__(self, use_bin_type=True, strict_types=False):
-        self.use_bin_type = use_bin_type
-        self.strict_types = strict_types
-    
-    def serialize(self, value: Any) -> bytes:
-        """Serialize value to MessagePack"""
-        try:
-            return msgpack.packb(
-                value, 
-                use_bin_type=self.use_bin_type,
-                strict_types=self.strict_types,
-                default=self._default_encoder
-            )
-        except (msgpack.PackException, TypeError, ValueError) as e:
-            logger.error(f"MessagePack serialization error for value: {type(value)}")
-            raise SerializationError(f"MessagePack serialization failed: {e}")
-    
-    def deserialize(self, data: bytes) -> Any:
-        """Deserialize MessagePack to value"""
-        try:
-            return msgpack.unpackb(
+            # Unpack the data
+            unpacked_data = msgpack.unpackb(
                 data, 
                 raw=False,
                 strict_map_key=False,
                 use_list=True
             )
+            
+            # Convert back from serializable format
+            return self._convert_from_serializable(unpacked_data)
+            
         except (msgpack.UnpackException, ValueError) as e:
-            logger.error(f"MessagePack deserialization error for data: {data[:100]}")
+            logger.error(f"MessagePack deserialization error: {e}")
+            raise SerializationError(f"MessagePack deserialization failed: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected MessagePack deserialization error: {e}")
             raise SerializationError(f"MessagePack deserialization failed: {e}")
     
-    def _default_encoder(self, obj):
-        """Handle non-serializable objects for MessagePack"""
-        if isinstance(obj, (datetime, date)):
-            return {'__datetime__': obj.isoformat()}
-        elif isinstance(obj, Decimal):
-            return {'__decimal__': str(obj)}
-        elif isinstance(obj, uuid.UUID):
-            return {'__uuid__': str(obj)}
-        elif isinstance(obj, set):
-            return list(obj)
-        return str(obj)
-
-class ProtobufSerializer:
-    """Protocol Buffers serialization implementation"""
-    
-    def __init__(self, message_class: Optional[type] = None):
-        if not PROTOBUF_AVAILABLE:
-            raise SerializationError(
-                "Protobuf not available. Install with: pip install protobuf"
-            )
-        self.message_class = message_class
-    
-    def serialize(self, value: Any) -> bytes:
-        """Serialize using Protocol Buffers"""
-        try:
-            if isinstance(value, ProtobufMessage):
-                return value.SerializeToString()
-            elif self.message_class and isinstance(value, (dict, list)):
-                # Convert dict/list to protobuf message
-                message = self._dict_to_protobuf(value)
-                return message.SerializeToString()
+    def _convert_to_serializable(self, value: Any) -> Any:
+        """Convert complex types to MessagePack-serializable formats"""
+        if value is None:
+            return None
+        elif isinstance(value, (str, int, float, bool)):
+            return value
+        elif isinstance(value, bytes):
+            return value  # MsgPack handles bytes natively
+        elif isinstance(value, (list, tuple)):
+            return [self._convert_to_serializable(item) for item in value]
+        elif isinstance(value, dict):
+            return {str(k): self._convert_to_serializable(v) for k, v in value.items()}
+        elif isinstance(value, (datetime, date)):
+            if self.datetime_support:
+                return {
+                    '__type__': 'datetime' if isinstance(value, datetime) else 'date',
+                    'isoformat': value.isoformat()
+                }
             else:
-                raise SerializationError(
-                    f"Unsupported value type for Protobuf serialization: {type(value)}"
-                )
-        except Exception as e:
-            logger.error(f"Protobuf serialization error: {e}")
-            raise SerializationError(f"Protobuf serialization failed: {e}")
+                return value.isoformat()
+        elif isinstance(value, Decimal):
+            return {
+                '__type__': 'decimal',
+                'value': str(value)
+            }
+        elif isinstance(value, uuid.UUID):
+            return {
+                '__type__': 'uuid',
+                'value': str(value)
+            }
+        elif isinstance(value, set):
+            return {
+                '__type__': 'set',
+                'values': [self._convert_to_serializable(item) for item in value]
+            }
+        elif is_dataclass(value):
+            return {
+                '__type__': 'dataclass',
+                'class': value.__class__.__name__,
+                'data': asdict(value)
+            }
+        elif hasattr(value, '__dict__'):
+            # Generic object - convert to dict
+            return {
+                '__type__': 'object',
+                'class': value.__class__.__name__,
+                'data': {k: self._convert_to_serializable(v) 
+                        for k, v in value.__dict__.items() 
+                        if not k.startswith('_')}
+            }
+        else:
+            # Fallback to string representation
+            logger.warning(f"Converting unsupported type {type(value)} to string")
+            return str(value)
     
-    def deserialize(self, data: bytes) -> Any:
-        """Deserialize Protocol Buffers"""
-        if not self.message_class:
-            raise SerializationError("Protobuf message class not specified")
-        
-        try:
-            message = self.message_class()
-            message.ParseFromString(data)
-            return MessageToDict(
-                message, 
-                including_default_value_fields=True,
-                preserving_proto_field_name=True
-            )
-        except Exception as e:
-            logger.error(f"Protobuf deserialization error: {e}")
-            raise SerializationError(f"Protobuf deserialization failed: {e}")
-    
-    def _dict_to_protobuf(self, data: Dict) -> ProtobufMessage:
-        """Convert dictionary to protobuf message"""
-        if not self.message_class:
-            raise SerializationError("Protobuf message class not specified")
-        
-        message = self.message_class()
-        ParseDict(data, message)
-        return message
-
-class AvroSerializer:
-    """Apache Avro serialization implementation"""
-    
-    def __init__(self, schema: Optional[Any] = None):
-        if not AVRO_AVAILABLE:
-            raise SerializationError(
-                "Avro not available. Install with: pip install avro-python3"
-            )
-        
-        self.schema = schema
-        if schema:
-            self._validate_schema(schema)
-    
-    def serialize(self, value: Any) -> bytes:
-        """Serialize using Avro"""
-        try:
-            if not self.schema:
-                raise SerializationError("Avro schema not specified")
-            
-            writer = DatumWriter(self.schema)
-            bytes_writer = BytesIO()
-            encoder = BinaryEncoder(bytes_writer)
-            writer.write(value, encoder)
-            return bytes_writer.getvalue()
-        except Exception as e:
-            logger.error(f"Avro serialization error: {e}")
-            raise SerializationError(f"Avro serialization failed: {e}")
-    
-    def deserialize(self, data: bytes) -> Any:
-        """Deserialize Avro"""
-        try:
-            if not self.schema:
-                raise SerializationError("Avro schema not specified")
-            
-            reader = DatumReader(self.schema)
-            bytes_reader = BytesIO(data)
-            decoder = BinaryDecoder(bytes_reader)
-            return reader.read(decoder)
-        except Exception as e:
-            logger.error(f"Avro deserialization error: {e}")
-            raise SerializationError(f"Avro deserialization failed: {e}")
-    
-    def _validate_schema(self, schema):
-        """Validate Avro schema"""
-        try:
-            if isinstance(schema, str):
-                avro.schema.parse(schema)
-            elif isinstance(schema, avro.schema.Schema):
-                pass  # Already valid schema object
+    def _convert_from_serializable(self, data: Any) -> Any:
+        """Convert from serializable format back to original types"""
+        if data is None:
+            return None
+        elif isinstance(data, (str, int, float, bool, bytes)):
+            return data
+        elif isinstance(data, list):
+            return [self._convert_from_serializable(item) for item in data]
+        elif isinstance(data, dict):
+            # Check for special type markers
+            if '__type__' in data:
+                return self._restore_special_type(data)
             else:
-                raise ValueError("Invalid schema type")
-        except Exception as e:
-            raise SerializationError(f"Invalid Avro schema: {e}")
-
-class PickleSerializer:
-    """Python pickle serialization with security considerations"""
+                return {k: self._convert_from_serializable(v) for k, v in data.items()}
+        else:
+            return data
     
-    def __init__(self, protocol=None, fix_imports=True):
-        self.protocol = protocol
-        self.fix_imports = fix_imports
-    
-    def serialize(self, value: Any) -> bytes:
-        """Serialize using pickle"""
-        try:
-            return pickle.dumps(value, protocol=self.protocol, fix_imports=self.fix_imports)
-        except (pickle.PickleError, TypeError, AttributeError) as e:
-            logger.error(f"Pickle serialization error: {e}")
-            raise SerializationError(f"Pickle serialization failed: {e}")
-    
-    def deserialize(self, data: bytes) -> Any:
-        """Deserialize using pickle with security restrictions"""
-        try:
-            return pickle.loads(data, fix_imports=self.fix_imports)
-        except (pickle.PickleError, TypeError, AttributeError, ImportError) as e:
-            logger.error(f"Pickle deserialization error: {e}")
-            raise SerializationError(f"Pickle deserialization failed: {e}")
-
-class SerializationFactory:
-    """Factory for creating serializers"""
-    
-    @staticmethod
-    def create_serializer(format_type: SerializationFormat, **kwargs) -> Any:
-        """Create serializer instance based on format"""
-        serializers = {
-            SerializationFormat.JSON: JSONSerializer,
-            SerializationFormat.MSGPACK: MsgPackSerializer,
-            SerializationFormat.PROTOBUF: ProtobufSerializer,
-            SerializationFormat.AVRO: AvroSerializer,
-            SerializationFormat.PICKLE: PickleSerializer,
-        }
+    def _restore_special_type(self, data: dict) -> Any:
+        """Restore special types from serialized format"""
+        type_name = data.get('__type__')
         
-        if format_type not in serializers:
-            raise SerializationError(f"Unsupported serialization format: {format_type}")
-        
-        serializer_class = serializers[format_type]
-        
-        try:
-            return serializer_class(**kwargs)
-        except Exception as e:
-            raise SerializationError(f"Failed to create {format_type.name} serializer: {e}")
+        if type_name == 'datetime':
+            return datetime.fromisoformat(data['isoformat'])
+        elif type_name == 'date':
+            return date.fromisoformat(data['isoformat'])
+        elif type_name == 'decimal':
+            return Decimal(data['value'])
+        elif type_name == 'uuid':
+            return uuid.UUID(data['value'])
+        elif type_name == 'set':
+            return set(self._convert_from_serializable(data['values']))
+        elif type_name in ['dataclass', 'object']:
+            # Note: We can't fully reconstruct arbitrary objects without their classes
+            # Return the data dict for the application to handle
+            logger.debug(f"Returning serialized {type_name} data: {data['class']}")
+            return data['data']
+        else:
+            logger.warning(f"Unknown special type: {type_name}")
+            return data
 
-# Utility functions for common serialization tasks
-def serialize_to_format(value: Any, format_type: SerializationFormat, **kwargs) -> bytes:
-    """Convenience function for one-off serialization"""
-    serializer = SerializationFactory.create_serializer(format_type, **kwargs)
-    return serializer.serialize(value)
+# Global serializer instance for consistent usage
+DEFAULT_SERIALIZER = MsgPackSerializer(
+    use_bin_type=True,
+    strict_types=False,
+    datetime_support=True
+)
 
-def deserialize_from_format(data: bytes, format_type: SerializationFormat, **kwargs) -> Any:
-    """Convenience function for one-off deserialization"""
-    serializer = SerializationFactory.create_serializer(format_type, **kwargs)
-    return serializer.deserialize(data)
+# Convenience functions for easy usage
+def serialize(value: Any) -> bytes:
+    """Serialize value using the default MsgPack serializer"""
+    return DEFAULT_SERIALIZER.serialize(value)
 
-def detect_serialization_format(data: bytes) -> Optional[SerializationFormat]:
-    """Attempt to detect the serialization format of given data"""
-    if not data:
-        return None
-    
-    # Check for JSON (starts with { or [)
-    try:
-        first_char = data[:1].decode('utf-8', errors='ignore')
-        if first_char in ('{', '['):
-            json.loads(data.decode('utf-8'))
-            return SerializationFormat.JSON
-    except:
-        pass
-    
-    # Check for MessagePack
-    try:
-        msgpack.unpackb(data)
-        return SerializationFormat.MSGPACK
-    except:
-        pass
-    
-    # Check for Pickle (heuristic)
-    try:
-        if data.startswith(b'\x80'):  # Common pickle protocol marker
-            return SerializationFormat.PICKLE
-    except:
-        pass
-    
-    return None
+def deserialize(data: bytes) -> Any:
+    """Deserialize data using the default MsgPack serializer"""
+    return DEFAULT_SERIALIZER.deserialize(data)
+
+def create_serializer(**kwargs) -> MsgPackSerializer:
+    """Create a customized MsgPack serializer"""
+    return MsgPackSerializer(**kwargs)
