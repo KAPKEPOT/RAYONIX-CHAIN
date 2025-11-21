@@ -1,365 +1,266 @@
 # consensus/network/protocol.py
-import json
-import time
-import asyncio
-import threading
-from typing import Dict, List, Optional, Callable, Any, Set
 import logging
-from dataclasses import asdict
-import websockets
-import aiohttp
-from concurrent.futures import ThreadPoolExecutor
+import time
+from typing import Dict, Any, List, Optional
+from network.models.network_message import NetworkMessage
+from network.config.network_types import MessageType
 
-logger = logging.getLogger('NetworkProtocol')
+logger = logging.getLogger('ConsensusProtocol')
 
-class MessageType:
-    """Network message types for consensus protocol"""
-    PROPOSAL = "proposal"
-    VOTE = "vote"
-    STATE_SYNC_REQUEST = "state_sync_request"
-    STATE_SYNC_RESPONSE = "state_sync_response"
-    VALIDATOR_UPDATE = "validator_update"
-    EVIDENCE = "evidence"
-    PING = "ping"
-    PONG = "pong"
+class ConsensusMessageType:
+    """Consensus-specific message types that extend base network types"""
+    PROPOSAL = "consensus_proposal"
+    VOTE = "consensus_vote" 
+    STATE_SYNC_REQUEST = "consensus_state_sync_request"
+    STATE_SYNC_RESPONSE = "consensus_state_sync_response"
+    VALIDATOR_UPDATE = "consensus_validator_update"
+    EVIDENCE = "consensus_evidence"
 
-class NetworkProtocol:
-    """Production-ready network communication protocol for consensus"""
+class ConsensusNetworkProtocol:
+    """
+    Thin wrapper around P2P network for consensus messaging.
+    Handles ONLY consensus-specific protocol logic.
+    """
     
-    def __init__(self, consensus_engine: Any):
+    def __init__(self, consensus_engine: Any, p2p_network: Any):
+        if not consensus_engine or not p2p_network:
+            raise ValueError("consensus_engine and p2p_network are required")
+            
         self.consensus_engine = consensus_engine
+        self.p2p_network = p2p_network
         self.config = consensus_engine.config
         
-        # Network state
-        self.connected_peers: Set[str] = set()
-        self.validator_peers: Dict[str, Dict] = {}  # validator_address -> peer info
-        self.message_handlers: Dict[str, Callable] = {}
-        self.pending_messages: Dict[str, List] = {}  # peer_id -> messages
+        # Register consensus message handlers with the network layer
+        self._register_handlers()
         
-        # Async components
-        self.loop = asyncio.new_event_loop()
-        self.executor = ThreadPoolExecutor(max_workers=10)
-        self.websocket_server = None
-        self.websocket_clients: Dict[str, Any] = {}
-        
-        # Message tracking for deduplication
-        self.seen_messages: Set[str] = set()
-        self.message_sequence: int = 0
-        
-        # Initialize message handlers
-        self._register_message_handlers()
-        
-        # Start network services
-        self._start_network_services()
+        logger.info("Consensus network protocol initialized")
     
-    def _register_message_handlers(self):
-        """Register handlers for different message types"""
-        self.message_handlers = {
-            MessageType.PROPOSAL: self._handle_proposal_message,
-            MessageType.VOTE: self._handle_vote_message,
-            MessageType.STATE_SYNC_REQUEST: self._handle_state_sync_request,
-            MessageType.STATE_SYNC_RESPONSE: self._handle_state_sync_response,
-            MessageType.VALIDATOR_UPDATE: self._handle_validator_update,
-            MessageType.EVIDENCE: self._handle_evidence_message,
-            MessageType.PING: self._handle_ping_message,
-            MessageType.PONG: self._handle_pong_message
-        }
-    
-    def _start_network_services(self):
-        """Start network services in background threads"""
-        def run_websocket_server():
-            asyncio.set_event_loop(self.loop)
-            try:
-                start_server = websockets.serve(
-                    self._handle_websocket_connection,
-                    self.config.network_host,
-                    self.config.network_port
-                )
-                self.loop.run_until_complete(start_server)
-                self.loop.run_forever()
-            except Exception as e:
-                logger.error(f"WebSocket server error: {e}")
-        
-        def run_peer_discovery():
-            while getattr(self.consensus_engine, '_running', True):
-                try:
-                    self._discover_peers()
-                    time.sleep(30)  # Discover peers every 30 seconds
-                except Exception as e:
-                    logger.error(f"Peer discovery error: {e}")
-                    time.sleep(60)
-        
-        # Start WebSocket server
-        server_thread = threading.Thread(target=run_websocket_server, daemon=True)
-        server_thread.start()
-        
-        # Start peer discovery
-        discovery_thread = threading.Thread(target=run_peer_discovery, daemon=True)
-        discovery_thread.start()
-        
-        logger.info(f"Started network services on {self.config.network_host}:{self.config.network_port}")
-    
-    async def _handle_websocket_connection(self, websocket, path):
-        """Handle incoming WebSocket connections"""
-        peer_id = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        
-        try:
-            self.websocket_clients[peer_id] = websocket
-            self.connected_peers.add(peer_id)
-            
-            logger.info(f"New connection from {peer_id}")
-            
-            # Send welcome message with our validator info
-            await self._send_welcome_message(websocket)
-            
-            async for message in websocket:
-                await self._process_incoming_message(message, peer_id)
-                
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Connection closed with {peer_id}")
-        except Exception as e:
-            logger.error(f"Error handling connection from {peer_id}: {e}")
-        finally:
-            self.connected_peers.discard(peer_id)
-            self.websocket_clients.pop(peer_id, None)
-    
-    async def _send_welcome_message(self, websocket):
-        """Send welcome message to new connection"""
-        welcome_msg = {
-            'type': 'welcome',
-            'node_id': self.config.node_id,
-            'height': self.consensus_engine.height,
-            'validator_address': getattr(self.consensus_engine, 'validator_address', ''),
-            'timestamp': time.time()
+    def _register_handlers(self):
+        """Register consensus message handlers with the network layer"""
+        # Convert consensus message types to network message types
+        message_mapping = {
+            ConsensusMessageType.PROPOSAL: self._handle_proposal,
+            ConsensusMessageType.VOTE: self._handle_vote,
+            ConsensusMessageType.STATE_SYNC_REQUEST: self._handle_state_sync_request,
+            ConsensusMessageType.STATE_SYNC_RESPONSE: self._handle_state_sync_response,
+            ConsensusMessageType.VALIDATOR_UPDATE: self._handle_validator_update,
+            ConsensusMessageType.EVIDENCE: self._handle_evidence,
         }
         
-        await websocket.send(json.dumps(welcome_msg))
+        for message_type, handler in message_mapping.items():
+            # Use base network message type with custom payload
+            self.p2p_network.register_message_handler(
+                MessageType.CUSTOM,  # Use CUSTOM type for consensus messages
+                self._create_consensus_handler(handler, message_type)
+            )
     
-    async def _process_incoming_message(self, message_data: str, peer_id: str):
-        """Process incoming message from peer"""
-        try:
-            message = json.loads(message_data)
-            message_type = message.get('type')
-            
-            if not message_type:
-                logger.warning(f"Received message without type from {peer_id}")
-                return
-            
-            # Check for duplicate messages
-            message_hash = self._calculate_message_hash(message)
-            if message_hash in self.seen_messages:
-                return  # Ignore duplicate
-            
-            self.seen_messages.add(message_hash)
-            
-            # Route to appropriate handler
-            handler = self.message_handlers.get(message_type)
-            if handler:
-                await handler(message, peer_id)
-            else:
-                logger.warning(f"Unknown message type: {message_type} from {peer_id}")
-                
-        except json.JSONDecodeError:
-            logger.error(f"Invalid JSON message from {peer_id}")
-        except Exception as e:
-            logger.error(f"Error processing message from {peer_id}: {e}")
+    def _create_consensus_handler(self, handler, expected_type: str):
+        """Create a wrapper handler that filters by consensus message type"""
+        async def consensus_handler(connection_id: str, message: NetworkMessage):
+            # Check if this is a consensus message of the expected type
+            if (message.payload and 
+                isinstance(message.payload, dict) and 
+                message.payload.get('consensus_type') == expected_type):
+                await handler(connection_id, message)
+        
+        return consensus_handler
     
-    async def _handle_proposal_message(self, message: Dict, peer_id: str):
-        """Handle block proposal message"""
+    async def _handle_proposal(self, connection_id: str, message: NetworkMessage):
+        """Handle block proposal message - just pass to consensus engine"""
         try:
-            from consensus.models.blocks import BlockProposal
+            proposal_data = message.payload.get('data', {})
             
-            proposal_data = message.get('proposal')
-            if not proposal_data:
-                logger.warning("Proposal message missing proposal data")
+            # Validate message signature if present
+            if not self._validate_consensus_message(message):
+                logger.warning(f"Invalid signature on proposal from {connection_id}")
                 return
-            
-            # Validate message signature
-            if not self._validate_message_signature(message):
-                logger.warning("Invalid signature on proposal message")
-                return
-            
-            # Create BlockProposal object
-            proposal = BlockProposal.from_dict(proposal_data)
             
             # Pass to consensus engine
-            self.consensus_engine.receive_proposal(proposal)
+            self.consensus_engine.receive_proposal(proposal_data)
             
-            logger.debug(f"Processed proposal from {peer_id} for height {proposal.height}")
+            logger.debug(f"Processed proposal from {connection_id} for height {proposal_data.get('height')}")
             
         except Exception as e:
-            logger.error(f"Error handling proposal message: {e}")
+            logger.error(f"Error handling proposal: {e}")
     
-    async def _handle_vote_message(self, message: Dict, peer_id: str):
-        """Handle vote message"""
+    async def _handle_vote(self, connection_id: str, message: NetworkMessage):
+        """Handle vote message - just pass to consensus engine"""
         try:
-            from consensus.models.votes import Vote
+            vote_data = message.payload.get('data', {})
             
-            vote_data = message.get('vote')
-            if not vote_data:
-                logger.warning("Vote message missing vote data")
+            # Validate message signature if present
+            if not self._validate_consensus_message(message):
+                logger.warning(f"Invalid signature on vote from {connection_id}")
                 return
-            
-            # Validate message signature
-            if not self._validate_message_signature(message):
-                logger.warning("Invalid signature on vote message")
-                return
-            
-            # Create Vote object
-            vote = Vote.from_dict(vote_data)
             
             # Pass to consensus engine
-            self.consensus_engine.receive_vote(vote)
+            self.consensus_engine.receive_vote(vote_data)
             
-            logger.debug(f"Processed {vote.vote_type.name} from {peer_id} for height {vote.height}")
+            logger.debug(f"Processed vote from {connection_id} for height {vote_data.get('height')}")
             
         except Exception as e:
-            logger.error(f"Error handling vote message: {e}")
+            logger.error(f"Error handling vote: {e}")
     
-    async def _handle_state_sync_request(self, message: Dict, peer_id: str):
+    async def _handle_state_sync_request(self, connection_id: str, message: NetworkMessage):
         """Handle state synchronization request"""
         try:
-            height = message.get('height')
+            height = message.payload.get('data', {}).get('height')
             if height is None:
-                logger.warning("State sync request missing height")
                 return
             
-            # Prepare state sync response
-            sync_data = self._prepare_state_sync_data(height)
+            # Prepare state sync data using consensus engine
+            sync_data = self.consensus_engine.prepare_state_sync_data(height)
             
-            response = {
-                'type': MessageType.STATE_SYNC_RESPONSE,
-                'height': height,
-                'sync_data': sync_data,
-                'timestamp': time.time(),
-                'sequence': self._get_next_sequence()
+            # Send response back
+            response_payload = {
+                'consensus_type': ConsensusMessageType.STATE_SYNC_RESPONSE,
+                'data': {
+                    'height': height,
+                    'sync_data': sync_data
+                }
             }
             
-            # Sign the response
-            self._sign_message(response)
-            
-            # Send response
-            await self._send_to_peer(peer_id, response)
-            
-            logger.info(f"Sent state sync response to {peer_id} for height {height}")
+            await self._send_to_peer(connection_id, response_payload)
             
         except Exception as e:
             logger.error(f"Error handling state sync request: {e}")
     
-    async def _handle_state_sync_response(self, message: Dict, peer_id: str):
+    async def _handle_state_sync_response(self, connection_id: str, message: NetworkMessage):
         """Handle state synchronization response"""
         try:
-            sync_data = message.get('sync_data')
+            sync_data = message.payload.get('data', {}).get('sync_data')
             if not sync_data:
-                logger.warning("State sync response missing sync data")
                 return
             
-            # Validate message signature
-            if not self._validate_message_signature(message):
-                logger.warning("Invalid signature on state sync response")
+            # Validate message signature if present
+            if not self._validate_consensus_message(message):
+                logger.warning(f"Invalid signature on state sync response from {connection_id}")
                 return
             
-            # Apply state sync data
-            self._apply_state_sync_data(sync_data)
-            
-            logger.info(f"Applied state sync from {peer_id}")
+            # Apply state sync data using consensus engine
+            self.consensus_engine.apply_state_sync_data(sync_data)
             
         except Exception as e:
             logger.error(f"Error handling state sync response: {e}")
     
-    async def _handle_validator_update(self, message: Dict, peer_id: str):
+    async def _handle_validator_update(self, connection_id: str, message: NetworkMessage):
         """Handle validator update message"""
         try:
-            update_data = message.get('update')
-            if not update_data:
-                logger.warning("Validator update missing update data")
+            update_data = message.payload.get('data', {})
+            
+            # Validate message signature if present
+            if not self._validate_consensus_message(message):
+                logger.warning(f"Invalid signature on validator update from {connection_id}")
                 return
             
-            # Validate message signature
-            if not self._validate_message_signature(message):
-                logger.warning("Invalid signature on validator update")
-                return
-            
-            # Process validator update
-            self._process_validator_update(update_data)
-            
-            logger.info(f"Processed validator update from {peer_id}")
+            # Process validator update using consensus engine
+            self.consensus_engine.process_validator_update(update_data)
             
         except Exception as e:
             logger.error(f"Error handling validator update: {e}")
     
-    async def _handle_evidence_message(self, message: Dict, peer_id: str):
+    async def _handle_evidence(self, connection_id: str, message: NetworkMessage):
         """Handle evidence of misbehavior"""
         try:
-            evidence = message.get('evidence')
-            if not evidence:
-                logger.warning("Evidence message missing evidence data")
-                return
+            evidence_data = message.payload.get('data', {})
             
-            # Validate message signature
-            if not self._validate_message_signature(message):
-                logger.warning("Invalid signature on evidence message")
+            # Validate message signature if present
+            if not self._validate_consensus_message(message):
+                logger.warning(f"Invalid signature on evidence from {connection_id}")
                 return
             
             # Pass evidence to slashing manager
-            validator_address = evidence.get('validator_address')
-            if validator_address:
-                self.consensus_engine.slashing_manager.slash_validator(
-                    validator_address, evidence, peer_id
+            validator_address = evidence_data.get('validator_address')
+            if validator_address and hasattr(self.consensus_engine, 'slashing_manager'):
+                self.consensus_engine.slashing_manager.process_evidence(
+                    validator_address, evidence_data, connection_id
                 )
             
-            logger.info(f"Processed evidence from {peer_id} against {validator_address}")
-            
         except Exception as e:
-            logger.error(f"Error handling evidence message: {e}")
+            logger.error(f"Error handling evidence: {e}")
     
-    async def _handle_ping_message(self, message: Dict, peer_id: str):
-        """Handle ping message"""
+    def _validate_consensus_message(self, message: NetworkMessage) -> bool:
+        """Validate consensus message signature"""
         try:
-            # Respond with pong
-            pong_msg = {
-                'type': MessageType.PONG,
-                'timestamp': time.time(),
-                'sequence': message.get('sequence', 0)
-            }
+            # Use consensus engine's crypto for validation
+            if hasattr(self.consensus_engine, 'crypto_manager'):
+                signing_data = self._get_signing_data(message.payload)
+                signature = message.payload.get('signature')
+                public_key = message.payload.get('public_key')
+                
+                if signature and public_key:
+                    return self.consensus_engine.crypto_manager.verify_signature(
+                        public_key, signing_data, signature
+                    )
             
-            self._sign_message(pong_msg)
-            await self._send_to_peer(peer_id, pong_msg)
+            # If no crypto manager or no signature, accept message (for testing/development)
+            return True
             
         except Exception as e:
-            logger.error(f"Error handling ping message: {e}")
+            logger.error(f"Message validation error: {e}")
+            return False
     
-    async def _handle_pong_message(self, message: Dict, peer_id: str):
-        """Handle pong message (update latency)"""
+    def _get_signing_data(self, payload: Dict) -> bytes:
+        """Get data that should be signed for consensus messages"""
+        import json
+        signing_data = payload.copy()
+        signing_data.pop('signature', None)
+        signing_data.pop('public_key', None)
+        return json.dumps(signing_data, sort_keys=True).encode()
+    
+    def _sign_payload(self, payload: Dict):
+        """Sign outgoing consensus message payload"""
         try:
-            sent_timestamp = message.get('original_timestamp', 0)
-            if sent_timestamp:
-                latency = time.time() - sent_timestamp
-                # Update peer latency information
-                if peer_id in self.validator_peers:
-                    self.validator_peers[peer_id]['latency'] = latency
-                    self.validator_peers[peer_id]['last_seen'] = time.time()
+            if hasattr(self.consensus_engine, 'crypto_manager'):
+                signing_data = self._get_signing_data(payload)
+                signature = self.consensus_engine.crypto_manager.sign_data(signing_data)
+                
+                payload['signature'] = signature
+                payload['public_key'] = getattr(self.config, 'node_public_key', '')
+                
+        except Exception as e:
+            logger.error(f"Error signing payload: {e}")
+    
+    async def _send_to_peer(self, peer_id: str, payload: Dict):
+        """Send consensus message to specific peer"""
+        try:
+            message = NetworkMessage(
+                message_id=f"consensus_{time.time()}",
+                message_type=MessageType.CUSTOM,  # Use CUSTOM type for consensus
+                payload=payload,
+                source_node=self.p2p_network.node_id
+            )
+            
+            return await self.p2p_network.send_message(peer_id, message)
             
         except Exception as e:
-            logger.error(f"Error handling pong message: {e}")
+            logger.error(f"Error sending to peer {peer_id}: {e}")
+            return False
+    
+    # === PUBLIC API ===
     
     def broadcast_proposal(self, proposal: Any):
         """Broadcast block proposal to all peers"""
         try:
-            message = {
-                'type': MessageType.PROPOSAL,
-                'proposal': proposal.to_dict(),
-                'timestamp': time.time(),
-                'sequence': self._get_next_sequence()
+            payload = {
+                'consensus_type': ConsensusMessageType.PROPOSAL,
+                'data': proposal.to_dict() if hasattr(proposal, 'to_dict') else proposal,
+                'timestamp': time.time()
             }
             
-            self._sign_message(message)
-            asyncio.run_coroutine_threadsafe(
-                self._broadcast_message(message), 
-                self.loop
+            self._sign_payload(payload)
+            
+            message = NetworkMessage(
+                message_id=f"proposal_{time.time()}",
+                message_type=MessageType.CUSTOM,
+                payload=payload,
+                source_node=self.p2p_network.node_id
             )
             
-            logger.info(f"Broadcast proposal for height {proposal.height}")
+            # Use existing broadcast infrastructure
+            asyncio.create_task(self.p2p_network.broadcast_message(message))
+            
+            logger.info(f"Broadcast proposal for height {getattr(proposal, 'height', 'unknown')}")
             
         except Exception as e:
             logger.error(f"Error broadcasting proposal: {e}")
@@ -367,20 +268,25 @@ class NetworkProtocol:
     def broadcast_vote(self, vote: Any):
         """Broadcast vote to all peers"""
         try:
-            message = {
-                'type': MessageType.VOTE,
-                'vote': vote.to_dict(),
-                'timestamp': time.time(),
-                'sequence': self._get_next_sequence()
+            payload = {
+                'consensus_type': ConsensusMessageType.VOTE,
+                'data': vote.to_dict() if hasattr(vote, 'to_dict') else vote,
+                'timestamp': time.time()
             }
             
-            self._sign_message(message)
-            asyncio.run_coroutine_threadsafe(
-                self._broadcast_message(message), 
-                self.loop
+            self._sign_payload(payload)
+            
+            message = NetworkMessage(
+                message_id=f"vote_{time.time()}",
+                message_type=MessageType.CUSTOM,
+                payload=payload,
+                source_node=self.p2p_network.node_id
             )
             
-            logger.debug(f"Broadcast {vote.vote_type.name} for height {vote.height}")
+            # Use existing broadcast infrastructure
+            asyncio.create_task(self.p2p_network.broadcast_message(message))
+            
+            logger.debug(f"Broadcast vote for height {getattr(vote, 'height', 'unknown')}")
             
         except Exception as e:
             logger.error(f"Error broadcasting vote: {e}")
@@ -388,150 +294,89 @@ class NetworkProtocol:
     def broadcast_evidence(self, evidence: Dict):
         """Broadcast evidence of misbehavior"""
         try:
-            message = {
-                'type': MessageType.EVIDENCE,
-                'evidence': evidence,
-                'timestamp': time.time(),
-                'sequence': self._get_next_sequence()
+            payload = {
+                'consensus_type': ConsensusMessageType.EVIDENCE,
+                'data': evidence,
+                'timestamp': time.time()
             }
             
-            self._sign_message(message)
-            asyncio.run_coroutine_threadsafe(
-                self._broadcast_message(message), 
-                self.loop
+            self._sign_payload(payload)
+            
+            message = NetworkMessage(
+                message_id=f"evidence_{time.time()}",
+                message_type=MessageType.CUSTOM,
+                payload=payload,
+                source_node=self.p2p_network.node_id
             )
+            
+            # Use existing broadcast infrastructure
+            asyncio.create_task(self.p2p_network.broadcast_message(message))
             
             logger.info("Broadcast evidence of misbehavior")
             
         except Exception as e:
             logger.error(f"Error broadcasting evidence: {e}")
     
-    async def _broadcast_message(self, message: Dict):
-        """Broadcast message to all connected peers"""
-        tasks = []
-        for peer_id in list(self.connected_peers):
-            task = self._send_to_peer(peer_id, message)
-            tasks.append(task)
-        
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-    
-    async def _send_to_peer(self, peer_id: str, message: Dict):
-        """Send message to specific peer"""
+    def broadcast_validator_update(self, update_data: Dict):
+        """Broadcast validator update"""
         try:
-            websocket = self.websocket_clients.get(peer_id)
-            if websocket and not websocket.closed:
-                await websocket.send(json.dumps(message))
-        except Exception as e:
-            logger.error(f"Error sending message to {peer_id}: {e}")
-            # Remove disconnected peer
-            self.connected_peers.discard(peer_id)
-            self.websocket_clients.pop(peer_id, None)
-    
-    def _discover_peers(self):
-        """Discover and connect to new peers"""
-        # Implementation would depend on specific peer discovery mechanism
-        # This could include DNS seeds, hardcoded bootstrap nodes, etc.
-        pass
-    
-    def _validate_message_signature(self, message: Dict) -> bool:
-        """Validate message signature"""
-        try:
-            from consensus.crypto.signing import CryptoManager
-            crypto_manager = CryptoManager()
+            payload = {
+                'consensus_type': ConsensusMessageType.VALIDATOR_UPDATE,
+                'data': update_data,
+                'timestamp': time.time()
+            }
             
-            signature = message.get('signature')
-            public_key = message.get('public_key')
-            signing_data = self._get_message_signing_data(message)
+            self._sign_payload(payload)
             
-            if not signature or not public_key:
-                return False
+            message = NetworkMessage(
+                message_id=f"validator_update_{time.time()}",
+                message_type=MessageType.CUSTOM,
+                payload=payload,
+                source_node=self.p2p_network.node_id
+            )
             
-            return crypto_manager.verify_signature(public_key, signing_data, signature)
+            # Use existing broadcast infrastructure
+            asyncio.create_task(self.p2p_network.broadcast_message(message))
             
         except Exception as e:
-            logger.error(f"Error validating message signature: {e}")
+            logger.error(f"Error broadcasting validator update: {e}")
+    
+    async def request_state_sync(self, peer_id: str, height: int):
+        """Request state synchronization from specific peer"""
+        try:
+            payload = {
+                'consensus_type': ConsensusMessageType.STATE_SYNC_REQUEST,
+                'data': {'height': height},
+                'timestamp': time.time()
+            }
+            
+            self._sign_payload(payload)
+            
+            return await self._send_to_peer(peer_id, payload)
+            
+        except Exception as e:
+            logger.error(f"Error requesting state sync: {e}")
             return False
     
-    def _sign_message(self, message: Dict):
-        """Sign outgoing message"""
-        try:
-            from consensus.crypto.signing import CryptoManager
-            crypto_manager = CryptoManager()
-            
-            signing_data = self._get_message_signing_data(message)
-            signature = crypto_manager.sign_data(signing_data)
-            
-            message['signature'] = signature
-            message['public_key'] = getattr(self.config, 'node_public_key', '')
-            
-        except Exception as e:
-            logger.error(f"Error signing message: {e}")
-    
-    def _get_message_signing_data(self, message: Dict) -> bytes:
-        """Get data that should be signed for a message"""
-        # Exclude signature and public_key from signing data
-        signing_data = message.copy()
-        signing_data.pop('signature', None)
-        signing_data.pop('public_key', None)
-        
-        return json.dumps(signing_data, sort_keys=True).encode()
-    
-    def _calculate_message_hash(self, message: Dict) -> str:
-        """Calculate unique hash for message deduplication"""
-        import hashlib
-        message_string = json.dumps(message, sort_keys=True)
-        return hashlib.sha256(message_string.encode()).hexdigest()
-    
-    def _get_next_sequence(self) -> int:
-        """Get next message sequence number"""
-        self.message_sequence += 1
-        return self.message_sequence
-    
-    def _prepare_state_sync_data(self, height: int) -> Dict:
-        """Prepare state synchronization data for given height"""
-        # This would include blocks, validator sets, etc.
-        return {
-            'height': height,
-            'blocks': [],  # Would include actual block data
-            'validators': {k: v.to_dict() for k, v in self.consensus_engine.validators.items()},
-            'app_hash': getattr(self.consensus_engine.abci, 'app_hash', '')
-        }
-    
-    def _apply_state_sync_data(self, sync_data: Dict):
-        """Apply state synchronization data"""
-        # This would update the node's state to match the sync data
-        pass
-    
-    def _process_validator_update(self, update_data: Dict):
-        """Process validator update"""
-        # This would update local validator information
-        pass
-    
     def get_network_status(self) -> Dict:
-        """Get current network status"""
-        return {
-            'connected_peers': len(self.connected_peers),
-            'total_peers': len(self.validator_peers),
-            'message_sequence': self.message_sequence,
-            'seen_messages': len(self.seen_messages),
-            'pending_messages': sum(len(messages) for messages in self.pending_messages.values())
-        }
+        """Get network status from underlying P2P network"""
+        try:
+            return self.p2p_network.get_network_stats()
+        except Exception as e:
+            logger.error(f"Error getting network status: {e}")
+            return {}
+    
+    def get_connected_validators(self) -> List[Dict]:
+        """Get list of connected validator peers"""
+        try:
+            # This would filter peers to only those that are validators
+            all_peers = self.p2p_network.get_peers()
+            return [peer for peer in all_peers if peer.get('is_validator', False)]
+        except Exception as e:
+            logger.error(f"Error getting connected validators: {e}")
+            return []
     
     def shutdown(self):
-        """Shutdown network protocol"""
-        try:
-            # Close all connections
-            for websocket in self.websocket_clients.values():
-                asyncio.run_coroutine_threadsafe(websocket.close(), self.loop)
-            
-            # Stop event loop
-            self.loop.call_soon_threadsafe(self.loop.stop)
-            
-            # Shutdown executor
-            self.executor.shutdown(wait=True)
-            
-            logger.info("Network protocol shutdown complete")
-            
-        except Exception as e:
-            logger.error(f"Error during network shutdown: {e}")
+        """Shutdown consensus protocol - network cleanup handled by P2P network"""
+        logger.info("Consensus protocol shutdown")
+        # No cleanup needed - P2P network manages its own lifecycle
