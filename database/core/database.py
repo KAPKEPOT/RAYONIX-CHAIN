@@ -819,25 +819,30 @@ class AdvancedDatabase:
         	if not isinstance(serialized_value, bytes):
         		raise TypeError(f"Serialized value must be bytes, got {type(serialized_value)}")
         	
-        	original_value = serialized_value
+        	# Make a copy to avoid modifying the original
+        	value_to_store = serialized_value
+        	compression_used = 'NONE'
+        	
+        	#original_value = serialized_value
         	
         	# Compress if enabled and data is compressible
-        	if self.compression and len(original_value) > 100:
+        	if self.compression and len(value_to_store) > 100:
+        	#if self.compression and len(original_value) > 100:
         		try:
-        			serialized_value = self.compression.compress(original_value)
+        			value_to_store = self.compression.compress(value_to_store)
         			compression_used = 'ZSTD'
         		except Exception as e:
         			logger.warning(f"Zstandard compression failed, storing uncompressed: {e}")
-        			serialized_value = original_value
+        			#serialized_value = original_value
         			compression_used = 'NONE'
         	
-        	else:
-        		compression_used = 'NONE'
+        	#else:
+        		#compression_used = 'NONE'
         	
         	# Encrypt if enabled
         	if self.encryption:
         		try:
-        			serialized_value = self.encryption.encrypt(serialized_value)
+        			value_to_store = self.encryption.encrypt(value_to_store)
         			encryption_used = self.config.encryption.name
         		
         		except EncryptionError as e:
@@ -851,12 +856,12 @@ class AdvancedDatabase:
         	    
         	    'timestamp': time.time(),
         	    'ttl': ttl,
-        	    'checksum': self._calculate_checksum(serialized_value),
+        	    'checksum': self._calculate_checksum(value_to_store),
         	    'version': 2,
         	    'compression': compression_used,
         	    'encryption': encryption_used,
         	    'original_size': len(original_value),
-        	    'stored_size': len(serialized_value)
+        	    'stored_size': len(value_to_store)
         	}
         	
         	# Pack metadata and value with error handling
@@ -864,9 +869,15 @@ class AdvancedDatabase:
         		metadata_bytes = msgpack.packb(metadata, use_bin_type=True)
         		metadata_len = len(metadata_bytes)
         		
+        		# Validate metadata length is reasonable
+        		MAX_REASONABLE_METADATA_SIZE = 1 * 1024 * 1024  # 1MB max for metadata
+        		
+        		if metadata_len > MAX_REASONABLE_METADATA_SIZE:
+        			raise DatabaseError(f"Metadata too large: {metadata_len} bytes")
+        		
         		# Use struct to pack length (4 bytes for length)
         		header = struct.pack('!I', metadata_len)
-        		return header + metadata_bytes + serialized_value
+        		return header + metadata_bytes + value_to_store
         		
         	except (struct.error, msgpack.PackException) as e:
         		raise DatabaseError(f"Metadata packing failed: {e}")
