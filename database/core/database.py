@@ -260,8 +260,8 @@ class AdvancedDatabase:
         if not key_bytes:
             raise DatabaseError("Key cannot be empty")
             
-        #if value is None:
-           # raise DatabaseError("Value cannot be None")
+        if value is None:
+            raise DatabaseError("Value cannot be None")
         
         with self.locks['db']:
             try:
@@ -353,6 +353,10 @@ class AdvancedDatabase:
         if verify_integrity and use_cache:
         	with self.locks['cache']:
         		# Remove from cache to force storage read
+        		self.cache.pop(key_bytes, None)
+        
+        if force_refresh and use_cache:
+        	with self.locks['cache']:
         		self.cache.pop(key_bytes, None)
         
         # Check cache first (if still enabled after potential invalidation)
@@ -950,25 +954,25 @@ class AdvancedDatabase:
             	logger.warning("No checksum found in metadata, skipping verification")
             
             # Now process the data
-            value_bytes = encrypted_compressed_data
+            processed_data = encrypted_compressed_data
             	
             # Decrypt if enabled
             if metadata['encryption'] != 'NONE' and self.encryption:
             	try:
-            		value_bytes = self.encryption.decrypt(value_bytes)
+            		processed_data = self.encryption.decrypt(processed_data)
             	except EncryptionError as e:
             		raise DatabaseError(f"Decryption failed: {e}")
             	
             # Decompress if enabled
             if metadata['compression'] == 'ZSTD' and self.compression:
             	try:
-            		value_bytes = self.compression.decompress(value_bytes)
+            		processed_data = self.compression.decompress(processed_data)
             	except Exception as e:
             		raise DatabaseError(f"Zstandard decompression failed: {e}")
             	
             # Deserialize value
             try:
-            	value = self._deserialize_value(value_bytes)
+            	value = self._deserialize_value(processed_data)
             except SerializationError as e:
             	raise DatabaseError(f"Deserialization failed: {e}")
             return value, metadata
