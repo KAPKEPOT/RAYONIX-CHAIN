@@ -1,6 +1,6 @@
 """
-Utility helpers for RAYONIX blockchain node - Production Ready
-Comprehensive utilities for logging, configuration, file management, and system operations
+Utility helpers for RAYONIX blockchain node 
+Utilities for logging, configuration, file management, and system operations
 """
 
 import os
