@@ -89,7 +89,7 @@ rayonix> help send               # Get detailed help for specific command
 
 ### 📋 Complete Command Reference
 
-#### 👛 Wallet Commands
+###### 👛 Wallet Commands
 
 ```
 create-wallet      # Create a new wallet
@@ -103,7 +103,7 @@ wallet-info        # Show detailed wallet information
 send               # Send coins to address
 ```
 
-#### ⛓️ Blockchain Commands
+###### ⛓️ Blockchain Commands
 
 ```
 blockchain-info    # Show detailed blockchain information
@@ -114,21 +114,21 @@ mempool            # Show mempool information
 sync-status        # Show synchronization status
 ```
 
-#### 🌐 Network Commands
+###### 🌐 Network Commands
 
 ```
 network            # Show network statistics
 peers              # Show connected peers with details
 ```
 
-#### 🖥️ Node Commands
+###### 🖥️ Node Commands
 
 ```
 info               # Show detailed node information
 status             # Show node status
 ```
 
-#### ⚡ Staking & Validation
+###### ⚡ Staking & Validation
 
 ```
 stake              # Stake tokens for validation
@@ -136,7 +136,7 @@ staking            # Show staking information
 validator-info     # Show validator information
 ```
 
-#### 🤖 Smart Contracts
+###### 🤖 Smart Contracts
 
 ```
 deploy-contract    # Deploy smart contract
@@ -144,16 +144,16 @@ call-contract      # Call contract function
 contracts          # List smart contracts
 ```
 
-#### ⚙️ System Commands
+###### ⚙️ System Commands
 
 ```
 config             # Show configuration information
 stats              # Show CLI statistics
 ```
 
-#### 🛠️ For Developers
+###### 🛠️ For Developers
 
-##### Project Structure
+###### Project Structure
 
 
 ```
@@ -190,12 +190,12 @@ RAYONIX-CHAIN/
 #### Package Installation
 
 ***bash***
-# Install as editable package
+###### Install as editable package
 ```
 pip install -e .
 ```
 
-# Use command-line tools (after installation)
+###### Use command-line tools (after installation)
 ```
 rayonix-node    # Start node daemon
 ```
