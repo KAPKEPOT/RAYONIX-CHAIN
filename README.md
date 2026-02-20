@@ -21,31 +21,31 @@ A complete blockchain implementation with Proof-of-Stake consensus, smart contra
 1. **Install & Setup**
 
 bash
-# Clone and enter
+ Clone and enter
 ```
 git clone https://github.com/KAPKEPOT/RAYONIX-CHAIN.git
 cd RAYONIX-CHAIN
 ```
 
-# Install dependencies
+###### Install dependencies
 ```
 pip install -r requirements.txt
 ```
 
-2. Start Blockchain Node
+**2. Start Blockchain Node**
 
 ***bash***
-# Terminal 1 - Run the node daemon
+###### Terminal 1 - Run the node daemon
 ```
 ./rayonixd.py
 ```
 
 Wait for node to start up and begin syncing
 
-3. Use the Interactive Client
+**3. Use the Interactive Client**
 
 ***bash***
-# Terminal 2 - Open the CLI client
+##### Terminal 2 - Open the CLI client
 ```
 ./rayonix_cli.py
 ```
