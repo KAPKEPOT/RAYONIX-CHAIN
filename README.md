@@ -16,23 +16,27 @@ A complete blockchain implementation with Proof-of-Stake consensus, smart contra
 
 
 
-🚀 Get Started in 2 Minutes
+### 🚀 Get Started in 2 Minutes
 
-1. Install & Setup
+1. **Install & Setup**
 
-```bash
+bash
 # Clone and enter
-git clone https://github.com/RayoniR/RAYONIX-CHAIN.git
+```
+git clone https://github.com/KAPKEPOT/RAYONIX-CHAIN.git
 cd RAYONIX-CHAIN
+```
 
 # Install dependencies
+```
 pip install -r requirements.txt
 ```
 
 2. Start Blockchain Node
 
-```bash
+***bash***
 # Terminal 1 - Run the node daemon
+```
 ./rayonixd.py
 ```
 
@@ -40,8 +44,9 @@ Wait for node to start up and begin syncing
 
 3. Use the Interactive Client
 
-```bash
+***bash***
 # Terminal 2 - Open the CLI client
+```
 ./rayonix_cli.py
 ```
 
@@ -64,9 +69,9 @@ Type 'help' for available commands
 rayonix>
 ```
 
-🎯 Quick Start Guide
+#### 🎯 Quick Start Guide
 
-First Steps in the CLI
+***First Steps in the CLI***
 
 ```
 rayonix> help                    # See all available commands
@@ -75,16 +80,16 @@ rayonix> balance                 # Check your balance
 rayonix> info                    # See node status
 ```
 
-🆘 Getting Help
+### 🆘 Getting Help
 
 ```
 rayonix> help                    # Show all commands by category
 rayonix> help send               # Get detailed help for specific command
 ```
 
-📋 Complete Command Reference
+### 📋 Complete Command Reference
 
-👛 Wallet Commands
+#### 👛 Wallet Commands
 
 ```
 create-wallet      # Create a new wallet
@@ -98,7 +103,7 @@ wallet-info        # Show detailed wallet information
 send               # Send coins to address
 ```
 
-⛓️ Blockchain Commands
+#### ⛓️ Blockchain Commands
 
 ```
 blockchain-info    # Show detailed blockchain information
@@ -109,21 +114,21 @@ mempool            # Show mempool information
 sync-status        # Show synchronization status
 ```
 
-🌐 Network Commands
+#### 🌐 Network Commands
 
 ```
 network            # Show network statistics
 peers              # Show connected peers with details
 ```
 
-🖥️ Node Commands
+#### 🖥️ Node Commands
 
 ```
 info               # Show detailed node information
 status             # Show node status
 ```
 
-⚡ Staking & Validation
+#### ⚡ Staking & Validation
 
 ```
 stake              # Stake tokens for validation
@@ -131,7 +136,7 @@ staking            # Show staking information
 validator-info     # Show validator information
 ```
 
-🤖 Smart Contracts
+#### 🤖 Smart Contracts
 
 ```
 deploy-contract    # Deploy smart contract
@@ -139,16 +144,16 @@ call-contract      # Call contract function
 contracts          # List smart contracts
 ```
 
-⚙️ System Commands
+#### ⚙️ System Commands
 
 ```
 config             # Show configuration information
 stats              # Show CLI statistics
 ```
 
-🛠️ For Developers
+#### 🛠️ For Developers
 
-Project Structure
+##### Project Structure
 
 
 ```
@@ -182,36 +187,39 @@ RAYONIX-CHAIN/
     └── structure.txt         # Project structure
 ```
 
-Package Installation
+#### Package Installation
 
-```bash
+***bash***
 # Install as editable package
+```
 pip install -e .
+```
 
 # Use command-line tools (after installation)
+```
 rayonix-node    # Start node daemon
+```
+```
 rayonix-cli     # Start CLI client
 ```
 
-❓ Troubleshooting
+##### ❓ Troubleshooting
 
-Common Issues
+###### Common Issues
 
-· "Node Status: Unknown": Ensure rayonixd.py is running in another terminal
-· "Connected Peers: 0": Node is still starting up or firewall blocking connections
-· Command not found: Make sure you're in the RAYONIX-CHAIN directory
+· ***"Node Status***: Unknown": Ensure rayonixd.py is running in another terminal
+· ***"Connected Peers***: 0": Node is still starting up or firewall blocking connections
+· ***Command not found***: Make sure you're in the RAYONIX-CHAIN directory
 
-Getting Support
+##### Getting Support
 
-· 📚 Documentation: https://docs.rayonix.site
+· ***📚 Documentation**: https://docs.rayonix.site
 · 🐛 Report Issues: GitHub Issues
 · 💬 Community: Discord
 
-📜 License
+##### 📜 License
 
 AGPL-3.0 - See LICENSE for details.
-
----
 
 Ready to explore? Start with create-wallet and balance to begin your RAYONIX journey! 🚀
 
