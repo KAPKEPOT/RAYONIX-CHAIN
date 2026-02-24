@@ -1,3 +1,4 @@
+```
 utxo_system/
 ├── __init__.py
 ├── models/
@@ -22,3 +23,5 @@ utxo_system/
 └── exceptions/
     ├── __init__.py
     └── custom_errors.py     # Custom exception classes
+
+```
