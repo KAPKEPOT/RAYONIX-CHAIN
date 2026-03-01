@@ -10,7 +10,7 @@ A complete blockchain implementation with Proof-of-Stake consensus, smart contra
 ![Smart Contracts](https://img.shields.io/badge/Smart_Contracts-Enabled-brightgreen)
 ![Status](https://img.shields.io/badge/Status-Active-success)
 ![Contributions](https://img.shields.io/badge/Contributions-Welcome-brightgreen)
-![Last Commit](https://img.shields.io/github/last-commit/RayoniR/RAYONIX-CHAIN)
+![Last Commit](https://img.shields.io/github/last-commit/KAPKEPOT/RAYONIX-CHAIN)
 
 
 
